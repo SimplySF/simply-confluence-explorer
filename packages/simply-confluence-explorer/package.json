@@ -1,0 +1,188 @@
+{
+  "name": "@simplysf/simply-confluence-explorer",
+  "description": "A local web app for browsing and exploring Confluence spaces and pages",
+  "version": "0.0.0",
+  "author": "@ClayChipps",
+  "homepage": "https://github.com/SimplySF/simply-confluence-explorer",
+  "bugs": "https://github.com/SimplySF/simply-confluence-explorer/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SimplySF/simply-confluence-explorer",
+    "directory": "packages/simply-confluence-explorer"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": {
+    "confluence-explorer": "./bin/run.js"
+  },
+  "files": [
+    "/bin",
+    "/dist",
+    "/lib"
+  ],
+  "keywords": [
+    "confluence",
+    "atlassian",
+    "explorer",
+    "simply"
+  ],
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "svelte": "^5.56.10",
+    "svelte-check": "^4.7.6",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "wireit",
+    "check:web": "wireit",
+    "compile": "wireit",
+    "compile:web": "wireit",
+    "dev": "wireit",
+    "dev:server": "wireit",
+    "dev:web": "wireit",
+    "fix-license": "eslint src test --fix --rule \"header/header: [2]\"",
+    "format": "wireit",
+    "lint": "wireit",
+    "start": "node bin/run.js",
+    "test": "wireit",
+    "test:coverage": "vitest run --coverage --project simply-confluence-explorer",
+    "test:only": "wireit",
+    "test:watch": "vitest watch --project simply-confluence-explorer"
+  },
+  "wireit": {
+    "build": {
+      "dependencies": [
+        "compile",
+        "compile:web",
+        "check:web",
+        "lint"
+      ]
+    },
+    "compile": {
+      "command": "tsc -p . --pretty --incremental",
+      "files": [
+        "src/**/*.ts",
+        "**/tsconfig.json",
+        "../../tsconfig.json"
+      ],
+      "output": [
+        "lib/**",
+        "*.tsbuildinfo"
+      ],
+      "clean": "if-file-deleted"
+    },
+    "compile:web": {
+      "command": "vite build web",
+      "files": [
+        "web/**",
+        "web/vite.config.ts"
+      ],
+      "output": [
+        "dist/web/**"
+      ]
+    },
+    "check:web": {
+      "command": "svelte-check --tsconfig ./web/tsconfig.json --fail-on-warnings",
+      "files": [
+        "web/**/*.ts",
+        "web/**/*.svelte",
+        "web/tsconfig.json",
+        "web/svelte.config.js"
+      ],
+      "output": []
+    },
+    "dev": {
+      "dependencies": [
+        "dev:server",
+        "dev:web"
+      ]
+    },
+    "dev:server": {
+      "command": "node bin/run.js",
+      "service": true,
+      "dependencies": [
+        "compile"
+      ],
+      "files": [
+        "bin/**"
+      ]
+    },
+    "dev:web": {
+      "command": "vite web",
+      "service": true,
+      "files": [
+        "web/vite.config.ts"
+      ]
+    },
+    "format": {
+      "command": "prettier --write \"+(src|test|web)/**/*.+(ts|js|json|svelte)\"",
+      "files": [
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "web/**/*.ts",
+        "web/**/*.svelte",
+        "../../.prettier*"
+      ],
+      "output": []
+    },
+    "lint": {
+      "command": "eslint src test --color --cache --cache-location .eslintcache",
+      "files": [
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "**/.eslint*",
+        "**/tsconfig.json",
+        "../../eslint.config.mjs",
+        "../../tsconfig.json"
+      ],
+      "output": []
+    },
+    "test": {
+      "dependencies": [
+        "test:compile",
+        "test:only",
+        "check:web",
+        "lint"
+      ]
+    },
+    "test:compile": {
+      "command": "tsc -p \"./test\" --pretty",
+      "files": [
+        "test/**/*.ts",
+        "**/tsconfig.json",
+        "../../tsconfig.json"
+      ],
+      "output": []
+    },
+    "test:only": {
+      "command": "vitest run --project simply-confluence-explorer",
+      "env": {
+        "FORCE_COLOR": "2"
+      },
+      "files": [
+        "test/**/*.ts",
+        "src/**/*.ts",
+        "**/tsconfig.json",
+        "../../tsconfig.json",
+        "../../vitest.config.ts"
+      ],
+      "output": []
+    }
+  }
+}

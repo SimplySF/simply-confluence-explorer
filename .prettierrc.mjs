@@ -1,0 +1,7 @@
+export default {
+  singleQuote: true,
+  printWidth: 120,
+  endOfLine: 'auto',
+  plugins: ['prettier-plugin-svelte'],
+  overrides: [{ files: '*.svelte', options: { parser: 'svelte' } }],
+};
