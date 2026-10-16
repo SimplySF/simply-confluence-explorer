@@ -21,7 +21,10 @@ import {
   ConfluenceClient as LibraryClient,
   HttpError as LibraryHttpError,
   HttpTransport,
+  preparePageUpdate,
   resolveConfluenceConfig,
+  updatePage,
+  type PageUpdatePlan,
 } from '@simplysf/simply-atlassian-core';
 import type {
   AuthVerifyResponse,
@@ -173,6 +176,26 @@ export class ConfluenceClient {
     return Buffer.from(await res.arrayBuffer());
   }
 
+  /**
+   * Reads a page's current version and converts the new body to storage format, without writing
+   * anything. Content Confluence would not accept, such as raw HTML or an unclosed code fence, is
+   * refused here with a 400 that names the line, which is what a dry run reports.
+   */
+  public prepareUpdate(
+    pageId: string,
+    change: { markdown: string; title?: string; append?: boolean },
+  ): Promise<PageUpdatePlan> {
+    return call(() => preparePageUpdate(this.lib(), pageId, change));
+  }
+
+  /**
+   * Writes a prepared update. The write names the version that was read, so Confluence itself
+   * refuses it with a 409 if the page has changed in the meantime.
+   */
+  public applyUpdate(plan: PageUpdatePlan): Promise<unknown> {
+    return call(() => updatePage(this.lib(), plan));
+  }
+
   /** The Data Center license, which only administrators may read; `null` for anyone else. */
   public async getLicenseDetails(): Promise<RestLicense | null> {
     try {
@@ -289,6 +312,9 @@ async function call<T>(request: () => Promise<T>): Promise<T> {
     if (error instanceof HttpError) throw error;
     if (error instanceof ConfigError) throw new HttpError(400, error.message);
     if (error instanceof LibraryHttpError && error.status === 404) throw new HttpError(404, error.message);
+    // The library reports a version conflict on a write as a plain error naming it.
+    if (error instanceof Error && /changed by someone else/i.test(error.message))
+      throw new HttpError(409, error.message);
     // The token was refused, or Confluence failed or could not be reached. That is a bad gateway: it
     // is not this server's fault, and not a 401 for the browser either, which holds no credentials.
     if (error instanceof AuthError) throw new HttpError(502, `Confluence refused the token: ${error.message}`);

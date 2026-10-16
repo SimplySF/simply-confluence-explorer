@@ -46,6 +46,8 @@ export type FakeConfluence = {
   /** The tokens the fake was sent, so a test can check a token never went where it should not. */
   tokens: string[];
   pages: Map<string, FakePage>;
+  /** The ids of the pages written, in order. */
+  writes: string[];
   /** The page with this title in this space. */
   page: (spaceKey: string, title: string) => FakePage;
   /** Writes each space's `.confluenceignore` into a data directory, as the seed does. */
@@ -113,9 +115,33 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
   const pages = indexDataset();
   const requests: string[] = [];
   const tokens: string[] = [];
+  const writes: string[] = [];
   const homes = new Map(spaces.map((s) => [s.key, [...pages.values()].find((p) => p.spaceKey === s.key)!]));
 
-  const server = http.createServer((req, res) => {
+  const written = new WeakMap<http.IncomingMessage, unknown>();
+  const server = http.createServer((incoming, response) => {
+    let raw = '';
+    incoming.on('data', (chunk: Buffer) => (raw += chunk.toString()));
+    incoming.on('end', () => {
+      written.set(incoming, raw ? (JSON.parse(raw) as unknown) : {});
+      handle(incoming, response);
+    });
+  });
+  // Like Confluence, a write must name the next version, which refuses one made from a stale read.
+  const update = (id: string, change: unknown): [number, unknown] => {
+    const page = pages.get(id);
+    if (!page) return [404, { message: `No content found with id: ${id}` }];
+    const c = change as { title?: string; version?: { number?: number }; body?: { storage?: { value?: string } } };
+    if (c.version?.number !== page.version + 1) {
+      return [409, { message: `Version must be incremented on update. Current version is: ${page.version}` }];
+    }
+    page.version++;
+    page.title = c.title ?? page.title;
+    page.storage = c.body?.storage?.value ?? page.storage;
+    writes.push(page.id);
+    return [200, rest(page)];
+  };
+  const handle = (req: http.IncomingMessage, res: http.ServerResponse): void => {
     const url = new URL(req.url ?? '/', 'http://fake');
     requests.push(`${req.method} ${url.pathname}${url.search}`);
     tokens.push((req.headers.authorization ?? '').replace(/^Bearer /, ''));
@@ -169,6 +195,10 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       const page = pages.get(match[1]);
       return page ? list(page.children.map((id) => rest(pages.get(id)!))) : json(404, { message: 'No content found' });
     }
+    if ((match = /^\/rest\/api\/content\/(\d+)$/.exec(route)) && req.method === 'PUT') {
+      const [status, body] = update(match[1], written.get(req));
+      return json(status, body);
+    }
     if ((match = /^\/rest\/api\/content\/(\d+)$/.exec(route))) {
       const page = pages.get(match[1]);
       return page ? json(200, rest(page)) : json(404, { message: `No content found with id: ${match[1]}` });
@@ -178,7 +208,7 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       return;
     }
     json(404, { message: `No route for ${route}` });
-  });
+  };
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const page = (spaceKey: string, title: string): FakePage => {
@@ -190,6 +220,7 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     requests,
     tokens,
+    writes,
     pages,
     page,
     writeIgnoreFiles: (dataDir) => {

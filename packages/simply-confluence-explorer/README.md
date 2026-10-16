@@ -3,10 +3,10 @@
 A local web app for browsing and exploring Confluence, packaged as a Node.js CLI. Part of the
 [`simply-confluence-explorer`](https://github.com/SimplySF/simply-confluence-explorer) monorepo.
 
-> **Status:** the server reads Confluence, keeps a copy of a space on this machine, and asks an AI
-> about pages and spaces, in single questions or conversations, with AI summaries for a space's
-> table of contents. Excluded pages never reach an AI, and every request passes the outbound guard.
-> Writing to Confluence and the browser interface are not built yet.
+> **Status:** the server reads Confluence, keeps a copy of a space on this machine, asks an AI about
+> pages and spaces, and improves a page: it proposes a revision, checks it, and pushes it, refusing a
+> push made from a version that has since changed. Branch review queues, creating pages and the
+> browser interface are not built yet.
 
 ## Usage
 
@@ -62,6 +62,13 @@ request passes the outbound guard: a secret stops it, and personal data is repla
 placeholders that are put back in the answer here (`test/aiRoutes.test.ts`, `test/guard.test.ts`).
 Each request is recorded in `data/ai-audit.jsonl` in the data directory, without its content.
 
+### Writing to Confluence
+
+A page changes only when a push is sent for it. The push names the version its proposal was made
+from, and is refused if the page has changed since, so a colleague's edit is never replaced unseen
+(`test/pagePush.test.ts`, and against a real Confluence, `test/e2e/push.e2e.ts`). The frontmatter
+block the app adds to a page's Markdown is removed before the page is written.
+
 Certificates are always verified. If your Confluence uses a certificate from your company's own
 certificate authority, ask your IT team for that authority's certificate file and start the app with
 `NODE_EXTRA_CA_CERTS` pointing at it:
@@ -99,6 +106,9 @@ NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-expl
 | `POST /api/space-cache/:spaceKey/ai/ask`              | One question about a synced space, answered from its best-matching pages                                                                        |
 | `/api/ai/sessions/...`                                | Conversations: create, list, read, delete, upload a file, send a message                                                                        |
 | `POST /api/space-cache/:spaceKey/metadata/generate`   | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                                      |
+| `POST /api/pages/:pageId/recommend`                   | A proposed revision of the page, made from the server's own copy, with the version it was made from                                             |
+| `POST /api/pages/:pageId/dry-run`                     | Converts a change as a push would, and reports anything Confluence would refuse, without writing                                                |
+| `POST /api/pages/:pageId/push`                        | Writes `{ markdown, baseVersion }`; refused with a `409` if the page has changed since `baseVersion`                                            |
 | `GET`/`POST /api/space-cache/:spaceKey/guard`         | Reads or saves the space's `.confluenceguard` rules; a rule that does not parse is refused                                                      |
 | `/api/*`                                              | Anything else under `/api` is a JSON `404`, never the app shell                                                                                 |
 | everything else                                       | The built frontend, falling back to `index.html` for client-side routes                                                                         |

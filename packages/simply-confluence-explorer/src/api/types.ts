@@ -274,3 +274,21 @@ export type AiSessionView = {
   turns: SessionTurn[];
   files: SessionFileInfo[];
 };
+
+/** A proposed improvement to a page, and the version of the page it was made from. */
+export type RecommendationResponse = {
+  critique: string[];
+  changelog: string[];
+  improvedMarkdown: string;
+  guard: GuardReport;
+  /** The version the proposal was made from. A push must name it, and is refused if the page moved on. */
+  baseVersion: number;
+};
+
+/** What a push or a dry run did. */
+export type WriteResult = {
+  pageId: string;
+  /** After a write, the page's new version; after a dry run, the version it would have replaced. */
+  version: number;
+  dryRun: boolean;
+};
