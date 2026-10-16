@@ -120,3 +120,8 @@ The tests are in `packages/simply-confluence-explorer/test/e2e/`. Each one start
 test process, pointed at this environment and its data directory, and calls the app's API the way
 the browser does. When the environment is not running, every test is skipped and the reason is
 printed. They do not run as part of `pnpm test` (ADR-012).
+
+In CI, the `e2e` workflow (`.github/workflows/e2e.yml`) starts this environment with docker and runs
+the suite on every pull request (ADR-038). It sets `E2E_REQUIRE_TESTENV`, which makes a missing
+environment fail the suite instead of skipping it, so a Confluence that failed to start cannot pass
+as a green run.

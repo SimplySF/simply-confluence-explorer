@@ -1072,3 +1072,30 @@ the page, and the snippet route lets them send any text they paste. This does no
 means to send an excluded page. It is not meant to: the exclusion rules exist to stop pages leaving
 by accident, and every case above is an accident. The test that holds it sends an excluded page's
 text under a visible page's id (`test/aiRoutes.test.ts`).
+
+---
+
+## ADR-038 — The end-to-end workflow runs on every pull request, and fails rather than skips when Confluence did not start
+
+**Status:** accepted, 2026-10-16. Amends ADR-011. Verified: the workflow's first run, on the fork,
+started Confluence with docker, seeded it, and passed the suite. That run is also the first evidence
+that ADR-011's docker path works.
+
+The end-to-end suite runs in its own workflow, `.github/workflows/e2e.yml`, on every pull request
+and on demand. It does not run on every push to a branch, as `test.yml` does. Starting Confluence
+takes several minutes, and a pull request is the point where a change asks to be merged, so that is
+where the evidence is needed. The maintainer chose this trigger, which design doc 0006 left open.
+
+The job runs on Linux only, with docker, as ADR-011 describes; it uses `pnpm` and the template's
+scripts rather than the `ci.yml` and `npm` commands ADR-011 names. It starts the test environment
+with `pnpm run testenv:start`, then runs `pnpm run test:e2e`.
+
+A developer without the test environment gets a suite that skips and says why (ADR-012). In CI that
+would be a false pass: if Confluence failed to start, every test would skip and the job would still
+succeed. The job therefore sets `E2E_REQUIRE_TESTENV`, and with it set, a missing environment fails
+the suite instead of skipping it.
+
+**The argument against:** running on pull requests only means a broken end-to-end path is found
+later than it would be on every push. That is accepted, because a branch's pushes are work in
+progress, and the fast suite, which does run on every push, covers the same code against the fake
+Confluence.

@@ -1,0 +1,38 @@
+name: e2e
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # GitHub's runners provide docker; podman is also installed but is not what ADR-011 chose.
+      CONTAINER_RUNTIME: docker
+      # A suite that skips for want of Confluence would pass; here it must fail instead (ADR-038).
+      E2E_REQUIRE_TESTENV: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/setup@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - run: pnpm run build
+
+      - run: pnpm run testenv:start
+
+      - run: pnpm run test:e2e
+
+      - name: Confluence log, when a step failed
+        if: failure()
+        run: docker logs --tail 300 confluence-test-app

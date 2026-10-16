@@ -206,5 +206,4 @@ is written down so that an agent recognises the urge before acting on it.
 This section lists the checks this file mentions that nothing in the repository enforces yet. Each
 item is removed in the commit that adds the command enforcing it.
 
-- The end-to-end CI job. The end-to-end suite and its test environment exist, but no workflow runs
-  them yet, so they are checked only when someone runs them by hand.
+Nothing is listed at present.

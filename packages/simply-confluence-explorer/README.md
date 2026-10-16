@@ -6,8 +6,9 @@ A local web app for browsing and exploring Confluence, packaged as a Node.js CLI
 > **Status:** the server reads Confluence, keeps a copy of a space on this machine, asks an AI about
 > pages and spaces, improves a page and pushes it, and reviews or improves a page and everything under
 > it through a queue where each page is accepted on its own. It also writes new pages with an AI,
-> after first checking whether existing pages already cover the topic. The browser interface is not
-> built yet.
+> after first checking whether existing pages already cover the topic. The browser interface does all
+> of this. The AI features have so far run only against a stand-in for the provider, not with real
+> provider keys.
 
 ## Usage
 

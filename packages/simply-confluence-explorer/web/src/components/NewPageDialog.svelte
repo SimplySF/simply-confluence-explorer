@@ -1,0 +1,378 @@
+<script lang="ts">
+  import {
+    Check,
+    ExternalLink,
+    Eye,
+    FilePlus2,
+    Paperclip,
+    Pencil,
+    RefreshCw,
+    Search,
+    Send,
+    ShieldCheck,
+    Upload,
+  } from '@lucide/svelte';
+  import type { AiSessionView, RedundancyDecision } from '../../../src/api/types.js';
+  import { drafts, sessions, type DraftSummary } from '../support/api.js';
+  import { messageOf } from '../support/toast.svelte.js';
+  import ConfirmDialog from './ui/ConfirmDialog.svelte';
+  import Dialog from './ui/Dialog.svelte';
+  import Diff from './ui/Diff.svelte';
+  import Markdown from './ui/Markdown.svelte';
+
+  // A new page, in the order that keeps a space from repeating itself: say what the page is for, see
+  // what already says it, answer that, then write it with the co-writer and create it (ADR-025).
+  type Props = {
+    spaceKey: string;
+    parentId: string;
+    parentTitle: string;
+    onClose: () => void;
+    /** The author chose to work on an existing page instead, or opens the new one. */
+    onOpenPage: (pageId: string) => void;
+    onCreated: () => void;
+  };
+
+  let { spaceKey, parentId, parentTitle, onClose, onOpenPage, onCreated }: Props = $props();
+  const OVERLAP_LABEL = { high: 'Already covers this', some: 'Covers part of it', low: 'Little overlap' } as const;
+  const UPLOAD_TYPES = '.pdf,.md,.markdown,.txt,.csv,.tsv,.json,.yaml,.yml,.log,.xml,.html,.htm';
+
+  let session = $state<AiSessionView | null>(null);
+  let unfinished = $state<DraftSummary[]>([]);
+  let title = $state('');
+  let notes = $state('');
+  let linked = $state<string[]>([]);
+  let markdown = $state('');
+  let preview = $state(false);
+  let prompt = $state('');
+  let busy = $state<string | null>(null);
+  let error = $state<string | null>(null);
+  let checkOk = $state<string | null>(null);
+  let dismissed = $state(new Set<number>());
+  let confirmCreate = $state(false);
+  let fileInput = $state<HTMLInputElement>();
+
+  $effect(() => {
+    drafts.unfinished(spaceKey).then(
+      (d) => (unfinished = d),
+      () => (unfinished = []),
+    );
+  });
+
+  const d = $derived(session?.draft);
+  const stage = $derived(
+    !session ? 'describe' : !d?.redundancy?.decision ? 'check' : d.createdPageId ? 'done' : 'write',
+  );
+
+  function load(s: AiSessionView): void {
+    session = s;
+    markdown = s.draft?.markdown ?? '';
+    title = s.draft?.title ?? '';
+    checkOk = null;
+  }
+
+  async function act(label: string, fn: () => Promise<AiSessionView | void>): Promise<void> {
+    busy = label;
+    error = null;
+    try {
+      const s = await fn();
+      if (s) load(s);
+    } catch (e) {
+      error = messageOf(e);
+    } finally {
+      busy = null;
+    }
+  }
+
+  // The editor saves itself shortly after typing stops.
+  $effect(() => {
+    const text = markdown;
+    const id = session?.id;
+    if (stage !== 'write' || !id || text === d?.markdown) return;
+    const t = setTimeout(() => {
+      drafts.save(id, { markdown: text }).then(
+        (s) => (session = s),
+        (e: unknown) => (error = messageOf(e)),
+      );
+    }, 800);
+    return () => clearTimeout(t);
+  });
+
+  const proposal = $derived.by(() => {
+    const turns = session?.turns ?? [];
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const text = turns[i].proposedDraft;
+      if (text && !dismissed.has(i)) return { index: i, text };
+    }
+    return null;
+  });
+
+  const decide = (decision: RedundancyDecision): Promise<void> =>
+    act(decision, () => drafts.decide(session!.id, decision, decision === 'link' ? linked : []));
+
+  const dismiss = (index: number): void => {
+    dismissed = new Set(dismissed).add(index);
+  };
+
+  function send(e: SubmitEvent): void {
+    e.preventDefault();
+    const p = prompt.trim();
+    if (!p || !session) return;
+    const { id } = session;
+    prompt = '';
+    void act('send', () => drafts.save(id, { markdown }).then(() => drafts.send(id, p)));
+  }
+
+  function addFiles(files: File[]): void {
+    if (!session) return;
+    const { id } = session;
+    void act('files', async () => {
+      let s: AiSessionView | null = null;
+      for (const f of files) s = await sessions.addFile(id, f); // eslint-disable-line no-await-in-loop -- one at a time keeps the order
+      return s ?? undefined;
+    });
+  }
+
+  function create(): void {
+    confirmCreate = false;
+    if (!session) return;
+    const { id } = session;
+    void act('create', async () => {
+      await drafts.save(id, { markdown });
+      const s = await drafts.create(id);
+      onCreated();
+      return s;
+    });
+  }
+</script>
+
+{#snippet writeFooter()}
+  <span class="branch-note">Saved as you type. Nothing is in Confluence until you create it.</span>
+  <button
+    class="btn btn-secondary"
+    disabled={!!busy}
+    onclick={() =>
+      session &&
+      act('check', async () => {
+        await drafts.save(session!.id, { markdown });
+        await drafts.check(session!.id);
+        checkOk = 'Dry run passed: Confluence will accept this page.';
+      })}
+  >
+    {#if busy === 'check'}<RefreshCw size={14} class="spin" />{:else}<Check size={14} />{/if} Dry run
+  </button>
+  <button class="btn btn-primary" disabled={!!busy} onclick={() => (confirmCreate = true)}>
+    {#if busy === 'create'}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if} Create page
+  </button>
+{/snippet}
+
+<Dialog size="new-page" {onClose} footer={stage === 'write' ? writeFooter : undefined}>
+  {#snippet header()}<FilePlus2 size={16} /> New page in {spaceKey}, under “{d?.parentTitle || parentTitle}”{/snippet}
+  {#if error}<div class="branch-error">{error}</div>{/if}
+
+  {#if stage === 'describe'}
+    <div class="new-page-describe">
+      <label class="form-label" for="new-page-title">Title</label>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        id="new-page-title"
+        class="form-input"
+        bind:value={title}
+        placeholder="e.g. Schema Migration Guide"
+        autofocus
+      />
+      <label class="form-label" for="new-page-notes">What should this page cover?</label>
+      <textarea
+        id="new-page-notes"
+        class="form-input"
+        rows="5"
+        bind:value={notes}
+        placeholder="Notes, an outline, who it is for. This is what the check for similar pages searches with."
+      ></textarea>
+      <button
+        class="btn btn-primary"
+        disabled={!title.trim() || !!busy}
+        onclick={() => act('start', () => drafts.start({ spaceKey, parentId, title, notes }))}
+      >
+        {#if busy === 'start'}<RefreshCw size={14} class="spin" />{:else}<Search size={14} />{/if} Check for similar pages
+      </button>
+      {#if unfinished.length > 0}
+        <div class="branch-history">
+          <h4>Continue a draft</h4>
+          {#each unfinished as s (s.id)}
+            <button class="branch-history-row" onclick={() => act('open', () => sessions.get(s.id))}>
+              {s.draft?.title} · under {s.draft?.parentTitle} · {new Date(s.updatedAt).toLocaleString()}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {:else if stage === 'check' && d?.redundancy}
+    <div class="new-page-check">
+      <p class="branch-note">
+        Before writing “{d.title}”, check whether an existing page already says it. {d.redundancy.note ?? ''}
+      </p>
+      {#if d.redundancy.similar.length === 0}<p>No similar pages were found.</p>{/if}
+      {#each d.redundancy.similar as p (p.pageId)}
+        <div class="similar-page overlap-{p.overlap ?? 'unknown'}">
+          <label class="checkbox-group">
+            <input
+              type="checkbox"
+              checked={linked.includes(p.pageId)}
+              onchange={(e) =>
+                (linked = e.currentTarget.checked ? [...linked, p.pageId] : linked.filter((x) => x !== p.pageId))}
+            />
+            <strong>{p.title}</strong>
+          </label>
+          <span class="branch-status">
+            {p.overlap
+              ? OVERLAP_LABEL[p.overlap]
+              : p.source === 'synced'
+                ? 'Found in the synced copy'
+                : 'Found by Confluence search'}
+          </span>
+          {#if p.why}<p>{p.why}</p>{/if}
+          {#if p.excerpt}<p class="branch-note">{p.excerpt}</p>{/if}
+          <button
+            class="btn btn-secondary btn-sm"
+            onclick={() => decide('update-existing').then(() => onOpenPage(p.pageId))}
+          >
+            Update this page instead
+          </button>
+        </div>
+      {/each}
+      <div class="branch-actions">
+        <button class="btn btn-primary" disabled={!linked.length || !!busy} onclick={() => decide('link')}>
+          Link to {linked.length || 'the'} selected and continue
+        </button>
+        <button class="btn btn-secondary" disabled={!!busy} onclick={() => decide('continue')}>Continue anyway</button>
+        <button
+          class="btn btn-secondary"
+          disabled={!!busy}
+          onclick={() => act('recheck', () => drafts.recheck(session!.id))}
+        >
+          <RefreshCw size={13} /> Check again
+        </button>
+      </div>
+    </div>
+  {:else if stage === 'write' && session && d}
+    <div class="new-page-write">
+      <div class="new-page-editor">
+        <div class="branch-runbar">
+          <input
+            class="form-input"
+            aria-label="Title"
+            bind:value={title}
+            onblur={() => title.trim() && title !== d.title && act('title', () => drafts.save(session!.id, { title }))}
+          />
+          <button class="btn btn-secondary btn-sm" onclick={() => (preview = !preview)}>
+            {#if preview}<Pencil size={13} />{:else}<Eye size={13} />{/if}
+            {preview ? 'Edit' : 'Preview'}
+          </button>
+        </div>
+        {#if preview}
+          <Markdown source={markdown} extraClass="markdown-preview new-page-preview" />
+        {:else}
+          <textarea class="form-input branch-editor" aria-label="Page content" bind:value={markdown}></textarea>
+        {/if}
+        {#if checkOk}<div class="guard-note"><Check size={12} /> {checkOk}</div>{/if}
+      </div>
+
+      <div class="new-page-chat">
+        <div class="new-page-turns">
+          {#if session.turns.length === 0}
+            <p class="branch-note">
+              Ask the co-writer for an outline, a section, or a review of what you have. Its changes arrive as proposals
+              for you to accept.
+            </p>
+          {/if}
+          {#each session.turns as t, i (i)}
+            <div class="chat-turn turn-{t.role}">
+              <Markdown source={t.text} extraClass="" />
+              {#if t.guardSummary}<div class="guard-note"><ShieldCheck size={11} /> {t.guardSummary}</div>{/if}
+            </div>
+          {/each}
+        </div>
+        {#if proposal}
+          <div class="new-page-proposal">
+            <strong>Proposed change</strong>
+            <Diff before={markdown} after={proposal.text} />
+            <div class="branch-actions">
+              <button
+                class="btn btn-primary btn-sm"
+                onclick={() => {
+                  markdown = proposal.text;
+                  dismiss(proposal.index);
+                }}
+              >
+                <Check size={13} /> Accept
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick={() => dismiss(proposal.index)}>Dismiss</button>
+            </div>
+          </div>
+        {/if}
+        {#if session.files.length > 0}
+          <div class="chat-files">
+            {#each session.files as f (f.id)}<span class="chat-file"><Paperclip size={11} /> {f.name}</span>{/each}
+          </div>
+        {/if}
+        <form class="new-page-input" onsubmit={send}>
+          <input
+            bind:this={fileInput}
+            type="file"
+            multiple
+            hidden
+            accept={UPLOAD_TYPES}
+            onchange={(e) => {
+              const files = Array.from(e.currentTarget.files ?? []);
+              e.currentTarget.value = '';
+              if (files.length) addFiles(files);
+            }}
+          />
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={() => fileInput?.click()}
+            title="Add files as context"
+            aria-label="Add files"
+          >
+            <Paperclip size={14} />
+          </button>
+          <input
+            class="form-input"
+            aria-label="Ask the co-writer"
+            bind:value={prompt}
+            placeholder="e.g. Draft an outline from my notes"
+            disabled={busy === 'send'}
+          />
+          <button class="btn btn-primary" disabled={!prompt.trim() || busy === 'send'} aria-label="Send">
+            {#if busy === 'send'}<RefreshCw size={14} class="spin" />{:else}<Send size={14} />{/if}
+          </button>
+        </form>
+      </div>
+    </div>
+  {:else if stage === 'done' && d}
+    <div class="new-page-done">
+      <p><strong>{d.title}</strong> was created in {spaceKey}.</p>
+      <div class="branch-actions">
+        <button class="btn btn-primary" onclick={() => d.createdPageId && onOpenPage(d.createdPageId)}
+          >Open it here</button
+        >
+        {#if d.createdUrl}
+          <a class="btn btn-secondary" href={d.createdUrl} target="_blank" rel="noreferrer"
+            ><ExternalLink size={13} /> Open in Confluence</a
+          >
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  {#if confirmCreate && session}
+    <ConfirmDialog title="Create this page in Confluence?" onCancel={() => (confirmCreate = false)} onConfirm={create}>
+      {#snippet confirmLabel()}<Upload size={14} /> Create page{/snippet}
+      <p>
+        <strong>{title}</strong> is created under “{d?.parentTitle}” in {spaceKey}. A title already used in the space is
+        refused.
+      </p>
+    </ConfirmDialog>
+  {/if}
+</Dialog>
