@@ -1149,3 +1149,31 @@ This is accepted for three reasons. The `beta` tag keeps betas away from a plain
 from the first-version exception above. The README states plainly that there is no stable release
 yet, and why. And the alternative, handing the team an untracked tarball, gives them the same code
 with no version, no changelog and no provenance.
+
+---
+
+## ADR-040 — simply-atlassian-core 0.7.2 is installed on the day it was released, as a named exception to pnpm's one-day release age
+
+**Status:** accepted, 2026-10-16.
+
+pnpm refuses to install a package version that is less than a day old. The delay protects against a
+hijacked release: a malicious version is usually noticed and withdrawn within hours, so a project
+that waits a day rarely installs one.
+
+`@simplysf/simply-atlassian-core` 0.7.2 was published on 2026-10-16 and carries the library fix for
+the five conversion losses recorded in ADR-033. The maintainer chose to adopt it the same day rather
+than wait, so that the first beta (ADR-039) converts pages without those losses. The maintainer
+knows the SimplySF team that publishes the library, and the fix in it was written for this project
+(simply-atlassian pull request 55).
+
+The exception is the `minimumReleaseAgeExclude` entry in `pnpm-workspace.yaml`. It names one
+version, not the package, so any later version of the library still waits the full day, and the
+entry stops mattering once 0.7.2 is a day old.
+
+**The argument against:** an exception made because the publisher is trusted is exactly the
+exception a hijacked publisher account would exploit. The delay exists for the case where the
+people are trustworthy but their account is not. The converter tests and their snapshots show that
+the library's output changed only in the five places the fix intended, but that checks behaviour on
+the test dataset; it does not show the package holds nothing else. The risk is accepted for one
+version, released by a team the maintainer knows, and is not a precedent: a later exception needs
+its own record.

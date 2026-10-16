@@ -56,7 +56,7 @@ exports[`converting the test dataset > converts OPS/Service Level Objectives as 
 
 | Region | Detail |
 | --- | --- |
-| EU | ZoneUptimeeu-199.99%eu-299.90% |"
+| EU | Zone, Uptime; eu-1, 99.99%; eu-2, 99.90% |"
 `;
 
 exports[`converting the test dataset > converts OPS/Team Contacts as recorded 1`] = `
@@ -259,7 +259,7 @@ exports[`converting the test dataset > converts PEOPLE/Travel Policy as recorded
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-001: Use PostgreSQL as recorded 1`] = `
-"Status: [status]
+"Status: [status: ACCEPTED]
 
 ## Context
 
@@ -276,7 +276,7 @@ We chose option A.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-002: Adopt Kubernetes as recorded 1`] = `
-"Status: [status]
+"Status: [status: ACCEPTED]
 
 ## Context
 
@@ -293,7 +293,7 @@ We chose option B.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-003: Event Bus Selection as recorded 1`] = `
-"Status: [status]
+"Status: [status: SUPERSEDED]
 
 ## Context
 
@@ -310,7 +310,7 @@ We chose option C.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-004: GraphQL Gateway as recorded 1`] = `
-"Status: [status]
+"Status: [status: PROPOSED]
 
 ## Context
 
@@ -327,7 +327,7 @@ We chose option B.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-005: Monorepo Layout as recorded 1`] = `
-"Status: [status]
+"Status: [status: ACCEPTED]
 
 ## Context
 
@@ -344,7 +344,7 @@ We chose option A.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-006: Feature Flags as recorded 1`] = `
-"Status: [status]
+"Status: [status: ACCEPTED]
 
 ## Context
 
@@ -361,7 +361,7 @@ We chose option C.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-007: Observability Stack as recorded 1`] = `
-"Status: [status]
+"Status: [status: PROPOSED]
 
 ## Context
 
@@ -378,7 +378,7 @@ We chose option A.
 `;
 
 exports[`converting the test dataset > converts PLAT/ADR-008: Secrets Management as recorded 1`] = `
-"Status: [status]
+"Status: [status: ACCEPTED]
 
 ## Context
 
@@ -405,21 +405,21 @@ exports[`converting the test dataset > converts PLAT/Architecture Decision Recor
 exports[`converting the test dataset > converts PLAT/Architecture Overview as recorded 1`] = `
 "# Architecture Overview
 
-Maintained by [link]. This page exercises **every common macro**.
+Maintained by [@admin-user-key]. This page exercises **every common macro**.
 
-> **info**
+> **info: Heads up**
 > Info panels become alerts.
 
-> **warning**
+> **warning: Careful**
 > Do not deploy on Fridays.
 
 > **note**
 > A note panel without a title.
 
-> **tip**
+> **tip: Pro tip**
 > Use the service catalog.
 
-> **panel**
+> **panel: Generic panel**
 > Generic panel body.
 
 ## Code
@@ -445,7 +445,7 @@ SELECT id, title FROM pages WHERE space = 'PLAT';
 
 ## Status
 
-Gateway [status] Legacy [status] Search [status]
+Gateway [status: ACTIVE] Legacy [status: DEPRECATED] Search [status: BETA]
 
 ## Components
 
@@ -455,7 +455,7 @@ Gateway [status] Legacy [status] Search [status]
 | Billing | Payments | Java |
 | Web UI | Frontend | TypeScript |
 
-> [macro: expand]
+> [macro: expand: Show legacy details]
 > Legacy monolith retired in 2024.
 > 
 > - Item one
@@ -498,7 +498,7 @@ exports[`converting the test dataset > converts PLAT/Auth Changelog as recorded 
 `;
 
 exports[`converting the test dataset > converts PLAT/Auth Runbook as recorded 1`] = `
-"> **warning**
+"> **warning: Paging policy**
 > Page the owning team before restarting.
 
 1. Check dashboards
@@ -513,7 +513,7 @@ exports[`converting the test dataset > converts PLAT/Auth Service as recorded 1`
 | --- | --- |
 | Language | Kotlin |
 | Tier | 1 |
-| Status | [status] |"
+| Status | [status: LIVE] |"
 `;
 
 exports[`converting the test dataset > converts PLAT/Billing API Reference as recorded 1`] = `
@@ -541,7 +541,7 @@ exports[`converting the test dataset > converts PLAT/Billing Changelog as record
 `;
 
 exports[`converting the test dataset > converts PLAT/Billing Runbook as recorded 1`] = `
-"> **warning**
+"> **warning: Paging policy**
 > Page the owning team before restarting.
 
 1. Check dashboards
@@ -556,7 +556,7 @@ exports[`converting the test dataset > converts PLAT/Billing Service as recorded
 | --- | --- |
 | Language | Java |
 | Tier | 1 |
-| Status | [status] |"
+| Status | [status: LIVE] |"
 `;
 
 exports[`converting the test dataset > converts PLAT/Database Backups as recorded 1`] = `"Nightly backups with 30-day retention."`;
@@ -600,7 +600,7 @@ exports[`converting the test dataset > converts PLAT/Gateway Changelog as record
 `;
 
 exports[`converting the test dataset > converts PLAT/Gateway Runbook as recorded 1`] = `
-"> **warning**
+"> **warning: Paging policy**
 > Page the owning team before restarting.
 
 1. Check dashboards
@@ -615,7 +615,7 @@ exports[`converting the test dataset > converts PLAT/Gateway Service as recorded
 | --- | --- |
 | Language | Go |
 | Tier | 1 |
-| Status | [status] |"
+| Status | [status: LIVE] |"
 `;
 
 exports[`converting the test dataset > converts PLAT/INC-1001: Gateway latency spike as recorded 1`] = `
@@ -623,7 +623,7 @@ exports[`converting the test dataset > converts PLAT/INC-1001: Gateway latency s
 
 ## Summary
 
-Gateway latency spike. Severity [status].
+Gateway latency spike. Severity [status: SEV2].
 
 ## Timeline
 
@@ -644,7 +644,7 @@ exports[`converting the test dataset > converts PLAT/INC-1002: Billing double ch
 
 ## Summary
 
-Billing double charge. Severity [status].
+Billing double charge. Severity [status: SEV1].
 
 ## Timeline
 
@@ -665,7 +665,7 @@ exports[`converting the test dataset > converts PLAT/INC-1003: Auth token outage
 
 ## Summary
 
-Auth token outage. Severity [status].
+Auth token outage. Severity [status: SEV1].
 
 ## Timeline
 
@@ -686,7 +686,7 @@ exports[`converting the test dataset > converts PLAT/INC-1004: Search index lag 
 
 ## Summary
 
-Search index lag. Severity [status].
+Search index lag. Severity [status: SEV3].
 
 ## Timeline
 
@@ -703,7 +703,7 @@ Search index lag. Severity [status].
 `;
 
 exports[`converting the test dataset > converts PLAT/Incident Response as recorded 1`] = `
-"> **panel**
+"> **panel: Severity levels**
 > - SEV1 - outage
 > - SEV2 - degraded
 > - SEV3 - minor"

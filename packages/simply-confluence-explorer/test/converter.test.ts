@@ -20,8 +20,8 @@
 // Every page in the test dataset is converted and compared with a recorded snapshot, so any change
 // in simply-atlassian-core's converter shows up as a reviewed diff. The output of the turndown-based
 // converter the app used before the library is kept beside it, in fixtures/turndown-baseline.json,
-// for comparison (ADR-028). The library still loses a few things that baseline kept; each is a test
-// marked `fails`, which turns red when the library is fixed so the mark can be removed.
+// for comparison (ADR-028). Five things that baseline kept and the library once lost each have a test
+// of their own below (ADR-033).
 
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -91,26 +91,24 @@ describe('what the converter keeps', () => {
   });
 });
 
-// Each of these is something the turndown baseline kept and simply-atlassian-core does not yet. They
-// are expected to fail until the library is fixed; a passing one means the `fails` mark comes off.
-describe('what the converter still loses', () => {
-  it.fails("keeps a status lozenge's text, such as an incident's severity", () => {
+describe('what the converter keeps from macros', () => {
+  it("keeps a status lozenge's text, such as an incident's severity", () => {
     expect(md('PLAT/INC-1001: Gateway latency spike')).toContain('SEV2');
   });
 
-  it.fails("keeps a panel's title", () => {
+  it("keeps a panel's title", () => {
     expect(md('PLAT/Gateway Runbook')).toContain('Paging policy');
   });
 
-  it.fails("keeps an expand section's title", () => {
+  it("keeps an expand section's title", () => {
     expect(md('PLAT/Architecture Overview')).toContain('Show legacy details');
   });
 
-  it.fails('keeps who a mention names', () => {
+  it('keeps who a mention names', () => {
     expect(md('PLAT/Architecture Overview')).toContain('admin-user-key');
   });
 
-  it.fails("keeps a nested table's cells apart", () => {
+  it("keeps a nested table's cells apart", () => {
     expect(md('OPS/Service Level Objectives')).not.toContain('ZoneUptime');
   });
 });

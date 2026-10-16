@@ -24,15 +24,15 @@ could be mishandled, so the list should be as short as it can reasonably be.
 
 These packages are removed, and this is what takes over their work:
 
-| removed                              | what replaces it                                                                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `axios`                              | The library's `ConfluenceClient` and `HttpTransport`. The transport retries requests that fail with a 429 or a 5xx response.                                  |
-| `@simplysf/simply-atlassian`, `-cli` | The library's page-update and page-create functions, called directly in the server process instead of by starting a separate program.                         |
-| `turndown`, `turndown-plugin-gfm`    | The library's `storageToMarkdown`, which also converts uploaded `.html` files to Markdown.                                                                    |
-| `cheerio`                            | The library's converter. The comparison over the test dataset found no macro that needed `cheerio` back; what the library still loses is recorded in ADR-033. |
-| `express`                            | `node:http`, with a small router that validates route parameters (`src/http/router.ts`).                                                                      |
-| `helmet`                             | The router sets the same security headers itself: a content security policy, `nosniff`, and frame and referrer policies.                                      |
-| `dotenv`                             | The library's `loadEnvFile`. It is read once in `main()`, and the values are passed down as the injected `env` rather than read from the process.             |
+| removed                              | what replaces it                                                                                                                                                                                                                             |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `axios`                              | The library's `ConfluenceClient` and `HttpTransport`. The transport retries requests that fail with a 429 or a 5xx response.                                                                                                                 |
+| `@simplysf/simply-atlassian`, `-cli` | The library's page-update and page-create functions, called directly in the server process instead of by starting a separate program.                                                                                                        |
+| `turndown`, `turndown-plugin-gfm`    | The library's `storageToMarkdown`, which also converts uploaded `.html` files to Markdown.                                                                                                                                                   |
+| `cheerio`                            | The library's converter. The comparison over the test dataset found no macro that needed `cheerio` back; ADR-033 records the five things the library lost at first; core 0.7.2 keeps all five, and `test/converter.test.ts` checks each one. |
+| `express`                            | `node:http`, with a small router that validates route parameters (`src/http/router.ts`).                                                                                                                                                     |
+| `helmet`                             | The router sets the same security headers itself: a content security policy, `nosniff`, and frame and referrer policies.                                                                                                                     |
+| `dotenv`                             | The library's `loadEnvFile`. It is read once in `main()`, and the values are passed down as the injected `env` rather than read from the process.                                                                                            |
 
 These seven stay:
 
