@@ -21,6 +21,7 @@ import { listModels } from '../ai/engine.js';
 import { guardRulesPath, parseGuardRules, withWithheld } from '../ai/guard.js';
 import { API_PROVIDERS, type ApiProvider, type SettingsUpdate } from '../ai/settings.js';
 import { HttpError, type Router } from '../http/router.js';
+import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
 import { retrieveSpaceContext } from '../spaces/contextRetriever.js';
@@ -119,27 +120,34 @@ export function addAiRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/ai/analyze', async ({ body }): Promise<AnalyzeResponse> => {
         const prompt = requiredPrompt(body);
         const fields = fieldsOf(body);
-        const markdown = optionalString(body, 'markdown') ?? optionalString(body, 'documentMarkdown') ?? '';
         const pageId = optionalString(body, 'pageId');
         let spaceKey = optionalString(body, 'spaceKey');
-        let full = markdown;
+        // Text with no page named, such as a pasted snippet, is sent as given, through the guard.
+        let markdown = optionalString(body, 'markdown') ?? optionalString(body, 'documentMarkdown') ?? '';
+        let pageTitle = optionalString(body, 'pageTitle');
         let branch = {
           pages: [] as Array<{ markdown: string; page: { title: string } }>,
           withheld: [] as string[],
           overflow: [] as string[],
         };
         if (pageId) {
-          // Every page whose content is sent is checked first, the page asked about included.
-          spaceKey = (await gate(pageId, spaceKey)).spaceKey;
+          // The page that is sent is the page that was checked: the server's own copy, read by the
+          // exclusion check itself. Any text or title in the request is ignored, so text from another
+          // page, or from before a rule changed, can never go out under this page's name.
+          const checked = await gate(pageId, spaceKey);
+          spaceKey = checked.spaceKey;
+          markdown = parsePage(checked.page).markdown;
+          pageTitle = checked.page.title;
           // A page with no body of its own, such as a folder page, is answered from the pages below it.
           const ownBody = markdown.replace(/^---[\s\S]*?---\s*/m, '').trim();
           if (fields.includeChildren === true || ownBody.length < 50) {
-            branch = await collectBranch(pageId, spaceKey, deps, dataDir, CONTEXT_CHAR_LIMIT - markdown.length);
-            full += branch.pages.map((p) => `\n\n---\n# Sub-Page: ${p.page.title}\n${p.markdown}`).join('\n');
+            branch = await collectBranch(pageId, checked.spaceKey, deps, dataDir, CONTEXT_CHAR_LIMIT - markdown.length);
           }
         }
+        const full =
+          markdown + branch.pages.map((p) => `\n\n---\n# Sub-Page: ${p.page.title}\n${p.markdown}`).join('\n');
         if (!full.trim()) throw new HttpError(400, 'there is no page content to ask about');
-        const answer = await ai.analyzeDocument(full, prompt, optionalString(body, 'pageTitle'), { spaceKey });
+        const answer = await ai.analyzeDocument(full, prompt, pageTitle, { spaceKey });
         const guard = withWithheld(answer.guard, branch.withheld);
         return {
           answer: answer.text,

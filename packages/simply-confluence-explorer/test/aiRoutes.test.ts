@@ -79,6 +79,25 @@ describe('an excluded page', () => {
     });
   });
 
+  it("cannot be sent under a visible page's id: the server sends its own copy of the page it checked", async () => {
+    await withApp(async (app) => {
+      const visible = fake.page('PEOPLE', 'Benefits Overview');
+      const excluded = fake.page('PEOPLE', 'Salary Bands');
+      const res = await app.call('POST', '/ai/analyze', {
+        pageId: visible.id,
+        spaceKey: 'PEOPLE',
+        prompt: 'Summarize',
+        markdown: excluded.storage,
+        pageTitle: 'Salary Bands',
+      });
+      expect(res.status).toBe(200);
+      expect(app.sentText()).toContain('Health, dental, vision.');
+      expect(app.sentText()).toContain('# Document Title: Benefits Overview');
+      expect(app.sentText()).not.toContain('fake-range-a');
+      expect(app.sentText()).not.toContain('Salary Bands');
+    });
+  });
+
   it('is left out of the sub-pages of a page that is asked about', async () => {
     await withApp(async (app) => {
       const home = fake.page('PLAT', 'Platform Engineering Home');
@@ -213,6 +232,19 @@ describe('AI summaries', () => {
       const toc = (await app.call<{ toc: SpaceTocNode[] }>('GET', '/space-cache/PEOPLE/toc')).body.toc;
       expect(JSON.stringify(toc)).toContain('A page about operations.');
       for (const title of expectations.PEOPLE.excluded) expect(app.sentText()).not.toContain(title);
+    });
+  });
+});
+
+describe('text with no page named', () => {
+  it('is sent as given, through the guard, for snippets and drafts that are not a page yet', async () => {
+    await withApp(async (app) => {
+      const res = await app.call<AnalyzeResponse>('POST', '/ai/analyze', {
+        prompt: 'Explain',
+        markdown: 'A pasted snippet for jane.doe@example.com.',
+      });
+      expect(res.status).toBe(200);
+      expect(app.sentText()).toContain('A pasted snippet for [EMAIL-1].');
     });
   });
 });

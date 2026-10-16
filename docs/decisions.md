@@ -1049,3 +1049,26 @@ native binaries they are built on. The AI dependencies (ADR-017) brought two mor
 **The argument against:** denying a script that a package needs breaks it in a way that may only
 show at run time. The tests that call the Gemini API through `@google/genai` (`test/ai.test.ts`)
 pass with both scripts denied, and that is the evidence the denial is safe.
+
+---
+
+## ADR-037 — A question about a page sends the server's own copy of that page, never text the request supplies
+
+**Status:** accepted, 2026-10-16. Amends ADR-018.
+
+ADR-018 requires every page sent to an AI to pass the exclusion check first. `POST /api/ai/analyze`
+checked the page a request named, but then sent the Markdown the request carried, so nothing tied
+the text that left the machine to the page that was checked. Stale text from before a rule changed,
+or another page's text sent under this page's id by a mistake in the browser, would have passed the
+check.
+
+When a request names a page, the server now sends its own copy of that page: the synced copy, or the
+one read from Confluence, which is the copy the exclusion check itself reads. Text and a title in the
+request are ignored. A request that names no page, such as a pasted snippet, is sent as given,
+through the outbound guard like everything else.
+
+**The argument against:** the browser runs on the same machine, the person using it can already read
+the page, and the snippet route lets them send any text they paste. This does not stop someone who
+means to send an excluded page. It is not meant to: the exclusion rules exist to stop pages leaving
+by accident, and every case above is an accident. The test that holds it sends an excluded page's
+text under a visible page's id (`test/aiRoutes.test.ts`).
