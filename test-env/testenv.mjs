@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import * as containers from './lib/containers.mjs';
 import { provision, licenseDetails } from './lib/provision.mjs';
 import { seed } from './lib/seed.mjs';
-import { STATE_DIR, readCredentials, baseUrl, log } from './lib/config.mjs';
+import { DATA_DIR, STATE_DIR, readCredentials, baseUrl, log } from './lib/config.mjs';
 
 export async function start() {
   containers.up();
