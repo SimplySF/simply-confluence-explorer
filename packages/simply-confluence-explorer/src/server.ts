@@ -30,6 +30,7 @@ import { BranchRunner } from './branches/branchRuns.js';
 import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
 import { MetadataPipeline } from './spaces/metadata.js';
+import { SearchIndex } from './spaces/searchIndex.js';
 import { SpaceStore } from './spaces/spaceStore.js';
 import { SpaceSync } from './spaces/sync.js';
 import { resolveDataDir } from './util/dataDir.js';
@@ -115,6 +116,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     sessions: new SessionStore(dataDir),
     metadata: new MetadataPipeline(store, exclusions, () => ai, log),
     branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log }),
+    index: new SearchIndex(store),
   });
   const isLocal = localOnly(env);
 

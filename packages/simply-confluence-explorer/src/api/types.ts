@@ -239,7 +239,8 @@ export type MetadataProgress = {
 
 /** What a conversation is about: one page, a page and everything below it, or a whole space. */
 export type SessionScope = {
-  kind: 'page' | 'branch' | 'space';
+  /** A draft is the conversation behind a new page, started through `/api/drafts`. */
+  kind: 'page' | 'branch' | 'space' | 'draft';
   spaceKey: string;
   pageId?: string;
   title?: string;
@@ -253,6 +254,8 @@ export type SessionTurn = {
   guardSummary?: string;
   engine?: string;
   matchedPages?: Array<{ id: string; title: string; score: number }>;
+  /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
+  proposedDraft?: string;
 };
 
 export type SessionFileInfo = {
@@ -273,6 +276,45 @@ export type AiSessionView = {
   updatedAt: string;
   turns: SessionTurn[];
   files: SessionFileInfo[];
+  /** On a draft conversation: the page being written. */
+  draft?: DraftState;
+};
+
+/** An existing page that may already say what a new page is meant to. */
+export type SimilarPage = {
+  pageId: string;
+  title: string;
+  spaceKey: string;
+  score: number;
+  /** Where it was found: the synced copy, or Confluence's own search. */
+  source: 'synced' | 'confluence';
+  excerpt?: string;
+  /** The AI's judgement of the overlap, when an AI is set up. */
+  overlap?: 'high' | 'some' | 'low';
+  why?: string;
+};
+
+export type RedundancyDecision = 'update-existing' | 'link' | 'continue';
+
+/** A new page while it is being written, and the check for pages that may already say it (ADR-025). */
+export type DraftState = {
+  title: string;
+  parentId: string;
+  parentTitle?: string;
+  notes: string;
+  markdown: string;
+  redundancy?: {
+    checkedAt: string;
+    similar: SimilarPage[];
+    /** The author's answer. A page is not created until there is one (ADR-025). */
+    decision?: RedundancyDecision;
+    linkedPageIds?: string[];
+    decidedAt?: string;
+    /** Why part of the check could not run, when it could not. */
+    note?: string;
+  };
+  createdPageId?: string;
+  createdUrl?: string;
 };
 
 /** A proposed improvement to a page, and the version of the page it was made from. */

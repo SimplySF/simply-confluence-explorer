@@ -95,3 +95,47 @@ export async function writePage(
   }
   return { pageId: w.pageId, version, dryRun: false };
 }
+
+export type PageCreate = {
+  spaceKey: string;
+  title: string;
+  parentId: string;
+  markdown: string;
+  dryRun: boolean;
+};
+
+/**
+ * Creates a page, or with a dry run checks that Confluence would accept it, without creating
+ * anything. This is the one way a page is created (ADR-025), and its caller has already had the
+ * author answer the check for pages that may already say the same thing. A new page is synced at
+ * once when its space is synced, so it appears in the tree and in searches.
+ *
+ * @param client The Confluence client.
+ * @param store The synced copies.
+ * @param log Where a failed sync of the new page is reported.
+ * @param c The page to create.
+ */
+export async function createPage(
+  client: ConfluenceClient,
+  store: SpaceStore,
+  log: (message: string) => void,
+  c: PageCreate,
+): Promise<{ pageId?: string; webUrl?: string }> {
+  let created;
+  try {
+    created = await client.createPage({ ...c, markdown: stripFrontmatter(c.markdown) });
+  } catch (error) {
+    if (c.dryRun && error instanceof HttpError && error.status === 400)
+      throw new HttpError(400, `The dry run found a problem: ${error.message}`);
+    throw error;
+  }
+  if (!c.dryRun && created.pageId && store.isSynced(c.spaceKey)) {
+    try {
+      store.refreshPage(c.spaceKey, await client.getPageDetail(created.pageId));
+    } catch (error) {
+      // The page exists; only the synced copy lacks it, and the next sync adds it.
+      log(`created page ${created.pageId} but could not sync it: ${errorMessage(error)}`);
+    }
+  }
+  return created;
+}

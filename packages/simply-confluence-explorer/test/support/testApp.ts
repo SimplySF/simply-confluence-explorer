@@ -57,7 +57,8 @@ const echo = (payload: GuardedPayload, n: number): string => {
 
 export async function startTestApp(
   fake: FakeConfluence,
-  reply: (payload: GuardedPayload, n: number) => string = echo,
+  reply: (payload: GuardedPayload, n: number) => string | Promise<string> = echo,
+  env: NodeJS.ProcessEnv = {},
 ): Promise<TestApp> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-app-'));
   fake.writeIgnoreFiles(dataDir);
@@ -70,6 +71,7 @@ export async function startTestApp(
       CONFLUENCE_PERSONAL_TOKEN: FAKE_TOKEN,
       ANTHROPIC_API_KEY: 'k',
       AI_PROVIDER: 'anthropic',
+      ...env,
     },
     aiTransport: (payload) => {
       sent.push(payload);

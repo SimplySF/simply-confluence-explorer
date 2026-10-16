@@ -39,7 +39,7 @@ async function withApp(
   reply: (payload: GuardedPayload, n: number) => string | Promise<string>,
   run: (app: TestApp) => Promise<void>,
 ): Promise<void> {
-  const app = await startTestApp(fake, reply as (payload: GuardedPayload, n: number) => string);
+  const app = await startTestApp(fake, reply);
   try {
     await run(app);
   } finally {

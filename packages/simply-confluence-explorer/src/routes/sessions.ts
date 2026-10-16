@@ -125,6 +125,9 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       })
       .add('POST', '/api/ai/sessions/:sessionId/messages', async ({ params, body }) => {
         const session = found(params.sessionId);
+        if (session.scope.kind === 'draft') {
+          throw new HttpError(400, 'a draft is written through /api/drafts/:sessionId/messages');
+        }
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
         const ctx = await contextFor(session, prompt);

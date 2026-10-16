@@ -26,11 +26,13 @@ import { HttpError, Router } from '../http/router.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
 import type { MetadataPipeline } from '../spaces/metadata.js';
+import type { SearchIndex } from '../spaces/searchIndex.js';
 import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
 import { addAiRoutes } from './ai.js';
 import { addBranchRoutes } from './branches.js';
 import { addBrowseRoutes } from './browse.js';
+import { addDraftRoutes } from './drafts.js';
 import { addPageRoutes } from './pages.js';
 import { addSessionRoutes } from './sessions.js';
 import { addSpaceRoutes } from './spaces.js';
@@ -48,6 +50,7 @@ export type Services = {
   sessions: SessionStore;
   metadata: MetadataPipeline;
   branches: BranchRunner;
+  index: SearchIndex;
   /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */
   client: () => ConfluenceClient;
   log: (message: string) => void;
@@ -78,7 +81,15 @@ export function createApi(services: Services): Router {
     .add('GET', '/api/doctor', () =>
       runDoctor(systemDeps(services.dataDir, connection, services.exclusions, services.ai, services.env)),
     );
-  for (const add of [addBrowseRoutes, addSpaceRoutes, addAiRoutes, addSessionRoutes, addPageRoutes, addBranchRoutes])
+  for (const add of [
+    addBrowseRoutes,
+    addSpaceRoutes,
+    addAiRoutes,
+    addSessionRoutes,
+    addPageRoutes,
+    addBranchRoutes,
+    addDraftRoutes,
+  ])
     add(router, services);
   return router;
 }

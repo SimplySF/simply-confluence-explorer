@@ -1,0 +1,87 @@
+/*
+ * Copyright (c) 2026, SimplySF.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// The search over a synced space that finds pages a new page might repeat (ADR-025).
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { PageDetail } from '../src/api/types.js';
+import { ExclusionManager } from '../src/spaces/exclusionManager.js';
+import { SearchIndex, tokens } from '../src/spaces/searchIndex.js';
+import { SpaceStore } from '../src/spaces/spaceStore.js';
+
+const page = (id: string, title: string, body: string, version = 1): PageDetail => ({
+  id,
+  title,
+  spaceKey: 'PLAT',
+  version,
+  author: 'admin',
+  lastModified: '2026-01-01T00:00:00Z',
+  storageXml: `<p>${body}</p>`,
+  labels: [],
+  attachments: [],
+  ancestors: [],
+});
+
+function setup(): { store: SpaceStore; index: SearchIndex; dataDir: string } {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-search-'));
+  const log = (): void => undefined;
+  const store = new SpaceStore(dataDir, new ExclusionManager(dataDir, log), log);
+  const write = (p: PageDetail): void => store.writePage('PLAT', p, p.storageXml, []);
+  write(page('1', 'Database Failover', 'Promote the replica when the primary is lost.'));
+  write(page('2', 'Gateway Service', 'Routes requests. During a database failover the gateway retries.'));
+  write(page('3', 'Production Credentials', 'Where the database passwords are kept.'));
+  return { store, index: new SearchIndex(store), dataDir };
+}
+
+const ids = (index: SearchIndex, query: string): string[] => index.search('PLAT', query).map((h) => h.pageId);
+
+describe('the search index', () => {
+  it('leaves out short and common words', () => {
+    expect(tokens('How to fail over the DB, and promote it')).toEqual(['fail', 'promote']);
+  });
+
+  it('ranks a page whose title matches above one that only mentions the words', () => {
+    const { index } = setup();
+    expect(ids(index, 'database failover').slice(0, 2)).toEqual(['1', '2']);
+  });
+
+  it('finds nothing in a space that is not synced', () => {
+    const { index } = setup();
+    expect(index.search('OPS', 'database')).toEqual([]);
+  });
+
+  it('never returns a page the exclusion rules hide, and follows a change to the rules', () => {
+    const { index, store } = setup();
+    expect(ids(index, 'database passwords')).toContain('3');
+    fs.writeFileSync(path.join(store.spaceDir('PLAT'), '.confluenceignore'), 'Production Credentials\n');
+    store.invalidate('PLAT');
+    expect(ids(index, 'database passwords')).not.toContain('3');
+  });
+
+  it('sees a page rewritten in place, as a push leaves it', () => {
+    const { index, store } = setup();
+    expect(ids(index, 'quorum')).toEqual([]);
+    const file = path.join(store.spaceDir('PLAT'), 'pages_cache', '2.json');
+    const before = fs.statSync(file).mtimeMs;
+    store.refreshPage('PLAT', page('2', 'Gateway Service', 'Routes requests and waits for quorum.', 2));
+    // The rewrite must land on a later file time than the first write for the test to mean anything.
+    fs.utimesSync(file, new Date(), new Date(before + 1000));
+    expect(ids(index, 'quorum')).toEqual(['2']);
+  });
+});

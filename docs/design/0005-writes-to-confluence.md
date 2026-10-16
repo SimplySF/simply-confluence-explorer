@@ -1,6 +1,6 @@
 # 0005 — Writing to Confluence: a push, a branch's review queue, and a new page
 
-**Status:** Planned
+**Status:** Implemented (PR #11)
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-10-15
 

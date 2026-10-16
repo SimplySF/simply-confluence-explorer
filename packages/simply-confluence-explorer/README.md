@@ -5,8 +5,9 @@ A local web app for browsing and exploring Confluence, packaged as a Node.js CLI
 
 > **Status:** the server reads Confluence, keeps a copy of a space on this machine, asks an AI about
 > pages and spaces, improves a page and pushes it, and reviews or improves a page and everything under
-> it through a queue where each page is accepted on its own. Creating pages and the browser
-> interface are not built yet.
+> it through a queue where each page is accepted on its own. It also writes new pages with an AI,
+> after first checking whether existing pages already cover the topic. The browser interface is not
+> built yet.
 
 ## Usage
 
@@ -71,6 +72,12 @@ block the app adds to a page's Markdown is removed before the page is written. A
 only the pages a person accepted, through the same path (`test/branchRuns.test.ts`,
 `test/e2e/branches.e2e.ts`).
 
+Before a new page is drafted, the app searches the space for pages that already say what it will
+say, and nothing is written or created until the author has answered that check: improve an existing
+page instead, link to the pages found, or go ahead. Excluded pages are never offered as a match. A
+title already used in the space is refused with the reason (`test/drafts.test.ts`,
+`test/e2e/drafts.e2e.ts`).
+
 Certificates are always verified. If your Confluence uses a certificate from your company's own
 certificate authority, ask your IT team for that authority's certificate file and start the app with
 `NODE_EXTRA_CA_CERTS` pointing at it:
@@ -115,6 +122,12 @@ NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-expl
 | `GET /api/branches/runs`, `GET /api/branches/runs/:runId` | Branch runs, and one run with its proposals or findings                                                                                         |
 | `PATCH /api/branches/runs/:runId/items/:pageId`           | Accepts (optionally with edits), rejects or resets one page's proposal                                                                          |
 | `POST /api/branches/runs/:runId/check`, `.../push`        | Dry-runs, or writes, every accepted page, one at a time, each against its own base version                                                      |
+| `POST /api/drafts`                                        | Starts a draft of `{ spaceKey, parentId, title, notes }` and checks the space for pages that already cover it                                   |
+| `POST /api/drafts/:sessionId/recheck`                     | Runs the check for similar pages again                                                                                                          |
+| `POST /api/drafts/:sessionId/decision`                    | Answers the check with `update-existing`, `link` (with pages it found) or `continue`                                                            |
+| `POST /api/drafts/:sessionId/messages`                    | Asks the AI to help write the draft; a revision it proposes is kept apart until saved                                                           |
+| `PUT /api/drafts/:sessionId`                              | Saves the draft's Markdown                                                                                                                      |
+| `POST /api/drafts/:sessionId/check`, `.../create`         | Dry-runs, or creates, the page under its parent, once                                                                                           |
 | `GET`/`POST /api/space-cache/:spaceKey/guard`             | Reads or saves the space's `.confluenceguard` rules; a rule that does not parse is refused                                                      |
 | `/api/*`                                                  | Anything else under `/api` is a JSON `404`, never the app shell                                                                                 |
 | everything else                                           | The built frontend, falling back to `index.html` for client-side routes                                                                         |
