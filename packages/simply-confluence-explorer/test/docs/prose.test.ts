@@ -116,7 +116,6 @@ const NOT_YET_MOVED = new Set([
   'ai/sessions.ts',
   'ai/settings.ts',
   'ai/geminiService.ts',
-  'spaces/spaceSyncManager.ts',
 ]);
 
 describe('the documentation', () => {

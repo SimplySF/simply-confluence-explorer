@@ -1006,3 +1006,23 @@ The log is now left out of the count, and the limit is set for what remains:
 **The argument against:** a document that is not counted can grow without anyone noticing. The log
 is held instead by its own rules: one record per decision, a title that states it, and the tests in
 `test/docs/prose.test.ts` that check its numbering, its status lines and every citation of it.
+
+---
+
+## ADR-035 — An exclusion covers everything below the excluded page, whichever rule matched, and a space's ZIP holds only pages that are not excluded
+
+**Status:** accepted, 2026-10-16.
+
+A rule that names a title or a path already excluded everything below the page, because the rules
+compare against each ancestor's title. A rule that names a page by its id (`id:1234`) excluded the
+page alone: the tree hid its children, but a child could still be read by its own id, and a sync
+would write it to disk. An `id:` rule now matches the ids of a page's ancestors as well, so every
+form of rule excludes a whole subtree, which is how the tree has always shown it.
+
+A space's ZIP now holds the Markdown and attachments of the pages that are not excluded, with the
+table of contents and the manifest, instead of the whole synced folder. The rules are applied when
+the ZIP is built, because a rule saved without purging leaves the excluded pages' copies on disk.
+
+**The argument against:** both change what an existing rules file or download does. That is the
+intent: each closes a way for an excluded page to leave the machine, and the tests that hold it are
+in `test/exclusions.test.ts` and `test/localCopy.test.ts`.

@@ -15,7 +15,8 @@
  */
 
 // Reading the real Confluence Data Center test environment through the app: the connection, the
-// doctor, the spaces, every page tree with its exclusions, and the Markdown of real pages.
+// doctor, the spaces, every page tree with its exclusions, and the Markdown of real pages. Trees are
+// asked for live, so a copy another suite synced to disk cannot stand in for Confluence's answer.
 
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -86,7 +87,7 @@ describe.skipIf(!env)(
     for (const [key, space] of Object.entries(spaces)) {
       describe(`space ${key}`, () => {
         it('shows every visible page in the tree, and hides every excluded page and what is below it', async () => {
-          const shown = depths((await get<{ tree: PageTreeNode[] }>(`/spaces/${key}/pages`)).body.tree);
+          const shown = depths((await get<{ tree: PageTreeNode[] }>(`/spaces/${key}/pages?forceLive=true`)).body.tree);
           const hidden = hiddenTitles(space);
           const knownIssue = new Set(space.expectations.knownIssueVisible ?? []);
           for (const title of Object.keys(space.pages)) {
@@ -115,7 +116,7 @@ describe.skipIf(!env)(
     it.todo('shows Unrestricted Access Guide, which the rule Restricted/ should not match');
 
     it('reads the deep PLAT hierarchy, six levels below the homepage', async () => {
-      const shown = depths((await get<{ tree: PageTreeNode[] }>('/spaces/PLAT/pages')).body.tree);
+      const shown = depths((await get<{ tree: PageTreeNode[] }>('/spaces/PLAT/pages?forceLive=true')).body.tree);
       const homeDepth = shown.get(spaces.PLAT.homeTitle) ?? 0;
       expect(spaces.PLAT.pages['VPN Troubleshooting'].depth).toBe(6);
       expect((shown.get('VPN Troubleshooting') ?? 0) - homeDepth).toBe(6);

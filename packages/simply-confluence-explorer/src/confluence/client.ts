@@ -47,6 +47,7 @@ const TREE_CONCURRENCY = 4;
 /** Deeper than any real space; it stops a page that is somehow its own descendant. */
 const MAX_TREE_DEPTH = 25;
 const SPACES_TTL_MS = 5 * 60 * 1000;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 const spacesCache = new Map<string, { at: number; spaces: ConfluenceSpace[] }>();
 
@@ -61,6 +62,7 @@ export class ConfluenceClient {
   private readonly cacheKey: string;
   private readonly library?: LibraryClient;
   private readonly transport?: HttpTransport;
+  private readonly headers: Record<string, string> = {};
   private readonly configError?: string;
 
   public constructor(connection: ConnectionDetails) {
@@ -70,7 +72,8 @@ export class ConfluenceClient {
       // An empty environment, so only the connection given here is used and never the process's.
       const config = resolveConfluenceConfig({ url: connection.baseUrl, personalToken: connection.token }, {});
       this.library = new LibraryClient(config);
-      this.transport = new HttpTransport({ baseUrl: config.url, headers: buildAuthHeaders(config) });
+      this.headers = buildAuthHeaders(config);
+      this.transport = new HttpTransport({ baseUrl: config.url, headers: this.headers });
     } catch (error) {
       // Reported on first use, so a missing connection is a clear 400 rather than a crash at startup.
       this.configError = errorMessage(error);
@@ -153,6 +156,21 @@ export class ConfluenceClient {
       expand: 'ancestors,version',
     });
     return assembleTree(pages.map((p) => this.toNode(p, spaceKey, p.ancestors?.at(-1)?.id)));
+  }
+
+  /**
+   * Downloads an attachment. The address must be on the configured Confluence, so the token is
+   * never sent anywhere else (ADR-019), even if a page's data named another server.
+   */
+  public async downloadAttachment(url: string): Promise<Buffer> {
+    if (!this.transport) throw new HttpError(400, this.notConfigured());
+    if (!url.startsWith(`${this.baseUrl}/`))
+      throw new HttpError(400, `refusing to download from outside ${this.baseUrl}`);
+    const res = await call(() =>
+      fetch(url, { headers: this.headers, signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) }),
+    );
+    if (!res.ok) throw new HttpError(502, `downloading ${url} failed with status ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
   }
 
   /** The Data Center license, which only administrators may read; `null` for anyone else. */

@@ -130,7 +130,7 @@ and what is still outstanding. The paths below are relative to `packages/simply-
 | AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                            |
 | AI keys                         | `ai/settings.ts`                                                                                     |
 | External processes              | `ai/geminiService.ts`                                                                                |
-| Deletes files                   | `spaces/spaceSyncManager.ts` (purge)                                                                 |
+| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                       |
 | Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                         |
 | Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                    |
 | The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`  |
