@@ -1,0 +1,761 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`converting the test dataset > converts OPS/AMER Rotation as recorded 1`] = `"AMER schedule."`;
+
+exports[`converting the test dataset > converts OPS/Capacity Planning as recorded 1`] = `
+"See attached CSV.
+
+[image: capacity-chart.png]"
+`;
+
+exports[`converting the test dataset > converts OPS/Database Failover as recorded 1`] = `"OPS view of database failover (duplicate title of a PLAT page)."`;
+
+exports[`converting the test dataset > converts OPS/Deploy Notes as recorded 1`] = `
+"Deployment uses the CI role.
+
+\`\`\`bash
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+\`\`\`"
+`;
+
+exports[`converting the test dataset > converts OPS/EMEA Rotation as recorded 1`] = `"EMEA schedule."`;
+
+exports[`converting the test dataset > converts OPS/Escalation Matrix as recorded 1`] = `
+"| Severity | Response | Escalate after |
+| --- | --- | --- |
+| SEV1 | 5 min | 15 min |
+| SEV2 | 30 min | 2 h |
+| SEV3 | Next day | - |"
+`;
+
+exports[`converting the test dataset > converts OPS/On-Call Handbook as recorded 1`] = `
+"Escalate per [Incident Response].
+
+| Week | Primary | Secondary |
+| --- | --- | --- |
+| 41 | Alice | Bob |
+| 42 | Carol | Dan |
+| 43 | Erin | Frank |"
+`;
+
+exports[`converting the test dataset > converts OPS/Operations Home as recorded 1`] = `
+"Operations home.
+
+> [macro: children]"
+`;
+
+exports[`converting the test dataset > converts OPS/Q&A / FAQ: Ünïcödé — “Quotes” & Symbols as recorded 1`] = `"Special characters: <tag> & ampersand, emoji 🚀, CJK 漢字."`;
+
+exports[`converting the test dataset > converts OPS/Service Level Objectives as recorded 1`] = `
+"| Service | SLO | Current |
+| --- | --- | --- |
+| Gateway | 99.95% | 99.97% |
+| Billing | 99.9% | 99.85% |
+
+## Nested table
+
+| Region | Detail |
+| --- | --- |
+| EU | ZoneUptimeeu-199.99%eu-299.90% |"
+`;
+
+exports[`converting the test dataset > converts OPS/Team Contacts as recorded 1`] = `
+"| Role | Name | Contact |
+| --- | --- | --- |
+| On-call lead | Sam Rivera | sam.rivera@example.com |
+| Escalation | Ana Ortiz | +1 415-555-0132 |"
+`;
+
+exports[`converting the test dataset > converts OPS/Very Long Page as recorded 1`] = `
+"## Section 1
+
+Paragraph 1: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 2
+
+Paragraph 2: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 3
+
+Paragraph 3: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 4
+
+Paragraph 4: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 5
+
+Paragraph 5: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 6
+
+Paragraph 6: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 7
+
+Paragraph 7: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 8
+
+Paragraph 8: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 9
+
+Paragraph 9: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 10
+
+Paragraph 10: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 11
+
+Paragraph 11: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 12
+
+Paragraph 12: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 13
+
+Paragraph 13: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 14
+
+Paragraph 14: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 15
+
+Paragraph 15: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 16
+
+Paragraph 16: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 17
+
+Paragraph 17: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 18
+
+Paragraph 18: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 19
+
+Paragraph 19: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 20
+
+Paragraph 20: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 21
+
+Paragraph 21: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 22
+
+Paragraph 22: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 23
+
+Paragraph 23: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 24
+
+Paragraph 24: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 25
+
+Paragraph 25: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 26
+
+Paragraph 26: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 27
+
+Paragraph 27: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 28
+
+Paragraph 28: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 29
+
+Paragraph 29: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 30
+
+Paragraph 30: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 31
+
+Paragraph 31: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 32
+
+Paragraph 32: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 33
+
+Paragraph 33: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 34
+
+Paragraph 34: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 35
+
+Paragraph 35: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 36
+
+Paragraph 36: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 37
+
+Paragraph 37: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 38
+
+Paragraph 38: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 39
+
+Paragraph 39: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+## Section 40
+
+Paragraph 40: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+`;
+
+exports[`converting the test dataset > converts PEOPLE/Benefits Overview as recorded 1`] = `"Health, dental, vision."`;
+
+exports[`converting the test dataset > converts PEOPLE/Candidate Feedback as recorded 1`] = `"Fake candidate notes."`;
+
+exports[`converting the test dataset > converts PEOPLE/Internal as recorded 1`] = `"Excluded by the Interviews/Internal/ path rule."`;
+
+exports[`converting the test dataset > converts PEOPLE/Interview Guide as recorded 1`] = `"Visible guide for interviewers."`;
+
+exports[`converting the test dataset > converts PEOPLE/Interviews as recorded 1`] = `"Interview process overview. Visible."`;
+
+exports[`converting the test dataset > converts PEOPLE/People and HR Home as recorded 1`] = `"People team home."`;
+
+exports[`converting the test dataset > converts PEOPLE/Policies as recorded 1`] = `"> [macro: children]"`;
+
+exports[`converting the test dataset > converts PEOPLE/Remote Work Policy as recorded 1`] = `"Up to 5 days remote per week."`;
+
+exports[`converting the test dataset > converts PEOPLE/Salary Bands as recorded 1`] = `
+"| Level | Band |
+| --- | --- |
+| L1 | fake-range-a |
+| L2 | fake-range-b |"
+`;
+
+exports[`converting the test dataset > converts PEOPLE/Travel Policy as recorded 1`] = `
+"| Class | Allowed |
+| --- | --- |
+| Economy | Yes |
+| Business | Flights over 6h |"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-001: Use PostgreSQL as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on use postgresql.
+
+## Decision
+
+We chose option A.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-002: Adopt Kubernetes as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on adopt kubernetes.
+
+## Decision
+
+We chose option B.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-003: Event Bus Selection as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on event bus selection.
+
+## Decision
+
+We chose option C.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-004: GraphQL Gateway as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on graphql gateway.
+
+## Decision
+
+We chose option B.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-005: Monorepo Layout as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on monorepo layout.
+
+## Decision
+
+We chose option A.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-006: Feature Flags as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on feature flags.
+
+## Decision
+
+We chose option C.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-007: Observability Stack as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on observability stack.
+
+## Decision
+
+We chose option A.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/ADR-008: Secrets Management as recorded 1`] = `
+"Status: [status]
+
+## Context
+
+Why we needed to decide on secrets management.
+
+## Decision
+
+We chose option B.
+
+## Consequences
+
+- Positive outcome
+- Trade-off accepted"
+`;
+
+exports[`converting the test dataset > converts PLAT/Access Requests as recorded 1`] = `
+"- [ ] GitLab
+- [ ] Vault
+- [ ] VPN"
+`;
+
+exports[`converting the test dataset > converts PLAT/Architecture Decision Records as recorded 1`] = `"> [macro: children]"`;
+
+exports[`converting the test dataset > converts PLAT/Architecture Overview as recorded 1`] = `
+"# Architecture Overview
+
+Maintained by [link]. This page exercises **every common macro**.
+
+> **info**
+> Info panels become alerts.
+
+> **warning**
+> Do not deploy on Fridays.
+
+> **note**
+> A note panel without a title.
+
+> **tip**
+> Use the service catalog.
+
+> **panel**
+> Generic panel body.
+
+## Code
+
+\`\`\`typescript
+import express from 'express';
+const app = express();
+app.listen(3000);
+\`\`\`
+
+\`\`\`python
+def handler(event):
+    return {"ok": True}
+\`\`\`
+
+\`\`\`sql
+SELECT id, title FROM pages WHERE space = 'PLAT';
+\`\`\`
+
+> [macro: noformat]
+> raw   preformatted
+>   text block
+
+## Status
+
+Gateway [status] Legacy [status] Search [status]
+
+## Components
+
+| Component | Owner | Language |
+| --- | --- | --- |
+| API Gateway | Platform | Go |
+| Billing | Payments | Java |
+| Web UI | Frontend | TypeScript |
+
+> [macro: expand]
+> Legacy monolith retired in 2024.
+> 
+> - Item one
+> - Item two
+
+> [macro: excerpt]
+> Platform architecture in one sentence.
+
+> [macro: jira]
+
+## Diagram
+
+[image: architecture-diagram.png]
+
+Related: [Gateway Service] and [On-Call Handbook]."
+`;
+
+exports[`converting the test dataset > converts PLAT/Auth API Reference as recorded 1`] = `
+"## Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /v2/auth | List |
+| POST | /v2/auth | Create |
+| DELETE | /v2/auth/{id} | Remove |
+
+\`\`\`bash
+curl -H "Authorization: Bearer $TOKEN" https://api.example.test/v2/auth
+\`\`\`"
+`;
+
+exports[`converting the test dataset > converts PLAT/Auth Changelog as recorded 1`] = `
+"## v2.1.0
+
+- Added pagination
+
+## v2.0.0
+
+- Breaking: renamed fields"
+`;
+
+exports[`converting the test dataset > converts PLAT/Auth Runbook as recorded 1`] = `
+"> **warning**
+> Page the owning team before restarting.
+
+1. Check dashboards
+2. Drain traffic
+3. Restart pods"
+`;
+
+exports[`converting the test dataset > converts PLAT/Auth Service as recorded 1`] = `
+"The Auth service is owned by Identity.
+
+| Field | Value |
+| --- | --- |
+| Language | Kotlin |
+| Tier | 1 |
+| Status | [status] |"
+`;
+
+exports[`converting the test dataset > converts PLAT/Billing API Reference as recorded 1`] = `
+"## Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /v2/billing | List |
+| POST | /v2/billing | Create |
+| DELETE | /v2/billing/{id} | Remove |
+
+\`\`\`bash
+curl -H "Authorization: Bearer $TOKEN" https://api.example.test/v2/billing
+\`\`\`"
+`;
+
+exports[`converting the test dataset > converts PLAT/Billing Changelog as recorded 1`] = `
+"## v2.1.0
+
+- Added pagination
+
+## v2.0.0
+
+- Breaking: renamed fields"
+`;
+
+exports[`converting the test dataset > converts PLAT/Billing Runbook as recorded 1`] = `
+"> **warning**
+> Page the owning team before restarting.
+
+1. Check dashboards
+2. Drain traffic
+3. Restart pods"
+`;
+
+exports[`converting the test dataset > converts PLAT/Billing Service as recorded 1`] = `
+"The Billing service is owned by Payments.
+
+| Field | Value |
+| --- | --- |
+| Language | Java |
+| Tier | 1 |
+| Status | [status] |"
+`;
+
+exports[`converting the test dataset > converts PLAT/Database Backups as recorded 1`] = `"Nightly backups with 30-day retention."`;
+
+exports[`converting the test dataset > converts PLAT/Database Failover as recorded 1`] = `
+"Steps to fail over the primary database.
+
+1. Page the DBA.
+2. Promote the replica.
+3. Update DNS.
+
+\`\`\`bash
+pg_ctl promote -D /var/lib/postgresql/data
+\`\`\`
+
+See also [Architecture Overview]."
+`;
+
+exports[`converting the test dataset > converts PLAT/Gateway API Reference as recorded 1`] = `
+"## Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /v2/gateway | List |
+| POST | /v2/gateway | Create |
+| DELETE | /v2/gateway/{id} | Remove |
+
+\`\`\`bash
+curl -H "Authorization: Bearer $TOKEN" https://api.example.test/v2/gateway
+\`\`\`"
+`;
+
+exports[`converting the test dataset > converts PLAT/Gateway Changelog as recorded 1`] = `
+"## v2.1.0
+
+- Added pagination
+
+## v2.0.0
+
+- Breaking: renamed fields"
+`;
+
+exports[`converting the test dataset > converts PLAT/Gateway Runbook as recorded 1`] = `
+"> **warning**
+> Page the owning team before restarting.
+
+1. Check dashboards
+2. Drain traffic
+3. Restart pods"
+`;
+
+exports[`converting the test dataset > converts PLAT/Gateway Service as recorded 1`] = `
+"The Gateway service is owned by Platform.
+
+| Field | Value |
+| --- | --- |
+| Language | Go |
+| Tier | 1 |
+| Status | [status] |"
+`;
+
+exports[`converting the test dataset > converts PLAT/INC-1001: Gateway latency spike as recorded 1`] = `
+"> [macro: toc]
+
+## Summary
+
+Gateway latency spike. Severity [status].
+
+## Timeline
+
+| Time (UTC) | Event |
+| --- | --- |
+| 09:00 | Alert fired |
+| 09:07 | Incident declared |
+| 10:15 | Mitigated |
+
+## Action items
+
+- [x] Add alerting
+- [ ] Write regression test"
+`;
+
+exports[`converting the test dataset > converts PLAT/INC-1002: Billing double charge as recorded 1`] = `
+"> [macro: toc]
+
+## Summary
+
+Billing double charge. Severity [status].
+
+## Timeline
+
+| Time (UTC) | Event |
+| --- | --- |
+| 09:00 | Alert fired |
+| 09:07 | Incident declared |
+| 10:15 | Mitigated |
+
+## Action items
+
+- [x] Add alerting
+- [ ] Write regression test"
+`;
+
+exports[`converting the test dataset > converts PLAT/INC-1003: Auth token outage as recorded 1`] = `
+"> [macro: toc]
+
+## Summary
+
+Auth token outage. Severity [status].
+
+## Timeline
+
+| Time (UTC) | Event |
+| --- | --- |
+| 09:00 | Alert fired |
+| 09:07 | Incident declared |
+| 10:15 | Mitigated |
+
+## Action items
+
+- [x] Add alerting
+- [ ] Write regression test"
+`;
+
+exports[`converting the test dataset > converts PLAT/INC-1004: Search index lag as recorded 1`] = `
+"> [macro: toc]
+
+## Summary
+
+Search index lag. Severity [status].
+
+## Timeline
+
+| Time (UTC) | Event |
+| --- | --- |
+| 09:00 | Alert fired |
+| 09:07 | Incident declared |
+| 10:15 | Mitigated |
+
+## Action items
+
+- [x] Add alerting
+- [ ] Write regression test"
+`;
+
+exports[`converting the test dataset > converts PLAT/Incident Response as recorded 1`] = `
+"> **panel**
+> - SEV1 - outage
+> - SEV2 - degraded
+> - SEV3 - minor"
+`;
+
+exports[`converting the test dataset > converts PLAT/Onboarding Day 1 as recorded 1`] = `"Laptop, badges, accounts."`;
+
+exports[`converting the test dataset > converts PLAT/Onboarding as recorded 1`] = `"Start here."`;
+
+exports[`converting the test dataset > converts PLAT/Pen Test Findings as recorded 1`] = `"Fake finding details."`;
+
+exports[`converting the test dataset > converts PLAT/Platform Engineering Home as recorded 1`] = `
+"Welcome to Platform Engineering.
+
+> [macro: children]"
+`;
+
+exports[`converting the test dataset > converts PLAT/Postmortem Template as recorded 1`] = `
+"> [macro: toc]
+
+## Summary
+
+## Timeline
+
+## Action items"
+`;
+
+exports[`converting the test dataset > converts PLAT/Production Credentials as recorded 1`] = `"db_password = not-a-real-password"`;
+
+exports[`converting the test dataset > converts PLAT/Restore Drill as recorded 1`] = `
+"- [x] Restore to staging
+- [ ] Verify row counts"
+`;
+
+exports[`converting the test dataset > converts PLAT/Restricted as recorded 1`] = `
+"> **warning**
+> Everything below is excluded by .confluenceignore (subtree rule)."
+`;
+
+exports[`converting the test dataset > converts PLAT/Security Audit 2026 as recorded 1`] = `"Findings are confidential."`;
+
+exports[`converting the test dataset > converts PLAT/Unrestricted Access Guide as recorded 1`] = `"Public guide. Must stay visible: canary for substring matching of the "Restricted/" ignore rule."`;
+
+exports[`converting the test dataset > converts PLAT/VPN Setup as recorded 1`] = `
+"\`\`\`bash
+sudo openvpn --config corp.ovpn
+\`\`\`"
+`;
+
+exports[`converting the test dataset > converts PLAT/VPN Troubleshooting as recorded 1`] = `
+"> **tip**
+> Restart the client first."
+`;
+
+exports[`converting the test dataset > converts PLAT/Vendor Contracts (Sensitive) as recorded 1`] = `"Excluded by the *Sensitive* title glob."`;

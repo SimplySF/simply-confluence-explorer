@@ -32,7 +32,7 @@ These are the paths inside the data directory:
 
 | path                      | what it holds                                                                                              |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `config/connection.json`  | The Confluence URL, the token, and whether to accept a self-signed certificate (ADR-019).                  |
+| `config/connection.json`  | The Confluence URL and the token (ADR-019).                                                                |
 | `config/ai-settings.json` | The chosen AI provider and its keys (ADR-017).                                                             |
 | `spaces/<KEY>/`           | One space's synced pages, its `.confluenceignore` and `.confluenceguard` rules, and its table of contents. |
 | `data/sessions/`          | AI conversations and the files uploaded to them (ADR-023).                                                 |

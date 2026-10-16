@@ -26,7 +26,14 @@
     "reset:install": "node scripts/reset.mjs --install",
     "standard": "node scripts/standard.mjs",
     "test": "lerna run test",
-    "test:only": "lerna run test:only"
+    "test:e2e": "pnpm --filter @simplysf/simply-confluence-explorer run test:e2e",
+    "test:only": "lerna run test:only",
+    "testenv:down": "node test-env/testenv.mjs down",
+    "testenv:logs": "node test-env/testenv.mjs logs",
+    "testenv:reset": "node test-env/testenv.mjs reset",
+    "testenv:seed": "node test-env/testenv.mjs seed",
+    "testenv:start": "node test-env/testenv.mjs start",
+    "testenv:status": "node test-env/testenv.mjs status"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",

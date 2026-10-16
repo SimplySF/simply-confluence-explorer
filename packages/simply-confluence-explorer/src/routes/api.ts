@@ -19,7 +19,9 @@ import type { ConnectionStore } from '../confluence/connection.js';
 import { runDoctor } from '../doctor/checks.js';
 import { systemDeps } from '../doctor/system.js';
 import { HttpError, Router } from '../http/router.js';
+import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { errorMessage } from '../util/errors.js';
+import { addBrowseRoutes } from './browse.js';
 
 /** The long-lived parts of the app that routes share. One of each exists per server. */
 export type Services = {
@@ -27,6 +29,7 @@ export type Services = {
   dataDir: string;
   env: NodeJS.ProcessEnv;
   connection: ConnectionStore;
+  exclusions: ExclusionManager;
   log: (message: string) => void;
 };
 
@@ -41,7 +44,7 @@ export type HealthResponse = {
  */
 export function createApi(services: Services): Router {
   const { connection } = services;
-  return new Router(services.log)
+  const router = new Router(services.log)
     .add('GET', '/api/health', (): HealthResponse => ({ status: 'ok', version: services.version }))
     .add('GET', '/api/connection', () => connection.publicView())
     .add('PUT', '/api/connection', ({ body }) => {
@@ -52,7 +55,10 @@ export function createApi(services: Services): Router {
       }
       return connection.publicView();
     })
-    .add('GET', '/api/doctor', () => runDoctor(systemDeps(services.dataDir, connection, services.env)));
+    .add('GET', '/api/doctor', () =>
+      runDoctor(systemDeps(services.dataDir, connection, services.exclusions, services.env)),
+    );
+  return addBrowseRoutes(router, services);
 }
 
 function connectionUpdate(body: unknown): ConnectionUpdate {

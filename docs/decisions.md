@@ -945,3 +945,42 @@ most people than ticking a box, and some will now be unable to connect until the
 That is true, and it is the cost of never sending the token over a connection that anyone in the
 middle could read. The doctor's message and the README say what to do, and the person's IT
 department will usually have the file, because their browsers already need it.
+
+---
+
+## ADR-033 — Pages are converted by simply-atlassian-core even though it still loses five things, which are tracked as failing tests and fixed in the library instead of worked around here
+
+**Status:** accepted, 2026-10-16.
+
+ADR-028 promised a comparison before the library's Markdown converter replaced the app's own. Every
+page with a body in the test dataset (65 pages) was converted both ways, and the results were
+compared word by word.
+
+The library loses five things that the app's turndown-based converter kept:
+
+- the text of a status lozenge, such as an incident's severity (`SEV2`) or a service's `LIVE`;
+- the title of an info, warning, note or tip panel;
+- the title of an expand section;
+- the name in a user mention, which becomes `[link]`;
+- the separation between the cells of a nested table, whose text runs together.
+
+It is better at four things: task lists keep each task and whether it is done, preformatted text
+keeps its spacing, a macro it cannot convert is marked instead of dropped, and underscores are not
+over-escaped.
+
+The maintainer chose to use the library's converter now and to fix the five losses in the library
+itself, rather than keeping the old converter or working around the library in this app. Each loss
+is a test in `test/converter.test.ts` marked as expected to fail. When a library release fixes one,
+its assertion starts to hold, the expected failure stops happening, and Vitest reports the test as
+failed until the mark comes off. A fix therefore cannot arrive unnoticed. Every page's converted
+Markdown is also kept as a snapshot, so any change in the library's output shows up as a diff to
+review.
+
+**Declined: a pre-pass in this app** that rewrites the affected macros before the library sees them.
+It would fix the losses sooner, but it is XML handling done with regular expressions, owned here and
+deleted later.
+
+**The argument against:** the north star says the model must see what Confluence says, and until
+the library is fixed it will not see a page's status lozenges or panel titles. That is true. It is
+acceptable because nothing reaches a model before the AI features land in a later pull request, and
+the fix belongs where every user of the library gets it.

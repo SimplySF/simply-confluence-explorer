@@ -16,7 +16,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { ConfluenceClient } from '../confluence/client.js';
 import type { ConnectionStore } from '../confluence/connection.js';
+import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { DoctorDeps } from './checks.js';
 
 // A directory that does not exist yet is fine, as long as it can be created.
@@ -36,16 +38,47 @@ function writable(dir: string): boolean {
   }
 }
 
+function ignoreFiles(dataDir: string, exclusions: ExclusionManager): DoctorDeps['ignoreFiles'] {
+  const spacesDir = path.join(dataDir, 'spaces');
+  if (!fs.existsSync(spacesDir)) return [];
+  return fs
+    .readdirSync(spacesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(exclusions.ignoreFilePath(entry.name)))
+    .map((entry) => {
+      try {
+        fs.accessSync(exclusions.ignoreFilePath(entry.name), fs.constants.R_OK);
+        return { spaceKey: entry.name, readable: true, patterns: exclusions.patterns(entry.name) };
+      } catch {
+        // Unreadable: the ignore-files check reports it, with the fix.
+        return { spaceKey: entry.name, readable: false, patterns: [] };
+      }
+    });
+}
+
 /**
- * Reads what the doctor's checks need from this machine.
+ * Reads what the doctor's checks need from this machine and from Confluence.
  */
-export function systemDeps(dataDir: string, connection: ConnectionStore, env: NodeJS.ProcessEnv): DoctorDeps {
+export function systemDeps(
+  dataDir: string,
+  connection: ConnectionStore,
+  exclusions: ExclusionManager,
+  env: NodeJS.ProcessEnv,
+): DoctorDeps {
   const { baseUrl, token } = connection.resolve();
+  const client = new ConfluenceClient({ baseUrl, token });
   return {
     nodeVersion: process.version,
     platform: process.platform,
     connection: { baseUrl, token },
     dataDir: { path: dataDir, writable: writable(dataDir) },
     extraCaCerts: env.NODE_EXTRA_CA_CERTS,
+    profile: env.CONFLUENCE_EXPLORER_PROFILE ?? '',
+    verify: async (): Promise<{ success: boolean; displayName?: string; error?: string }> => {
+      const answer = await client.verify();
+      return { success: answer.success, displayName: answer.user?.displayName, error: answer.error };
+    },
+    ignoreFiles: ignoreFiles(dataDir, exclusions),
+    license: () => client.getLicenseDetails(),
+    now: Date.now(),
   };
 }

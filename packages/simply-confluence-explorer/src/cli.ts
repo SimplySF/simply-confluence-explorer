@@ -24,6 +24,7 @@ import { ConnectionStore } from './confluence/connection.js';
 import { renderDoctor, runDoctor } from './doctor/checks.js';
 import { systemDeps } from './doctor/system.js';
 import { createServer, type ServerOptions } from './server.js';
+import { ExclusionManager } from './spaces/exclusionManager.js';
 import { DATA_DIR_ENV, resolveDataDir } from './util/dataDir.js';
 
 export const DEFAULT_HOST = '127.0.0.1';
@@ -81,7 +82,8 @@ export async function main(options: MainOptions = {}): Promise<http.Server | und
   const env = withEnvFile(options.env ?? process.env, dataDir);
 
   if (positionals[0] === 'doctor') {
-    const report = runDoctor(systemDeps(dataDir, new ConnectionStore(dataDir, env), env));
+    const exclusions = new ExclusionManager(dataDir, log);
+    const report = await runDoctor(systemDeps(dataDir, new ConnectionStore(dataDir, env), exclusions, env));
     log(values.json ? JSON.stringify(report, null, 2) : renderDoctor(report));
     if (!report.ok) throw new Error('The doctor found a problem; see the fixes above.');
     return undefined;

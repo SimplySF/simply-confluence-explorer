@@ -206,8 +206,8 @@ is written down so that an agent recognises the urge before acting on it.
 This section lists the checks this file mentions that nothing in the repository enforces yet. Each
 item is removed in the commit that adds the command enforcing it.
 
-- `pnpm run test:e2e`, `pnpm run testenv:start`, the `test-env/` directory, and the end-to-end CI
-  job.
+- The end-to-end CI job. The end-to-end suite and its test environment exist, but no workflow runs
+  them yet, so they are checked only when someone runs them by hand.
 - The load-bearing modules in the table above that have not moved into this package yet.
   `test/docs/prose.test.ts` keeps a list of them and fails when one of them lands, so that the list
   is pruned as the move goes on.

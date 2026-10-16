@@ -20,82 +20,133 @@
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, renderDoctor, runDoctor, type DoctorDeps } from '../src/doctor/checks.js';
 
+const HOUR = 3_600_000;
+
 const healthy = (over: Partial<DoctorDeps> = {}): DoctorDeps => ({
   nodeVersion: 'v22.13.0',
   platform: 'linux',
   connection: { baseUrl: 'https://confluence.example.com', token: 'pat' },
   dataDir: { path: '/data', writable: true },
+  profile: '',
+  verify: () => Promise.resolve({ success: true, displayName: 'Test Admin' }),
+  ignoreFiles: [{ spaceKey: 'PLAT', readable: true, patterns: ['Restricted/', 'id:1001'] }],
+  license: () => Promise.resolve({ expired: false, expiryDate: 2 * HOUR }),
+  now: 0,
   ...over,
 });
 
-const find = (deps: DoctorDeps, id: string): { level: string; summary: string; fix?: string } =>
-  runDoctor(deps).results.find((r) => r.id === id)!;
+const find = async (deps: DoctorDeps, id: string): Promise<{ level: string; summary: string; fix?: string }> =>
+  (await runDoctor(deps)).results.find((r) => r.id === id)!;
 
 describe('the doctor', () => {
-  it('runs exactly the declared checks', () => {
-    expect(runDoctor(healthy()).results.map((r) => r.id)).toEqual([...CHECK_IDS]);
+  it('runs exactly the declared checks', async () => {
+    expect((await runDoctor(healthy())).results.map((r) => r.id)).toEqual([...CHECK_IDS]);
   });
 
-  it('passes a healthy setup', () => {
-    const report = runDoctor(healthy());
+  it('passes a healthy setup', async () => {
+    const report = await runDoctor(healthy());
     expect(report.ok).toBe(true);
-    for (const r of report.results) expect(r.level, `${r.id}: ${r.summary}`).toBe('ok');
+    for (const r of report.results) expect(['ok', 'skip'], `${r.id}: ${r.summary}`).toContain(r.level);
   });
 
-  it('gives a fix with every warning and failure', () => {
-    const report = runDoctor(
+  it('gives a fix with every warning and failure', async () => {
+    const report = await runDoctor(
       healthy({
         nodeVersion: 'v20.0.0',
-        connection: { baseUrl: 'http://wiki.example.com', token: '' },
+        connection: { baseUrl: 'http://wiki.example.com', token: 'pat' },
         dataDir: { path: '/data', writable: false },
+        verify: () => Promise.resolve({ success: false, error: '401' }),
+        ignoreFiles: [
+          { spaceKey: 'HR', readable: false, patterns: [] },
+          { spaceKey: 'OPS', readable: true, patterns: ['1234'] },
+        ],
       }),
     );
     const flagged = report.results.filter((r) => r.level === 'warn' || r.level === 'fail');
-    expect(flagged.length).toBeGreaterThanOrEqual(3);
+    expect(flagged.length).toBeGreaterThanOrEqual(6);
     for (const r of flagged) expect(r.fix?.length, `${r.id} has no fix`).toBeGreaterThan(5);
   });
 
-  it('fails only on a failure, so warnings alone still let the app start', () => {
-    expect(runDoctor(healthy({ connection: { baseUrl: '', token: '' } })).ok).toBe(true);
-    expect(runDoctor(healthy({ dataDir: { path: '/data', writable: false } })).ok).toBe(false);
+  it('fails only on a failure, so warnings alone still let the app start', async () => {
+    expect((await runDoctor(healthy({ connection: { baseUrl: '', token: '' } }))).ok).toBe(true);
+    expect((await runDoctor(healthy({ dataDir: { path: '/data', writable: false } }))).ok).toBe(false);
   });
 
-  it('treats an unconfigured app as a warning and skips what needs a Confluence', () => {
-    const deps = healthy({ connection: { baseUrl: '', token: '' } });
-    expect(find(deps, 'confluence-config').level).toBe('warn');
-    expect(find(deps, 'server-type').level).toBe('skip');
-    expect(find(deps, 'tls-verification').level).toBe('skip');
+  it('treats an unconfigured app as a warning and asks nothing of a Confluence', async () => {
+    let asked = false;
+    const deps = healthy({
+      connection: { baseUrl: '', token: '' },
+      verify: () => ((asked = true), Promise.resolve({ success: true })),
+    });
+    expect((await find(deps, 'confluence-config')).level).toBe('warn');
+    expect((await find(deps, 'server-type')).level).toBe('skip');
+    expect((await find(deps, 'confluence-auth')).level).toBe('skip');
+    expect((await find(deps, 'tls-verification')).level).toBe('skip');
+    expect(asked).toBe(false);
   });
 
-  it('refuses Atlassian Cloud, which the app does not support (ADR-002)', () => {
-    expect(
-      find(healthy({ connection: { baseUrl: 'https://acme.atlassian.net', token: 't' } }), 'server-type').level,
-    ).toBe('fail');
+  it('refuses Atlassian Cloud before any request is made, because the app does not support it (ADR-002)', async () => {
+    const deps = healthy({ connection: { baseUrl: 'https://acme.atlassian.net', token: 't' } });
+    expect((await find(deps, 'server-type')).level).toBe('fail');
+    expect((await find(deps, 'confluence-auth')).level).toBe('skip');
   });
 
-  it('warns about plain HTTP to another machine, but not to this one', () => {
-    expect(
-      find(healthy({ connection: { baseUrl: 'http://wiki.example.com', token: 't' } }), 'tls-verification').level,
-    ).toBe('warn');
-    expect(
-      find(healthy({ connection: { baseUrl: 'http://localhost:8090', token: 't' } }), 'tls-verification').level,
-    ).toBe('ok');
+  it('fails a token Confluence rejects, and points at the certificate fix for a certificate error', async () => {
+    const result = await find(
+      healthy({ verify: () => Promise.resolve({ success: false, error: 'certificate' }) }),
+      'confluence-auth',
+    );
+    expect(result.level).toBe('fail');
+    expect(result.fix).toContain('NODE_EXTRA_CA_CERTS');
   });
 
-  it('names the extra certificate authority it trusts, so an internal CA is visible in the report', () => {
-    expect(find(healthy({ extraCaCerts: '/etc/ssl/corp-ca.pem' }), 'tls-verification').summary).toContain(
+  it('fails a .confluenceignore it cannot read, because every page in that space is then excluded', async () => {
+    const result = await find(
+      healthy({ ignoreFiles: [{ spaceKey: 'HR', readable: false, patterns: [] }] }),
+      'ignore-files',
+    );
+    expect(result.level).toBe('fail');
+    expect(result.summary).toContain('every page there is excluded');
+  });
+
+  it('warns about a bare page id rule, which also matches titles containing it (ADR-013)', async () => {
+    const deps = healthy({ ignoreFiles: [{ spaceKey: 'OPS', readable: true, patterns: ['1234'] }] });
+    expect((await find(deps, 'ignore-rules')).level).toBe('warn');
+  });
+
+  it('checks the test license only against the test environment, and warns before it runs out (ADR-004)', async () => {
+    expect((await find(healthy(), 'test-license')).level).toBe('skip');
+    expect((await find(healthy({ profile: 'dev' }), 'test-license')).level).toBe('ok');
+    const soon = healthy({
+      profile: 'dev',
+      license: () => Promise.resolve({ expired: false, expiryDate: 10 * 60_000 }),
+    });
+    expect((await find(soon, 'test-license')).level).toBe('warn');
+    const gone = healthy({ profile: 'dev', license: () => Promise.resolve({ expired: true, expiryDate: 0 }) });
+    expect((await find(gone, 'test-license')).level).toBe('fail');
+  });
+
+  it('warns about plain HTTP to another machine, but not to this one', async () => {
+    const remote = healthy({ connection: { baseUrl: 'http://wiki.example.com', token: 't' } });
+    const local = healthy({ connection: { baseUrl: 'http://localhost:8090', token: 't' } });
+    expect((await find(remote, 'tls-verification')).level).toBe('warn');
+    expect((await find(local, 'tls-verification')).level).toBe('ok');
+  });
+
+  it('names the extra certificate authority it trusts, so an internal CA is visible in the report', async () => {
+    expect((await find(healthy({ extraCaCerts: '/etc/ssl/corp-ca.pem' }), 'tls-verification')).summary).toContain(
       '/etc/ssl/corp-ca.pem',
     );
   });
 
-  it("says on Windows that the token file is protected only by the profile's permissions", () => {
-    expect(find(healthy({ platform: 'win32' }), 'data-dir').summary).toMatch(/Windows profile/);
-    expect(find(healthy(), 'data-dir').summary).toMatch(/readable only by you/);
+  it("says on Windows that the token file is protected only by the profile's permissions", async () => {
+    expect((await find(healthy({ platform: 'win32' }), 'data-dir')).summary).toMatch(/Windows profile/);
+    expect((await find(healthy(), 'data-dir')).summary).toMatch(/readable only by you/);
   });
 
-  it('renders one line per check and a count of each outcome', () => {
-    const text = renderDoctor(runDoctor(healthy({ connection: { baseUrl: '', token: '' } })));
+  it('renders one line per check and a count of each outcome', async () => {
+    const text = renderDoctor(await runDoctor(healthy({ connection: { baseUrl: '', token: '' } })));
     expect(text).toContain('confluence-config');
-    expect(text).toMatch(/\d+ passed, 1 warning\(s\), 0 failure\(s\), 2 not applicable/);
+    expect(text).toMatch(/\d+ passed, 1 warning\(s\), 0 failure\(s\), 4 not applicable/);
   });
 });

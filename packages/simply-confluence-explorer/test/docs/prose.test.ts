@@ -43,6 +43,7 @@ const DOCS = [
   'CONTRIBUTING.md',
   `${pkg}/README.md`,
   `${pkg}/CONTRIBUTING.md`,
+  'test-env/README.md',
   ...markdownIn('docs'),
   'docs/design/README.md',
   ...designDocs,
@@ -109,7 +110,6 @@ const NOT_YET_MOVED = new Set([
   'confluence/pagePush.ts',
   'branches/branchRuns.ts',
   'drafts/drafts.ts',
-  'confluence/client.ts',
   'ai/providers.ts',
   'ai/guard.ts',
   'ai/engine.ts',
@@ -117,7 +117,6 @@ const NOT_YET_MOVED = new Set([
   'ai/settings.ts',
   'ai/geminiService.ts',
   'spaces/spaceSyncManager.ts',
-  'spaces/exclusionManager.ts',
 ]);
 
 describe('the documentation', () => {
