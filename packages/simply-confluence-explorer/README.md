@@ -13,7 +13,7 @@ A local web app for browsing and exploring Confluence, packaged as a Node.js CLI
 ## Usage
 
 ```sh
-npx @simplysf/simply-confluence-explorer
+npx @simplysf/simply-confluence-explorer@beta
 # Confluence Explorer is running at http://127.0.0.1:4280/
 ```
 
@@ -32,7 +32,7 @@ another website sends from your browser, is refused (`test/security.test.ts`).
 ### Checking your setup
 
 ```sh
-npx @simplysf/simply-confluence-explorer doctor
+npx @simplysf/simply-confluence-explorer@beta doctor
 ```
 
 The doctor checks the Node version, the Confluence connection, certificate checking and the data
@@ -84,7 +84,7 @@ certificate authority, ask your IT team for that authority's certificate file an
 `NODE_EXTRA_CA_CERTS` pointing at it:
 
 ```sh
-NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer
+NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer@beta
 ```
 
 ## HTTP routes

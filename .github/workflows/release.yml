@@ -1,0 +1,86 @@
+name: release
+
+# Every merge to main publishes a beta under npm's `beta` tag. A stable release is started by hand,
+# and is published only when scripts/release-gate.mjs finds the review packet for its version
+# answered (ADR-001, ADR-039).
+on:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      stable:
+        description: 'Graduate the current beta to a stable release. Needs an answered docs/review/<version>.md. Leave unticked to only publish versions already tagged in git but missing from npm.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - uses: pnpm/setup@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - run: pnpm run build
+
+      - run: pnpm test
+
+      - name: Version (beta)
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        run: pnpm exec lerna version --conventional-commits --conventional-prerelease --preid beta --create-release github --yes
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      # The version a graduation would produce is computed without committing, tagging or pushing,
+      # then the tree is put back, so the gate can refuse it before anything leaves the runner.
+      - name: Check the review packet (stable)
+        if: github.event_name == 'workflow_dispatch' && inputs.stable && github.ref_name == 'main'
+        run: |
+          pnpm exec lerna version --conventional-commits --conventional-graduate --no-git-tag-version --no-push --yes
+          version=$(node -p "require('./packages/simply-confluence-explorer/package.json').version")
+          git reset --hard HEAD
+          git clean -fd
+          node scripts/release-gate.mjs "$version"
+
+      - name: Version (stable)
+        if: github.event_name == 'workflow_dispatch' && inputs.stable && github.ref_name == 'main'
+        run: pnpm exec lerna version --conventional-commits --conventional-graduate --create-release github --yes
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      # Publishes whatever versions are committed to git but still missing from npm. It runs even when
+      # no version step did, so a run whose tag was pushed but whose publish failed is finished by the
+      # next one. A prerelease goes to the `beta` tag, so it never becomes what a plain install gets.
+      - name: Publish
+        run: pnpm exec lerna publish from-package --pre-dist-tag beta --yes
+        env:
+          NPM_CONFIG_PROVENANCE: true

@@ -9,7 +9,9 @@ browsing and exploring Confluence. It ships as a Node.js package: install it, ru
 > **Status:** every feature in the [design docs](docs/design/README.md) is built, in the server and in
 > the browser: browsing, a local copy of a space, asking an AI, improving and pushing pages, branch
 > review queues, and new pages. The AI features have so far run only against a stand-in for the
-> provider, not with real provider keys. The package has not been released to npm yet.
+> provider, not with real provider keys. Every merge to `main` publishes a beta to npm under the
+> `beta` tag (`.github/workflows/release.yml`). There is no stable release yet: one is published only
+> after a second person has answered its review packet (ADR-039).
 
 **Maintenance:** maintained by the team that uses it against its Confluence, for as long as it does.
 
@@ -22,7 +24,7 @@ browsing and exploring Confluence. It ships as a Node.js package: install it, ru
 ## Usage
 
 ```sh
-npx @simplysf/simply-confluence-explorer
+npx @simplysf/simply-confluence-explorer@beta
 # Confluence Explorer is running at http://127.0.0.1:4280/
 ```
 
