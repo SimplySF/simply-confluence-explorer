@@ -26,6 +26,7 @@ import { createApi } from './routes/api.js';
 import { ConfiguredAi, type Transport } from './ai/engine.js';
 import { SessionStore } from './ai/sessions.js';
 import { AiSettingsStore } from './ai/settings.js';
+import { BranchRunner } from './branches/branchRuns.js';
 import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
 import { MetadataPipeline } from './spaces/metadata.js';
@@ -113,6 +114,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     ai,
     sessions: new SessionStore(dataDir),
     metadata: new MetadataPipeline(store, exclusions, () => ai, log),
+    branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log }),
   });
   const isLocal = localOnly(env);
 
