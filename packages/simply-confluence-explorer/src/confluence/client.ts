@@ -17,6 +17,7 @@
 import {
   AuthError,
   buildAuthHeaders,
+  buildPageCreateBody,
   ConfigError,
   ConfluenceClient as LibraryClient,
   HttpError as LibraryHttpError,
@@ -194,6 +195,84 @@ export class ConfluenceClient {
    */
   public applyUpdate(plan: PageUpdatePlan): Promise<unknown> {
     return call(() => updatePage(this.lib(), plan));
+  }
+
+  /**
+   * Searches one space with Confluence's own search, for pages that are not synced. The words are
+   * reduced to letters, digits and spaces before they go into the query, so nothing typed can change
+   * the query's shape.
+   */
+  public async searchPages(
+    spaceKey: string,
+    words: string[],
+    limit = 8,
+  ): Promise<Array<{ pageId: string; title: string; excerpt: string }>> {
+    const clean = words
+      .map((w) => w.replace(/[^\p{L}\p{N}]+/gu, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    if (clean.length === 0) return [];
+    const terms = clean.map((w) => `text ~ "${w}"`).join(' OR ');
+    const cql = `type = page AND space = "${spaceKey.replace(/[^A-Za-z0-9_~.-]/g, '')}" AND (${terms})`;
+    const data = await this.get<{ results?: Array<{ content?: { id: string; title: string }; excerpt?: string }> }>(
+      '/rest/api/search',
+      {
+        cql,
+        limit: String(limit),
+      },
+    );
+    return (data.results ?? []).flatMap((r) =>
+      r.content?.id
+        ? [
+            {
+              pageId: r.content.id,
+              title: r.content.title,
+              // Search excerpts mark matches with @@@hl@@@ and may carry HTML.
+              excerpt: (r.excerpt ?? '')
+                .replace(/@@@(?:end)?hl@@@/g, '')
+                .replace(/<[^>]+>/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 280),
+            },
+          ]
+        : [],
+    );
+  }
+
+  /**
+   * Creates a page under a parent, or with `dryRun` only builds the request, which converts the
+   * Markdown and so refuses anything Confluence would not accept. A title already used in the space
+   * is answered with a 409 that says so, because Confluence allows one page per title in a space.
+   */
+  public async createPage(input: {
+    spaceKey: string;
+    title: string;
+    parentId: string;
+    markdown: string;
+    dryRun: boolean;
+  }): Promise<{ pageId?: string; webUrl?: string }> {
+    const body = await call(() =>
+      Promise.resolve(
+        buildPageCreateBody(
+          { space: input.spaceKey, title: input.title, parent: input.parentId, markdown: input.markdown },
+          this.baseUrl,
+        ),
+      ),
+    );
+    if (input.dryRun) return {};
+    try {
+      const created = (await call(() => this.lib().createContent(body))) as RestContent;
+      return { pageId: created.id, webUrl: this.link(linksOf(created).webui) };
+    } catch (error) {
+      if (error instanceof HttpError && /already exists|same title/i.test(error.message)) {
+        throw new HttpError(
+          409,
+          `A page titled "${input.title}" already exists in ${input.spaceKey}. Choose another title, or improve that page instead.`,
+        );
+      }
+      throw error;
+    }
   }
 
   /** The Data Center license, which only administrators may read; `null` for anyone else. */

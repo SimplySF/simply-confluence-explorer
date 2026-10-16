@@ -103,11 +103,6 @@ function walk(dir: string): string[] {
   });
 }
 
-// Load-bearing modules that a later change will move into this package. The list is closed in both
-// directions: a path listed here that already exists fails the test, so the list shrinks as each
-// module lands, and a missing path that is not listed here fails too.
-const NOT_YET_MOVED = new Set(['drafts/drafts.ts']);
-
 describe('the documentation', () => {
   it('names only pnpm scripts that exist, or says they are not armed yet', () => {
     const scripts = new Set([...scriptsOf('package.json'), ...scriptsOf(`${pkg}/package.json`)]);
@@ -149,17 +144,15 @@ describe('the documentation', () => {
     for (const [doc, status] of rows) expect(statusOf(doc), `${doc} status differs from the index`).toBe(status);
   });
 
-  it('names a load-bearing path in AGENTS.md only if it exists or is known not to have moved yet', () => {
+  it('names a load-bearing path in AGENTS.md only if it exists', () => {
     const agents = read('AGENTS.md');
     const table = agents.slice(agents.indexOf('### Load-bearing surfaces'), agents.indexOf('### The rules specific'));
     const paths = [...table.matchAll(/`([\w-]+\/[\w./-]+\.ts)`/g)].map((m) => m[1]);
     expect(paths.length, 'has the pattern rotted?').toBeGreaterThanOrEqual(8);
     for (const p of paths) {
       const present = exists(`${pkg}/src/${p}`) || exists(`${pkg}/${p}`);
-      if (NOT_YET_MOVED.has(p)) expect(present, `${p} has moved in; remove it from NOT_YET_MOVED`).toBe(false);
-      else expect(present, `AGENTS.md names ${p}, which does not exist`).toBe(true);
+      expect(present, `AGENTS.md names ${p}, which does not exist`).toBe(true);
     }
-    for (const p of NOT_YET_MOVED) expect(paths, `NOT_YET_MOVED names ${p}, which AGENTS.md does not`).toContain(p);
   });
 });
 

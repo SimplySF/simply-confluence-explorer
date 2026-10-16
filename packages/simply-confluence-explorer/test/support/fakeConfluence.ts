@@ -141,6 +141,49 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
     writes.push(page.id);
     return [200, rest(page)];
   };
+  // Like Confluence, one page per title in a space, and a new page goes under the parent it names.
+  const create = (change: unknown): [number, unknown] => {
+    const c = change as {
+      title?: string;
+      space?: { key?: string };
+      ancestors?: Array<{ id?: string }>;
+      body?: { storage?: { value?: string } };
+    };
+    const spaceKey = c.space?.key ?? '';
+    if ([...pages.values()].some((p) => p.spaceKey === spaceKey && p.title === c.title)) {
+      return [
+        400,
+        { message: 'A page with this title already exists: A page already exists with the same TITLE in this space' },
+      ];
+    }
+    const parent = pages.get(c.ancestors?.at(-1)?.id ?? '');
+    const id = String(Math.max(...[...pages.keys()].map(Number)) + 1);
+    const page: FakePage = {
+      id,
+      title: c.title ?? '',
+      spaceKey,
+      storage: c.body?.storage?.value ?? '',
+      labels: [],
+      attachments: [],
+      ancestors: parent ? [...parent.ancestors, { id: parent.id, title: parent.title }] : [],
+      children: [],
+      version: 1,
+    };
+    pages.set(id, page);
+    parent?.children.push(id);
+    writes.push(id);
+    return [200, rest(page)];
+  };
+
+  // Enough of CQL for the app's search: space = "KEY" and any of the text ~ "word" terms.
+  const search = (cql: string): unknown[] => {
+    const space = /space = "([^"]+)"/.exec(cql)?.[1];
+    const words = [...cql.matchAll(/text ~ "([^"]+)"/g)].map((w) => w[1].toLowerCase());
+    return [...pages.values()]
+      .filter((p) => p.spaceKey === space && words.some((w) => `${p.title} ${p.storage}`.toLowerCase().includes(w)))
+      .map((p) => ({ content: { id: p.id, title: p.title }, excerpt: `@@@hl@@@${p.title}@@@endhl@@@ excerpt` }));
+  };
+
   const handle = (req: http.IncomingMessage, res: http.ServerResponse): void => {
     const url = new URL(req.url ?? '/', 'http://fake');
     requests.push(`${req.method} ${url.pathname}${url.search}`);
@@ -188,18 +231,17 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       const found = space(decodeURIComponent(match[1]));
       return found ? json(200, found) : json(404, { message: `No space with key : ${match[1]}` });
     }
+    if (route === '/rest/api/search') return list(search(url.searchParams.get('cql') ?? ''));
     if (route === '/rest/api/content') {
+      if (req.method === 'POST') return json(...create(written.get(req)));
       return list([...pages.values()].filter((p) => p.spaceKey === url.searchParams.get('spaceKey')).map(rest));
     }
     if ((match = /^\/rest\/api\/content\/(\d+)\/child\/page$/.exec(route))) {
       const page = pages.get(match[1]);
       return page ? list(page.children.map((id) => rest(pages.get(id)!))) : json(404, { message: 'No content found' });
     }
-    if ((match = /^\/rest\/api\/content\/(\d+)$/.exec(route)) && req.method === 'PUT') {
-      const [status, body] = update(match[1], written.get(req));
-      return json(status, body);
-    }
     if ((match = /^\/rest\/api\/content\/(\d+)$/.exec(route))) {
+      if (req.method === 'PUT') return json(...update(match[1], written.get(req)));
       const page = pages.get(match[1]);
       return page ? json(200, rest(page)) : json(404, { message: `No content found with id: ${match[1]}` });
     }

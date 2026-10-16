@@ -17,7 +17,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AiSessionView, SessionFileInfo, SessionScope, SessionTurn } from '../api/types.js';
+import type { AiSessionView, DraftState, SessionFileInfo, SessionScope, SessionTurn } from '../api/types.js';
 import { storageToBody } from '../parser/convert.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
@@ -90,9 +90,10 @@ export class SessionStore {
     this.dir = path.join(dataDir, 'data', 'sessions');
   }
 
-  public create(scope: SessionScope): AiSessionView {
+  public create(scope: SessionScope, draft?: DraftState): AiSessionView {
     const now = new Date().toISOString();
     const s: Stored = {
+      ...(draft ? { draft } : {}),
       id: crypto.randomUUID(),
       scope,
       title: scope.title ?? scope.spaceKey,
@@ -177,6 +178,16 @@ export class SessionStore {
       .join('\n\n---\n\n');
   }
 
+  /** Changes a draft conversation's page in progress. */
+  public updateDraft(id: string, patch: Partial<DraftState>): AiSessionView {
+    const s = this.load(id);
+    if (!s?.draft) throw new Error('no such draft');
+    s.draft = { ...s.draft, ...patch };
+    if (patch.title) s.title = patch.title;
+    this.save(s);
+    return viewOf(s);
+  }
+
   public guardState(id: string): Array<[string, string]> {
     return this.load(id)?.guardState ?? [];
   }
@@ -187,7 +198,7 @@ export class SessionStore {
     if (!s) throw new Error('no such session');
     s.turns.push(...turns);
     s.guardState = guardState;
-    if (s.turns.length === turns.length && turns[0]?.role === 'user') s.title = turns[0].text.slice(0, 80);
+    if (!s.draft && s.turns.length === turns.length && turns[0]?.role === 'user') s.title = turns[0].text.slice(0, 80);
     this.save(s);
     return viewOf(s);
   }
@@ -213,6 +224,6 @@ export class SessionStore {
 }
 
 function viewOf(s: Stored): AiSessionView {
-  const { id, scope, title, createdAt, updatedAt, turns, files } = s;
-  return { id, scope, title, createdAt, updatedAt, turns, files };
+  const { id, scope, title, createdAt, updatedAt, turns, files, draft } = s;
+  return { id, scope, title, createdAt, updatedAt, turns, files, ...(draft ? { draft } : {}) };
 }

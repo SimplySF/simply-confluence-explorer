@@ -6,8 +6,9 @@ Simply Confluence Explorer is a local web app built by [SimplySF](https://github
 browsing and exploring Confluence. It ships as a Node.js package: install it, run
 `confluence-explorer`, and open the URL it prints.
 
-> **Status:** framework only. The server and frontend are wired end to end, but there are no
-> Confluence features yet. See [docs/design](docs/design/README.md) for what is planned.
+> **Status:** the server's features are built: browsing, a local copy of a space, asking an AI,
+> improving and pushing pages, branch review queues and new pages. The browser interface is not built
+> yet. See [docs/design](docs/design/README.md) for what is planned.
 
 **Maintenance:** maintained by the team that uses it against its Confluence, for as long as it does.
 

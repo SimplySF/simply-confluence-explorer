@@ -1,0 +1,104 @@
+/*
+ * Copyright (c) 2026, SimplySF.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import {
+  checkDraft,
+  checkRedundancy,
+  coWrite,
+  createFromDraft,
+  decide,
+  draftOf,
+  saveDraft,
+  startDraft,
+  type DraftDeps,
+} from '../drafts/drafts.js';
+import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
+import { HttpError, type Router } from '../http/router.js';
+import type { Services } from './api.js';
+import { fieldsOf, optionalString } from './browse.js';
+
+/**
+ * Adds the routes for writing a new page with a co-writer, after a check for pages that already say
+ * it (ADR-025).
+ *
+ * @param router The router to add to.
+ * @param services What the routes share.
+ */
+export function addDraftRoutes(router: Router, services: Services): Router {
+  const deps: DraftDeps = {
+    ai: services.ai,
+    index: services.index,
+    sessions: services.sessions,
+    store: services.store,
+    exclusions: services.exclusions,
+    client: services.client,
+    dataDir: services.dataDir,
+    log: services.log,
+  };
+  return (
+    router
+      .add('POST', '/api/drafts', ({ body }) => {
+        const spaceKey = optionalString(body, 'spaceKey');
+        const raw = fieldsOf(body).parentId;
+        const parentId = typeof raw === 'number' ? String(raw) : optionalString(body, 'parentId');
+        if (!isValidSpaceKey(spaceKey) || !isValidPageId(parentId))
+          throw new HttpError(400, 'spaceKey and parentId are required');
+        const title = optionalString(body, 'title');
+        if (!title?.trim()) throw new HttpError(400, 'a title is required');
+        return startDraft(
+          {
+            spaceKey: spaceKey.toUpperCase(),
+            parentId,
+            title: title.slice(0, 255),
+            notes: (optionalString(body, 'notes') ?? '').slice(0, 20_000),
+          },
+          deps,
+        );
+      })
+      // A new check replaces the old answer, so the author answers what they now see.
+      .add('POST', '/api/drafts/:sessionId/recheck', async ({ params }) => {
+        const { draft, scope, id } = draftOf(params.sessionId, deps);
+        return services.sessions.updateDraft(id, {
+          redundancy: await checkRedundancy(scope.spaceKey, draft.title, draft.notes, deps),
+        });
+      })
+      .add('POST', '/api/drafts/:sessionId/decision', ({ params, body }) => {
+        const linked = fieldsOf(body).linkedPageIds;
+        const ids = Array.isArray(linked)
+          ? linked.filter((p): p is string | number => typeof p === 'string' || typeof p === 'number').map(String)
+          : [];
+        return decide(params.sessionId, optionalString(body, 'decision') ?? '', ids, deps);
+      })
+      .add('PUT', '/api/drafts/:sessionId', ({ params, body }) =>
+        saveDraft(
+          params.sessionId,
+          {
+            title: optionalString(body, 'title'),
+            markdown: optionalString(body, 'markdown'),
+            notes: optionalString(body, 'notes'),
+          },
+          deps,
+        ),
+      )
+      .add('POST', '/api/drafts/:sessionId/messages', ({ params, body }) => {
+        const prompt = optionalString(body, 'prompt')?.trim();
+        if (!prompt) throw new HttpError(400, 'prompt is required');
+        return coWrite(params.sessionId, prompt, deps);
+      })
+      .add('POST', '/api/drafts/:sessionId/check', ({ params }) => checkDraft(params.sessionId, deps))
+      .add('POST', '/api/drafts/:sessionId/create', ({ params }) => createFromDraft(params.sessionId, deps))
+  );
+}
