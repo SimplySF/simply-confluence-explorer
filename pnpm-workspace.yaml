@@ -8,3 +8,6 @@ allowBuilds:
   nx: true
   protobufjs: false
   unrs-resolver: true
+# ADR-040: one version, by name, released by SimplySF on the day it was adopted.
+minimumReleaseAgeExclude:
+  - '@simplysf/simply-atlassian-core@0.7.2'

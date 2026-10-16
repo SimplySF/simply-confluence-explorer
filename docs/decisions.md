@@ -1099,3 +1099,81 @@ the suite instead of skipping it.
 later than it would be on every push. That is accepted, because a branch's pushes are work in
 progress, and the fast suite, which does run on every push, covers the same code against the fake
 Confluence.
+
+---
+
+## ADR-039 — Every merge to main publishes a beta, and a stable release is published only after the review packet for its version is answered
+
+**Status:** accepted, 2026-10-16. Implements ADR-001's release gate; it does not amend it.
+
+Releases come from `.github/workflows/release.yml`, which follows the release workflow of the
+simply-atlassian repository: Lerna works out each version from the Conventional Commits since the
+last release, writes the changelog, tags the version, creates a GitHub release, and publishes the
+package to npm with provenance. The maintainer chose to follow that workflow so that the SimplySF
+repositories release the same way.
+
+ADR-001 requires a second person to answer the review packet for every load-bearing surface before
+a release ships, and nobody has been named yet. The maintainer chose to allow betas in the
+meantime, and to hold back stable releases only:
+
+- **Every merge to `main` publishes a beta**, versioned as a prerelease such as `0.1.0-beta.0` and
+  published under npm's `beta` dist-tag. A beta is for the team trying the app against its own
+  Confluence, and the README says to install it with `@beta`.
+- **A stable release is started by hand**, from the workflow's `stable` input. The workflow first
+  works out the version the current beta would graduate to, without committing, tagging or pushing,
+  and runs `node scripts/release-gate.mjs <version>`. The gate fails unless `docs/review/<version>.md`
+  says it is answered, names its second reviewer, and answers every surface in the load-bearing
+  surfaces table in `AGENTS.md`. Only then is the version tagged and published as `latest`.
+
+The gate reads the surface names from `AGENTS.md` rather than keeping its own list, so adding a
+surface to the table adds a question every later packet must answer. `docs/review/TEMPLATE.md` holds
+the same names as headings, and `test/releaseGate.test.ts` checks that the two agree. The gate is
+itself listed under "The enforcement itself", since switching it off would switch off ADR-001.
+
+The workflow's `prerelease/**` branch trigger, which simply-atlassian has, is left out: `main`
+already produces a beta on every merge, so a separate prerelease branch would have no job.
+
+One exception is not settled yet. npm's registry gives every package a `latest` tag, and may give
+it to a new package's very first version whatever tag that version was published under. If it does,
+a plain install gets `0.1.0-beta.0` until the first stable release moves `latest`, and later betas
+do not. The first publish will show which, and this record's status line will say.
+
+**What the gate cannot check:** it reads a document. It cannot tell whether the person named in it
+did the review, or did it independently. That remains a matter of trust between the maintainer and
+the reviewer, which is why a packet is committed through a pull request the maintainer reviews.
+
+**The argument against:** a beta on npm is public and permanent. Anyone can install it, and a
+version number, once published, can never be used again, even if the version is withdrawn. ADR-001
+blocks releases because this app writes to pages other people read, and a beta can do that too.
+This is accepted for three reasons. The `beta` tag keeps betas away from a plain install, apart
+from the first-version exception above. The README states plainly that there is no stable release
+yet, and why. And the alternative, handing the team an untracked tarball, gives them the same code
+with no version, no changelog and no provenance.
+
+---
+
+## ADR-040 — simply-atlassian-core 0.7.2 is installed on the day it was released, as a named exception to pnpm's one-day release age
+
+**Status:** accepted, 2026-10-16.
+
+pnpm refuses to install a package version that is less than a day old. The delay protects against a
+hijacked release: a malicious version is usually noticed and withdrawn within hours, so a project
+that waits a day rarely installs one.
+
+`@simplysf/simply-atlassian-core` 0.7.2 was published on 2026-10-16 and carries the library fix for
+the five conversion losses recorded in ADR-033. The maintainer chose to adopt it the same day rather
+than wait, so that the first beta (ADR-039) converts pages without those losses. The maintainer
+knows the SimplySF team that publishes the library, and the fix in it was written for this project
+(simply-atlassian pull request 55).
+
+The exception is the `minimumReleaseAgeExclude` entry in `pnpm-workspace.yaml`. It names one
+version, not the package, so any later version of the library still waits the full day, and the
+entry stops mattering once 0.7.2 is a day old.
+
+**The argument against:** an exception made because the publisher is trusted is exactly the
+exception a hijacked publisher account would exploit. The delay exists for the case where the
+people are trustworthy but their account is not. The converter tests and their snapshots show that
+the library's output changed only in the five places the fix intended, but that checks behaviour on
+the test dataset; it does not show the package holds nothing else. The risk is accepted for one
+version, released by a team the maintainer knows, and is not a precedent: a later exception needs
+its own record.
