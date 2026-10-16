@@ -79,8 +79,8 @@ rewritten or removed.
 is, why it matters, and what the reader should do about it. Define a term the first time it appears.
 Prefer a plain explanation to a slogan. This applies to everything this project writes: the north
 star, the decision log, the design docs, this file, and comments in code. The documents that came
-with the repository template (the root README, CONTRIBUTING.md, and the design-doc README) keep their
-owner's wording; our additions to them follow this rule.
+with the repository template (the root README, CONTRIBUTING.md, and the design-doc README) keep the
+template's wording; our additions to them follow this rule.
 
 - **A bug fix ships with a test**, and the test's name describes the failure it guards against, so
   the suite records the story. A fixed setup failure ships with a doctor check instead, because a
