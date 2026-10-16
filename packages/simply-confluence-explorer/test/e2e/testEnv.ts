@@ -59,7 +59,10 @@ export function loadTestEnv(): TestEnv | undefined {
   const creds = readState<{ baseUrl: string; token: string }>('credentials.json');
   const baseUrl = process.env.CONFLUENCE_URL ?? creds?.baseUrl;
   const token = process.env.CONFLUENCE_PERSONAL_TOKEN ?? creds?.token;
-  if (!manifest || !baseUrl || !token) return undefined;
+  if (!manifest || !baseUrl || !token) {
+    if (process.env.E2E_REQUIRE_TESTENV) throw new Error(`E2E_REQUIRE_TESTENV is set, but ${SKIP_REASON}`);
+    return undefined;
+  }
   return { baseUrl, token, dataDir: path.join(stateDir, 'data'), spaces: manifest.spaces };
 }
 

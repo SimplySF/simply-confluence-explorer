@@ -1,6 +1,6 @@
 # 0006 — The end-to-end suite runs against a real Data Center, locally and in its own CI job
 
-**Status:** Planned
+**Status:** Implemented (PR #12)
 **Package:** repository root (`test-env/`, `.github/workflows/`)
 **Date:** 2026-10-15
 
@@ -22,7 +22,7 @@ code already assumed Confluence behaves, so it could never catch a wrong assumpt
 
 The end-to-end suite then runs against that environment. On a developer's machine, the environment
 is started with its own command, separately from the app (ADR-029). In CI, the suite runs in a
-separate workflow, `e2e.yml`, on Linux only. GitHub's Windows runners cannot run the Linux
+separate workflow, `e2e.yml`, on every pull request, on Linux only (ADR-038). GitHub's Windows runners cannot run the Linux
 containers this environment needs.
 
 ## Behavior
@@ -53,10 +53,10 @@ everyday test run stays fast and needs no containers.
 
 ## Testing
 
-The workflow is proved by its own first green run. It has not run anywhere yet (ADR-011), and the
-pull request that adds it will say so.
+The workflow is proved by its own runs. Its first run, on the fork, started Confluence with docker,
+seeded it and passed the suite (ADR-038). A run in which Confluence did not start fails rather than
+skipping every test, because the job sets `E2E_REQUIRE_TESTENV`.
 
 ## Open questions
 
-- Whether the job should run on every push to a branch, or only on pull requests. The maintainer
-  decides.
+- None. The job runs on every pull request, as the maintainer chose (ADR-038).
