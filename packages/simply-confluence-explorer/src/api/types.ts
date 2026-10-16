@@ -292,3 +292,66 @@ export type WriteResult = {
   version: number;
   dryRun: boolean;
 };
+
+export type BranchItemStatus =
+  | 'pending'
+  | 'working'
+  | 'proposed'
+  | 'accepted'
+  | 'rejected'
+  | 'skipped'
+  | 'failed'
+  | 'checked'
+  | 'check-failed'
+  | 'pushed'
+  | 'push-failed';
+
+/** One page in a branch improvement run: its proposal, and the person's decision on it. */
+export type BranchItem = {
+  pageId: string;
+  title: string;
+  /** The page version the proposal was made from; a push is refused if the page has moved on. */
+  baseVersion: number;
+  status: BranchItemStatus;
+  original?: string;
+  proposed?: string;
+  critique?: string[];
+  changelog?: string[];
+  /** Why a page was skipped or a step failed, in words a person can act on. */
+  message?: string;
+  guardSummary?: string;
+  pushedVersion?: number;
+};
+
+/** Something a review of a branch found that a maintainer should fix. */
+export type BranchFinding = {
+  kind: 'incorrect' | 'redundant' | 'stale' | 'structure' | 'gap';
+  pages: string[];
+  detail: string;
+  suggestion?: string;
+};
+
+/** A review, or a set of improvement proposals, for a page and everything under it (ADR-024). */
+export type BranchRun = {
+  id: string;
+  kind: 'review' | 'improve';
+  spaceKey: string;
+  rootPageId: string;
+  rootTitle: string;
+  focus?: string;
+  instructions?: string;
+  status: 'running' | 'ready' | 'failed' | 'cancelled';
+  createdAt: string;
+  updatedAt: string;
+  processed: number;
+  total: number;
+  items: BranchItem[];
+  findings?: BranchFinding[];
+  /** The review's answer, when it could not be read as findings. */
+  reportText?: string;
+  /** The pages a review read, by title: findings name pages by title, and this opens them. */
+  pageIds?: Record<string, string>;
+  /** Pages left out of the run, and why (a secret, the size limit). Excluded pages are never named. */
+  leftOut: string[];
+  error?: string;
+};

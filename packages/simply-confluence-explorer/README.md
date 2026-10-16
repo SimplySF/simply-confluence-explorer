@@ -4,9 +4,9 @@ A local web app for browsing and exploring Confluence, packaged as a Node.js CLI
 [`simply-confluence-explorer`](https://github.com/SimplySF/simply-confluence-explorer) monorepo.
 
 > **Status:** the server reads Confluence, keeps a copy of a space on this machine, asks an AI about
-> pages and spaces, and improves a page: it proposes a revision, checks it, and pushes it, refusing a
-> push made from a version that has since changed. Branch review queues, creating pages and the
-> browser interface are not built yet.
+> pages and spaces, improves a page and pushes it, and reviews or improves a page and everything under
+> it through a queue where each page is accepted on its own. Creating pages and the browser
+> interface are not built yet.
 
 ## Usage
 
@@ -67,7 +67,9 @@ Each request is recorded in `data/ai-audit.jsonl` in the data directory, without
 A page changes only when a push is sent for it. The push names the version its proposal was made
 from, and is refused if the page has changed since, so a colleague's edit is never replaced unseen
 (`test/pagePush.test.ts`, and against a real Confluence, `test/e2e/push.e2e.ts`). The frontmatter
-block the app adds to a page's Markdown is removed before the page is written.
+block the app adds to a page's Markdown is removed before the page is written. A branch run writes
+only the pages a person accepted, through the same path (`test/branchRuns.test.ts`,
+`test/e2e/branches.e2e.ts`).
 
 Certificates are always verified. If your Confluence uses a certificate from your company's own
 certificate authority, ask your IT team for that authority's certificate file and start the app with
@@ -79,39 +81,43 @@ NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-expl
 
 ## HTTP routes
 
-| Route                                                 | Description                                                                                                                                     |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                                     | `{ "status": "ok", "version": "<package version>" }`                                                                                            |
-| `GET /api/connection`                                 | The Confluence URL, whether a token is saved, and where the connection comes from                                                               |
-| `PUT /api/connection`                                 | Saves `{ baseUrl, token }`; the token is never returned                                                                                         |
-| `GET /api/doctor`                                     | The doctor's report, as `confluence-explorer doctor --json` prints it                                                                           |
-| `POST /api/auth/verify`                               | Tests the saved connection, or one typed into Settings, without saving it                                                                       |
-| `GET /api/spaces`                                     | Every global space; `?query=` filters by key or name                                                                                            |
-| `GET /api/spaces/detail/:spaceKey`                    | One space                                                                                                                                       |
-| `POST /api/spaces/resolve-url`                        | Finds the page id and space key in a pasted address or page id                                                                                  |
-| `GET /api/spaces/:spaceKey/pages`                     | The space's page tree, or the tree under `?rootPageId=`, without excluded pages                                                                 |
-| `GET /api/pages/:pageId`                              | One page and its Markdown; an excluded page is a `404`                                                                                          |
-| `POST /api/parse`                                     | Converts a pasted storage-format snippet to Markdown                                                                                            |
-| `GET`/`POST /api/space-cache/:spaceKey/ignore`        | Reads or saves the space's `.confluenceignore` rules; with `purge: true`, also deletes the synced copies they now exclude                       |
-| `GET /api/space-cache/cached`                         | The spaces synced to this machine                                                                                                               |
-| `POST /api/space-cache/sync`                          | Starts syncing `{ spaceKey, rootPageId? }` to disk; poll `GET /api/space-cache/sync/status/:jobId`                                              |
-| `GET /api/space-cache/:spaceKey/toc`                  | The synced space's table of contents                                                                                                            |
-| `GET /api/space-cache/:spaceKey/zip`                  | The synced space as a ZIP of Markdown and attachments, without excluded pages                                                                   |
-| `POST /api/space-cache/:spaceKey/pages/:pageId/purge` | Removes a synced page, optionally with what is below it and a rule to keep it away                                                              |
-| `POST /api/space-cache/:spaceKey/cache/purge`         | Removes synced copies that are excluded, or whose Markdown was deleted from the folder                                                          |
-| `GET`/`PUT /api/ai/settings`                          | The AI provider, model and endpoint; keys can be saved but are never returned                                                                   |
-| `GET /api/ai/models/:provider`                        | The models the saved key can use                                                                                                                |
-| `GET /api/ai/status`, `POST /api/ai/test`             | Whether an AI is set up; a test call that sends no page                                                                                         |
-| `POST /api/ai/analyze`                                | One question about a page, optionally with its sub-pages; the server sends its own copy of the page it checked, never text the request supplies |
-| `POST /api/space-cache/:spaceKey/ai/ask`              | One question about a synced space, answered from its best-matching pages                                                                        |
-| `/api/ai/sessions/...`                                | Conversations: create, list, read, delete, upload a file, send a message                                                                        |
-| `POST /api/space-cache/:spaceKey/metadata/generate`   | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                                      |
-| `POST /api/pages/:pageId/recommend`                   | A proposed revision of the page, made from the server's own copy, with the version it was made from                                             |
-| `POST /api/pages/:pageId/dry-run`                     | Converts a change as a push would, and reports anything Confluence would refuse, without writing                                                |
-| `POST /api/pages/:pageId/push`                        | Writes `{ markdown, baseVersion }`; refused with a `409` if the page has changed since `baseVersion`                                            |
-| `GET`/`POST /api/space-cache/:spaceKey/guard`         | Reads or saves the space's `.confluenceguard` rules; a rule that does not parse is refused                                                      |
-| `/api/*`                                              | Anything else under `/api` is a JSON `404`, never the app shell                                                                                 |
-| everything else                                       | The built frontend, falling back to `index.html` for client-side routes                                                                         |
+| Route                                                     | Description                                                                                                                                     |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                         | `{ "status": "ok", "version": "<package version>" }`                                                                                            |
+| `GET /api/connection`                                     | The Confluence URL, whether a token is saved, and where the connection comes from                                                               |
+| `PUT /api/connection`                                     | Saves `{ baseUrl, token }`; the token is never returned                                                                                         |
+| `GET /api/doctor`                                         | The doctor's report, as `confluence-explorer doctor --json` prints it                                                                           |
+| `POST /api/auth/verify`                                   | Tests the saved connection, or one typed into Settings, without saving it                                                                       |
+| `GET /api/spaces`                                         | Every global space; `?query=` filters by key or name                                                                                            |
+| `GET /api/spaces/detail/:spaceKey`                        | One space                                                                                                                                       |
+| `POST /api/spaces/resolve-url`                            | Finds the page id and space key in a pasted address or page id                                                                                  |
+| `GET /api/spaces/:spaceKey/pages`                         | The space's page tree, or the tree under `?rootPageId=`, without excluded pages                                                                 |
+| `GET /api/pages/:pageId`                                  | One page and its Markdown; an excluded page is a `404`                                                                                          |
+| `POST /api/parse`                                         | Converts a pasted storage-format snippet to Markdown                                                                                            |
+| `GET`/`POST /api/space-cache/:spaceKey/ignore`            | Reads or saves the space's `.confluenceignore` rules; with `purge: true`, also deletes the synced copies they now exclude                       |
+| `GET /api/space-cache/cached`                             | The spaces synced to this machine                                                                                                               |
+| `POST /api/space-cache/sync`                              | Starts syncing `{ spaceKey, rootPageId? }` to disk; poll `GET /api/space-cache/sync/status/:jobId`                                              |
+| `GET /api/space-cache/:spaceKey/toc`                      | The synced space's table of contents                                                                                                            |
+| `GET /api/space-cache/:spaceKey/zip`                      | The synced space as a ZIP of Markdown and attachments, without excluded pages                                                                   |
+| `POST /api/space-cache/:spaceKey/pages/:pageId/purge`     | Removes a synced page, optionally with what is below it and a rule to keep it away                                                              |
+| `POST /api/space-cache/:spaceKey/cache/purge`             | Removes synced copies that are excluded, or whose Markdown was deleted from the folder                                                          |
+| `GET`/`PUT /api/ai/settings`                              | The AI provider, model and endpoint; keys can be saved but are never returned                                                                   |
+| `GET /api/ai/models/:provider`                            | The models the saved key can use                                                                                                                |
+| `GET /api/ai/status`, `POST /api/ai/test`                 | Whether an AI is set up; a test call that sends no page                                                                                         |
+| `POST /api/ai/analyze`                                    | One question about a page, optionally with its sub-pages; the server sends its own copy of the page it checked, never text the request supplies |
+| `POST /api/space-cache/:spaceKey/ai/ask`                  | One question about a synced space, answered from its best-matching pages                                                                        |
+| `/api/ai/sessions/...`                                    | Conversations: create, list, read, delete, upload a file, send a message                                                                        |
+| `POST /api/space-cache/:spaceKey/metadata/generate`       | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                                      |
+| `POST /api/pages/:pageId/recommend`                       | A proposed revision of the page, made from the server's own copy, with the version it was made from                                             |
+| `POST /api/pages/:pageId/dry-run`                         | Converts a change as a push would, and reports anything Confluence would refuse, without writing                                                |
+| `POST /api/pages/:pageId/push`                            | Writes `{ markdown, baseVersion }`; refused with a `409` if the page has changed since `baseVersion`                                            |
+| `POST /api/branches/runs`                                 | Starts a review, or an improvement proposal for every page, of `{ spaceKey, pageId }` and everything under it                                   |
+| `GET /api/branches/runs`, `GET /api/branches/runs/:runId` | Branch runs, and one run with its proposals or findings                                                                                         |
+| `PATCH /api/branches/runs/:runId/items/:pageId`           | Accepts (optionally with edits), rejects or resets one page's proposal                                                                          |
+| `POST /api/branches/runs/:runId/check`, `.../push`        | Dry-runs, or writes, every accepted page, one at a time, each against its own base version                                                      |
+| `GET`/`POST /api/space-cache/:spaceKey/guard`             | Reads or saves the space's `.confluenceguard` rules; a rule that does not parse is refused                                                      |
+| `/api/*`                                                  | Anything else under `/api` is a JSON `404`, never the app shell                                                                                 |
+| everything else                                           | The built frontend, falling back to `index.html` for client-side routes                                                                         |
 
 A page listed in a space's `.confluenceignore` is left out of every tree, together with everything
 below it, and reading it answers `404`, so it never reaches the browser (`test/browse.test.ts`, and
