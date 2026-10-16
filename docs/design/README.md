@@ -31,10 +31,19 @@ refactors that keep the public surface identical (though a short doc is welcome 
 
 ## Index
 
-| #   | Title | Status |
-| --- | ----- | ------ |
+| #                                      | Title                                                                        | Status  |
+| -------------------------------------- | ---------------------------------------------------------------------------- | ------- |
+| [0001](0001-confluence-explorer.md)    | Confluence Explorer: what it does and how the package is built               | Planned |
+| [0002](0002-runtime-dependencies.md)   | Runtime dependencies: simply-atlassian-core and `node:http`                  | Planned |
+| [0003](0003-data-directory.md)         | Where the app keeps its data, and the token with it                          | Planned |
+| [0004](0004-ai-providers.md)           | Asking an AI: one engine, an outbound guard, and conversations on the server | Planned |
+| [0005](0005-writes-to-confluence.md)   | Writing to Confluence: a push, a branch's review queue, and a new page       | Planned |
+| [0006](0006-end-to-end-environment.md) | The end-to-end suite runs against a real Data Center                         | Planned |
 
-_(empty — this repo is framework-only so far)_
+Design docs sit beside the [decision log](../decisions.md). A design doc describes a feature and is
+corrected as the feature changes; the log is append-only and holds the rules, budgets and refusals
+that are not one feature's (ADR-027). A design doc cites a record by number rather than restating
+it.
 
 ## Template
 
