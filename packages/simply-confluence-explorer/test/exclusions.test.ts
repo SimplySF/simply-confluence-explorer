@@ -65,6 +65,17 @@ describe('a space', () => {
     ).toBe(false);
   });
 
+  it('excludes everything below a page excluded by its id, not only the page itself', () => {
+    const { exclusions } = manager();
+    exclusions.savePatterns('HR', ['id:500']);
+    expect(
+      exclusions.isPageExcluded({ id: '501', title: 'Child', ancestors: [{ id: '500', title: 'Parent' }] }, 'HR'),
+    ).toBe(true);
+    expect(
+      exclusions.isPageExcluded({ id: '502', title: 'Sibling', ancestors: [{ id: '499', title: 'Other' }] }, 'HR'),
+    ).toBe(false);
+  });
+
   it('excludes nothing when it has no rules file', () => {
     expect(manager().exclusions.isPageExcluded({ id: '1', title: 'Anything' }, 'OPS')).toBe(false);
   });

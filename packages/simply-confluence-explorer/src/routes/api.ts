@@ -20,8 +20,11 @@ import { runDoctor } from '../doctor/checks.js';
 import { systemDeps } from '../doctor/system.js';
 import { HttpError, Router } from '../http/router.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
+import type { SpaceStore } from '../spaces/spaceStore.js';
+import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
 import { addBrowseRoutes } from './browse.js';
+import { addSpaceRoutes } from './spaces.js';
 
 /** The long-lived parts of the app that routes share. One of each exists per server. */
 export type Services = {
@@ -30,6 +33,8 @@ export type Services = {
   env: NodeJS.ProcessEnv;
   connection: ConnectionStore;
   exclusions: ExclusionManager;
+  store: SpaceStore;
+  sync: SpaceSync;
   log: (message: string) => void;
 };
 
@@ -58,7 +63,7 @@ export function createApi(services: Services): Router {
     .add('GET', '/api/doctor', () =>
       runDoctor(systemDeps(services.dataDir, connection, services.exclusions, services.env)),
     );
-  return addBrowseRoutes(router, services);
+  return addSpaceRoutes(addBrowseRoutes(router, services), services);
 }
 
 function connectionUpdate(body: unknown): ConnectionUpdate {

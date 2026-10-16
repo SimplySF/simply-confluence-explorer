@@ -984,3 +984,45 @@ deleted later.
 the library is fixed it will not see a page's status lozenges or panel titles. That is true. It is
 acceptable because nothing reaches a model before the AI features land in a later pull request, and
 the fix belongs where every user of the library gets it.
+
+---
+
+## ADR-034 — The decision log is left out of the prose budget, as history and review are, and the budget for the live documents drops to 1,700 lines
+
+**Status:** accepted, 2026-10-16. Amends ADR-031.
+
+The prose budget (`MAX_DOC_LINES`) exists so that the documents a reader must keep up with stay a
+size someone can read. It already leaves out `docs/history/` and `docs/review/`, because they are
+append-only and cannot be shortened. The decision log is append-only for the same reason, and at
+1,007 lines it had become most of what the budget measured, so the budget failed whenever a new
+record was written, however short the live documents were.
+
+The log is now left out of the count, and the limit is set for what remains:
+
+| budget                       | limit       | measured when set |
+| ---------------------------- | ----------- | ----------------- |
+| live prose (`MAX_DOC_LINES`) | 1,700 lines | 1,464             |
+
+**The argument against:** a document that is not counted can grow without anyone noticing. The log
+is held instead by its own rules: one record per decision, a title that states it, and the tests in
+`test/docs/prose.test.ts` that check its numbering, its status lines and every citation of it.
+
+---
+
+## ADR-035 — An exclusion covers everything below the excluded page, whichever rule matched, and a space's ZIP holds only pages that are not excluded
+
+**Status:** accepted, 2026-10-16.
+
+A rule that names a title or a path already excluded everything below the page, because the rules
+compare against each ancestor's title. A rule that names a page by its id (`id:1234`) excluded the
+page alone: the tree hid its children, but a child could still be read by its own id, and a sync
+would write it to disk. An `id:` rule now matches the ids of a page's ancestors as well, so every
+form of rule excludes a whole subtree, which is how the tree has always shown it.
+
+A space's ZIP now holds the Markdown and attachments of the pages that are not excluded, with the
+table of contents and the manifest, instead of the whole synced folder. The rules are applied when
+the ZIP is built, because a rule saved without purging leaves the excluded pages' copies on disk.
+
+**The argument against:** both change what an existing rules file or download does. That is the
+intent: each closes a way for an excluded page to leave the machine, and the tests that hold it are
+in `test/exclusions.test.ts` and `test/localCopy.test.ts`.

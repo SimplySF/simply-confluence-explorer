@@ -130,11 +130,54 @@ export type ParsedPage = {
 };
 
 export type SpacesResponse = { spaces: ConfluenceSpace[] };
-export type PageTreeResponse = { tree: PageTreeNode[] };
-export type PageResponse = { detail: PageDetail; parsed: ParsedPage };
+/** `isLocal` says whether the answer came from the synced copy on disk rather than from Confluence. */
+export type PageTreeResponse = { tree: PageTreeNode[]; isLocal: boolean };
+export type PageResponse = { detail: PageDetail; parsed: ParsedPage; isLocal: boolean };
 
 /** What `POST /api/spaces/resolve-url` found in a pasted URL or page id. */
 export type ResolveResponse = { spaceKey?: string; pageId?: string };
 
 /** A space's `.confluenceignore` rules, one pattern per entry. */
 export type IgnoreRules = { patterns: string[] };
+
+/** A space that has been synced to disk, as `GET /api/space-cache/cached` lists it. */
+export type SyncedSpace = {
+  spaceKey: string;
+  name: string;
+  rootPageId?: string;
+  rootPageTitle?: string;
+  lastSynced: string;
+  pageCount: number;
+  metadataCount: number;
+  hasTOC: boolean;
+};
+
+/** A sync's progress, polled while it runs. */
+export type SyncProgress = {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  spaceKey: string;
+  total: number;
+  processed: number;
+  /** Pages already on disk at the version Confluence has, and pages left out by the exclusion rules. */
+  skippedCount: number;
+  downloadedCount: number;
+  errorCount: number;
+  errors: Array<{ pageId: string; title: string; error: string }>;
+  currentPageTitle?: string;
+  completedAt?: string;
+};
+
+/** One entry in a space's table of contents. */
+export type SpaceTocNode = {
+  id: string;
+  title: string;
+  /** Where the page's Markdown is, relative to the space's `pages/` directory. */
+  path: string;
+  summary?: string;
+  tags?: string[];
+  documentType?: string;
+  children: SpaceTocNode[];
+};
+
+export type PurgeResult = { purgedCount: number; remainingPages: number };

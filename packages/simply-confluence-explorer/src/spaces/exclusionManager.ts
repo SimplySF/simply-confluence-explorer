@@ -23,11 +23,11 @@ import { sanitizeFilename, within } from '../util/paths.js';
 // a page id (`id:1234`), a title, a title pattern with `*`, or a path ending in `/`, which also covers
 // every page below it. Lines starting with `#` are comments.
 
-/** A page as far as the rules need it: its id, its title, and the titles of the pages above it. */
+/** A page as far as the rules need it: its id, its title, and the pages above it. */
 export type RuleTarget = {
   id?: string;
   title?: string;
-  ancestors?: Array<{ title?: string }>;
+  ancestors?: Array<{ id?: string; title?: string }>;
 };
 
 const HEADER = [
@@ -88,17 +88,21 @@ export class ExclusionManager {
     this.cache.delete(file);
   }
 
-  /** Whether any rule in the space matches the page's id, its title, an ancestor's title or its path. */
+  /**
+   * Whether any rule in the space matches the page or a page above it: by id, by title, or by the
+   * page's path. A rule that excludes a page therefore excludes everything below it too, whichever
+   * form the rule takes.
+   */
   public isPageExcluded(page: RuleTarget, spaceKey: string): boolean {
     const patterns = this.patterns(spaceKey);
     if (patterns.length === 0) return false;
-    const id = page.id ?? '';
     const title = page.title ?? '';
+    const ids = [page.id, ...(page.ancestors ?? []).map((a) => a.id)].filter((id): id is string => !!id);
     const ancestors = (page.ancestors ?? []).map((a) => a.title ?? '');
     const fullPath = [...ancestors, title].join('/');
     return patterns.some(
       (pattern) =>
-        (id !== '' && (pattern === id || pattern === `id:${id}`)) ||
+        ids.some((id) => pattern === id || pattern === `id:${id}`) ||
         matchesPattern(pattern, title) ||
         ancestors.some((ancestor) => matchesPattern(pattern, ancestor)) ||
         matchesPattern(pattern, fullPath),

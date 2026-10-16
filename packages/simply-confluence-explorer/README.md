@@ -3,9 +3,10 @@
 A local web app for browsing and exploring Confluence, packaged as a Node.js CLI. Part of the
 [`simply-confluence-explorer`](https://github.com/SimplySF/simply-confluence-explorer) monorepo.
 
-> **Status:** the server reads Confluence: it lists spaces, reads page trees and pages, converts
-> pages to Markdown and keeps excluded pages out of every answer. Syncing spaces to disk, the AI
-> features, writing to Confluence and the browser interface are not built yet.
+> **Status:** the server reads Confluence and keeps a copy of a space on this machine: it lists
+> spaces, reads page trees and pages as Markdown, syncs a space to disk with its table of contents
+> and ZIP, and keeps excluded pages out of every answer and off the disk. The AI features, writing to
+> Confluence and the browser interface are not built yet.
 
 ## Usage
 
@@ -58,22 +59,28 @@ NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-expl
 
 ## HTTP routes
 
-| Route                                          | Description                                                                       |
-| ---------------------------------------------- | --------------------------------------------------------------------------------- |
-| `GET /api/health`                              | `{ "status": "ok", "version": "<package version>" }`                              |
-| `GET /api/connection`                          | The Confluence URL, whether a token is saved, and where the connection comes from |
-| `PUT /api/connection`                          | Saves `{ baseUrl, token }`; the token is never returned                           |
-| `GET /api/doctor`                              | The doctor's report, as `confluence-explorer doctor --json` prints it             |
-| `POST /api/auth/verify`                        | Tests the saved connection, or one typed into Settings, without saving it         |
-| `GET /api/spaces`                              | Every global space; `?query=` filters by key or name                              |
-| `GET /api/spaces/detail/:spaceKey`             | One space                                                                         |
-| `POST /api/spaces/resolve-url`                 | Finds the page id and space key in a pasted address or page id                    |
-| `GET /api/spaces/:spaceKey/pages`              | The space's page tree, or the tree under `?rootPageId=`, without excluded pages   |
-| `GET /api/pages/:pageId`                       | One page and its Markdown; an excluded page is a `404`                            |
-| `POST /api/parse`                              | Converts a pasted storage-format snippet to Markdown                              |
-| `GET`/`POST /api/space-cache/:spaceKey/ignore` | Reads or saves the space's `.confluenceignore` rules                              |
-| `/api/*`                                       | Anything else under `/api` is a JSON `404`, never the app shell                   |
-| everything else                                | The built frontend, falling back to `index.html` for client-side routes           |
+| Route                                                 | Description                                                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                     | `{ "status": "ok", "version": "<package version>" }`                                                                      |
+| `GET /api/connection`                                 | The Confluence URL, whether a token is saved, and where the connection comes from                                         |
+| `PUT /api/connection`                                 | Saves `{ baseUrl, token }`; the token is never returned                                                                   |
+| `GET /api/doctor`                                     | The doctor's report, as `confluence-explorer doctor --json` prints it                                                     |
+| `POST /api/auth/verify`                               | Tests the saved connection, or one typed into Settings, without saving it                                                 |
+| `GET /api/spaces`                                     | Every global space; `?query=` filters by key or name                                                                      |
+| `GET /api/spaces/detail/:spaceKey`                    | One space                                                                                                                 |
+| `POST /api/spaces/resolve-url`                        | Finds the page id and space key in a pasted address or page id                                                            |
+| `GET /api/spaces/:spaceKey/pages`                     | The space's page tree, or the tree under `?rootPageId=`, without excluded pages                                           |
+| `GET /api/pages/:pageId`                              | One page and its Markdown; an excluded page is a `404`                                                                    |
+| `POST /api/parse`                                     | Converts a pasted storage-format snippet to Markdown                                                                      |
+| `GET`/`POST /api/space-cache/:spaceKey/ignore`        | Reads or saves the space's `.confluenceignore` rules; with `purge: true`, also deletes the synced copies they now exclude |
+| `GET /api/space-cache/cached`                         | The spaces synced to this machine                                                                                         |
+| `POST /api/space-cache/sync`                          | Starts syncing `{ spaceKey, rootPageId? }` to disk; poll `GET /api/space-cache/sync/status/:jobId`                        |
+| `GET /api/space-cache/:spaceKey/toc`                  | The synced space's table of contents                                                                                      |
+| `GET /api/space-cache/:spaceKey/zip`                  | The synced space as a ZIP of Markdown and attachments, without excluded pages                                             |
+| `POST /api/space-cache/:spaceKey/pages/:pageId/purge` | Removes a synced page, optionally with what is below it and a rule to keep it away                                        |
+| `POST /api/space-cache/:spaceKey/cache/purge`         | Removes synced copies that are excluded, or whose Markdown was deleted from the folder                                    |
+| `/api/*`                                              | Anything else under `/api` is a JSON `404`, never the app shell                                                           |
+| everything else                                       | The built frontend, falling back to `index.html` for client-side routes                                                   |
 
 A page listed in a space's `.confluenceignore` is left out of every tree, together with everything
 below it, and reading it answers `404`, so it never reaches the browser (`test/browse.test.ts`, and

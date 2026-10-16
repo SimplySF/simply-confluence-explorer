@@ -23,7 +23,10 @@ import { ConnectionStore } from './confluence/connection.js';
 import { localOnly } from './http/guards.js';
 import { sendJson, type Router } from './http/router.js';
 import { createApi } from './routes/api.js';
+import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
+import { SpaceStore } from './spaces/spaceStore.js';
+import { SpaceSync } from './spaces/sync.js';
 import { resolveDataDir } from './util/dataDir.js';
 
 export type { HealthResponse } from './routes/api.js';
@@ -83,14 +86,11 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const env = options.env ?? process.env;
   const dataDir = options.dataDir ?? resolveDataDir(undefined, env);
   const log = options.log ?? ((): void => {});
-  const api = createApi({
-    version,
-    dataDir,
-    env,
-    log,
-    connection: new ConnectionStore(dataDir, env),
-    exclusions: new ExclusionManager(dataDir, log),
-  });
+  const connection = new ConnectionStore(dataDir, env);
+  const exclusions = new ExclusionManager(dataDir, log);
+  const store = new SpaceStore(dataDir, exclusions, log);
+  const sync = new SpaceSync(store, exclusions, () => new ConfluenceClient(connection.resolve()), log);
+  const api = createApi({ version, dataDir, env, log, connection, exclusions, store, sync });
   const isLocal = localOnly(env);
 
   return http.createServer((req, res) => {

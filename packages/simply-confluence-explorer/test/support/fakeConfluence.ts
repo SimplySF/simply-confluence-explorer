@@ -173,6 +173,10 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       const page = pages.get(match[1]);
       return page ? json(200, rest(page)) : json(404, { message: `No content found with id: ${match[1]}` });
     }
+    if (route.startsWith('/download/attachments/')) {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(`attachment ${route}`);
+      return;
+    }
     json(404, { message: `No route for ${route}` });
   });
 

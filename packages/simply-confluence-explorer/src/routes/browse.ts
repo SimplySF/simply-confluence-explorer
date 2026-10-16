@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-import type { PageResponse, PageTreeNode, ResolveResponse } from '../api/types.js';
+import type { PageResponse, PageTreeNode, PageTreeResponse, ResolveResponse } from '../api/types.js';
 import { ConfluenceClient } from '../confluence/client.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage, storageToBody } from '../parser/convert.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { Services } from './api.js';
 
-const fieldsOf = (body: unknown): Record<string, unknown> =>
+export const fieldsOf = (body: unknown): Record<string, unknown> =>
   body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : {};
 
-const optionalString = (body: unknown, key: string): string | undefined => {
+export const optionalString = (body: unknown, key: string): string | undefined => {
   const value = fieldsOf(body)[key];
   if (value === undefined) return undefined;
   if (typeof value !== 'string') throw new HttpError(400, `${key} must be a string`);
@@ -51,13 +51,13 @@ function visibleTree(
   nodes: PageTreeNode[],
   spaceKey: string,
   exclusions: ExclusionManager,
-  ancestors: Array<{ title: string }> = [],
+  ancestors: Array<{ id: string; title: string }> = [],
 ): PageTreeNode[] {
   return nodes
     .filter((n) => !exclusions.isPageExcluded({ id: n.id, title: n.title, ancestors }, spaceKey))
     .map((n) => ({
       ...n,
-      children: visibleTree(n.children, spaceKey, exclusions, [...ancestors, { title: n.title }]),
+      children: visibleTree(n.children, spaceKey, exclusions, [...ancestors, { id: n.id, title: n.title }]),
     }));
 }
 
@@ -70,7 +70,7 @@ function visibleTree(
  * @param services What the routes share.
  */
 export function addBrowseRoutes(router: Router, services: Services): Router {
-  const { connection, exclusions } = services;
+  const { connection, exclusions, store } = services;
   const client = (): ConfluenceClient => new ConfluenceClient(connection.resolve());
 
   return (
@@ -103,32 +103,28 @@ export function addBrowseRoutes(router: Router, services: Services): Router {
           return { spaceKey: found.spaceKey, pageId: (await confluence.getSpace(found.spaceKey)).homepageId };
         throw new HttpError(404, 'no page id or space key could be found in that input');
       })
-      .add('GET', '/api/spaces/:spaceKey/pages', async ({ params, query }) => {
+      // A synced space is read from disk, unless ?forceLive=true asks for Confluence's current tree.
+      .add('GET', '/api/spaces/:spaceKey/pages', async ({ params, query }): Promise<PageTreeResponse> => {
         const spaceKey = params.spaceKey.toUpperCase();
-        const tree = await client().getPageTree(spaceKey, query.get('rootPageId') ?? undefined);
-        return { tree: visibleTree(tree, spaceKey, exclusions) };
+        const rootPageId = query.get('rootPageId') ?? undefined;
+        if (query.get('forceLive') !== 'true' && store.isSynced(spaceKey)) {
+          return { tree: store.tree(spaceKey, rootPageId), isLocal: true };
+        }
+        const tree = await client().getPageTree(spaceKey, rootPageId);
+        return { tree: visibleTree(tree, spaceKey, exclusions), isLocal: false };
       })
       .add('GET', '/api/pages/:pageId', async ({ params, query }): Promise<PageResponse> => {
-        const detail = await client().getPageDetail(params.pageId);
-        const spaceKey = query.get('spaceKey')?.toUpperCase() ?? detail.spaceKey;
+        const named = query.get('spaceKey')?.toUpperCase();
+        const syncedIn = named && store.readPage(named, params.pageId) ? named : store.findSpaceKey(params.pageId);
+        const local = syncedIn ? store.readPage(syncedIn, params.pageId) : undefined;
+        const detail = local ?? (await client().getPageDetail(params.pageId));
+        const spaceKey = named ?? detail.spaceKey;
         if (exclusions.isPageExcluded(detail, spaceKey) || exclusions.isPageExcluded(detail, detail.spaceKey)) {
           throw new HttpError(404, 'Page not found, or excluded by .confluenceignore');
         }
-        return { detail, parsed: parsePage(detail) };
+        return { detail, parsed: parsePage(detail), isLocal: local !== undefined };
       })
       // Converts a pasted storage-format snippet, for the snippet parser. Nothing is read or stored.
       .add('POST', '/api/parse', ({ body }) => ({ markdown: storageToBody(optionalString(body, 'storageXml') ?? '') }))
-      .add('GET', '/api/space-cache/:spaceKey/ignore', ({ params }) => ({
-        spaceKey: params.spaceKey.toUpperCase(),
-        patterns: exclusions.patterns(params.spaceKey),
-      }))
-      .add('POST', '/api/space-cache/:spaceKey/ignore', ({ params, body }) => {
-        const patterns = fieldsOf(body).patterns;
-        if (!Array.isArray(patterns) || !patterns.every((p): p is string => typeof p === 'string')) {
-          throw new HttpError(400, 'patterns must be a list of strings');
-        }
-        exclusions.savePatterns(params.spaceKey, patterns);
-        return { spaceKey: params.spaceKey.toUpperCase(), patterns: exclusions.patterns(params.spaceKey) };
-      })
   );
 }
