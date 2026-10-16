@@ -60,3 +60,81 @@ export type DoctorReport = {
   results: DoctorResult[];
   ok: boolean;
 };
+
+/** The person a personal access token belongs to. */
+export type AuthUser = {
+  username: string;
+  displayName: string;
+  email?: string;
+  userKey?: string;
+};
+
+/** The result of testing a connection, from `POST /api/auth/verify`. */
+export type AuthVerifyResponse = {
+  success: boolean;
+  baseUrl: string;
+  user?: AuthUser;
+  error?: string;
+  latencyMs?: number;
+};
+
+export type ConfluenceSpace = {
+  key: string;
+  name: string;
+  type: string;
+  description?: string;
+  homepageId?: string;
+  url?: string;
+};
+
+export type ConfluenceAttachment = {
+  id: string;
+  title: string;
+  mediaType: string;
+  fileSize: number;
+  downloadUrl: string;
+};
+
+export type PageSummary = {
+  id: string;
+  title: string;
+  spaceKey: string;
+  parentId?: string;
+  version: number;
+  author: string;
+  lastModified: string;
+  webUrl?: string;
+};
+
+/** A page and the pages under it, as the sidebar tree shows them. */
+export type PageTreeNode = PageSummary & {
+  children: PageTreeNode[];
+};
+
+/** Everything the app reads about one page. `storageXml` is the page in Confluence's own format. */
+export type PageDetail = PageSummary & {
+  storageXml: string;
+  labels: string[];
+  attachments: ConfluenceAttachment[];
+  ancestors: Array<{ id: string; title: string }>;
+};
+
+/** A page converted to Markdown, with the frontmatter block the app writes at the top of it. */
+export type ParsedPage = {
+  pageId: string;
+  title: string;
+  spaceKey: string;
+  frontmatter: Record<string, unknown>;
+  /** The frontmatter followed by the page body in Markdown. */
+  markdown: string;
+};
+
+export type SpacesResponse = { spaces: ConfluenceSpace[] };
+export type PageTreeResponse = { tree: PageTreeNode[] };
+export type PageResponse = { detail: PageDetail; parsed: ParsedPage };
+
+/** What `POST /api/spaces/resolve-url` found in a pasted URL or page id. */
+export type ResolveResponse = { spaceKey?: string; pageId?: string };
+
+/** A space's `.confluenceignore` rules, one pattern per entry. */
+export type IgnoreRules = { patterns: string[] };

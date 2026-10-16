@@ -1,0 +1,26 @@
+{
+  "confluenceVersion": "9.2.26",
+  "postgresImage": "docker.io/library/postgres:15",
+  "port": 8090,
+  "jvmMaxMemory": "4096m",
+  "names": {
+    "network": "confluence-test",
+    "db": "confluence-test-db",
+    "app": "confluence-test-app",
+    "dbVolume": "confluence-test-pgdata",
+    "homeVolume": "confluence-test-home"
+  },
+  "db": {
+    "name": "confluence",
+    "user": "confluence",
+    "password": "confluence"
+  },
+  "admin": {
+    "username": "admin",
+    "password": "admin",
+    "fullName": "Test Admin",
+    "email": "admin@example.test"
+  },
+  "licenseFile": "licenses/confluence-dc-timebomb.key",
+  "licenseRestartAfterMinutes": 170
+}

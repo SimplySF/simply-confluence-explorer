@@ -21,7 +21,17 @@ import type { DoctorLevel, DoctorReport, DoctorResult } from '../api/types.js';
 // a network or a particular machine. A setup failure that gets fixed ships with the check that
 // detects it.
 
-export const CHECK_IDS = ['node-version', 'confluence-config', 'server-type', 'tls-verification', 'data-dir'] as const;
+export const CHECK_IDS = [
+  'node-version',
+  'confluence-config',
+  'server-type',
+  'confluence-auth',
+  'tls-verification',
+  'data-dir',
+  'ignore-files',
+  'ignore-rules',
+  'test-license',
+] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
 /** The oldest Node major version the package supports, matching `engines` in package.json. */
@@ -35,6 +45,15 @@ export type DoctorDeps = {
   dataDir: { path: string; writable: boolean };
   /** The value of NODE_EXTRA_CA_CERTS, which is how an internal certificate authority is trusted. */
   extraCaCerts?: string;
+  /** `dev` when the app runs against the test environment, whose license expires. */
+  profile: string;
+  /** Asks Confluence who the token belongs to. */
+  verify: () => Promise<{ success: boolean; displayName?: string; error?: string }>;
+  /** Each space's `.confluenceignore`: whether it can be read, and its rules. */
+  ignoreFiles: Array<{ spaceKey: string; readable: boolean; patterns: string[] }>;
+  /** The Data Center license, or `null` when it cannot be read. */
+  license: () => Promise<{ expired: boolean; expiryDate: number } | null>;
+  now: number;
 };
 
 type Result = DoctorResult & { id: CheckId };
@@ -133,6 +152,70 @@ function tlsVerification(d: DoctorDeps): Result {
   );
 }
 
+async function confluenceAuth(d: DoctorDeps, config: Result, type: Result): Promise<Result> {
+  if (config.level !== 'ok' || type.level !== 'ok')
+    return result('confluence-auth', 'skip', 'no usable Confluence connection');
+  const answer = await d.verify();
+  if (answer.success) return result('confluence-auth', 'ok', `signed in as ${answer.displayName ?? 'an unnamed user'}`);
+  return result(
+    'confluence-auth',
+    'fail',
+    `Confluence did not accept the connection: ${answer.error ?? 'no reason was given'}`,
+    'check that the URL opens from this machine and that the token has not expired; for a certificate error, see NODE_EXTRA_CA_CERTS in the README',
+  );
+}
+
+// A file that cannot be read excludes its whole space (the rules fail closed), so the space is
+// unusable rather than unsafe. That is the one way this check fails.
+function ignoreFiles(d: DoctorDeps): Result {
+  const unreadable = d.ignoreFiles.filter((f) => !f.readable).map((f) => f.spaceKey);
+  if (unreadable.length > 0) {
+    return result(
+      'ignore-files',
+      'fail',
+      `.confluenceignore cannot be read for ${unreadable.join(', ')}, so every page there is excluded until it can`,
+      `fix the file permissions on spaces/<KEY>/.confluenceignore in the data directory for ${unreadable.join(', ')}`,
+    );
+  }
+  const withRules = d.ignoreFiles.filter((f) => f.patterns.length > 0);
+  if (withRules.length === 0) return result('ignore-files', 'ok', 'no .confluenceignore rules, so nothing is excluded');
+  const count = withRules.reduce((n, f) => n + f.patterns.length, 0);
+  return result(
+    'ignore-files',
+    'ok',
+    `${count} exclusion rule(s) across ${withRules.map((f) => f.spaceKey).join(', ')}`,
+  );
+}
+
+// A bare number is read as a page id, and also as part of a title, so `1234` also hides any page
+// whose title contains 1234 (ADR-013). Writing `id:1234` matches the id alone.
+function ignoreRules(d: DoctorDeps): Result {
+  const bare = d.ignoreFiles.flatMap((f) =>
+    f.patterns.filter((p) => /^\d+$/.test(p)).map((p) => `${f.spaceKey}: ${p}`),
+  );
+  return bare.length > 0
+    ? result(
+        'ignore-rules',
+        'warn',
+        `bare page ids also match titles that contain them: ${bare.join(', ')}`,
+        'write page ids as id:<number>',
+      )
+    : result('ignore-rules', 'ok', 'every page-id rule uses the id: form');
+}
+
+// The test environment's license lasts three hours from when Confluence starts (ADR-004).
+async function testLicense(d: DoctorDeps, auth: Result): Promise<Result> {
+  if (d.profile !== 'dev') return result('test-license', 'skip', 'not running against the test environment');
+  if (auth.level !== 'ok') return result('test-license', 'skip', 'not connected');
+  const license = await d.license();
+  const restart = 'pnpm run testenv:down, then pnpm run testenv:start, which starts a fresh three hours';
+  if (!license) return result('test-license', 'warn', 'the test license could not be read', 'pnpm run testenv:status');
+  const minutes = Math.round((license.expiryDate - d.now) / 60_000);
+  if (license.expired || minutes <= 0) return result('test-license', 'fail', 'the test license has expired', restart);
+  if (minutes < 15) return result('test-license', 'warn', `the test license expires in ${minutes} minutes`, restart);
+  return result('test-license', 'ok', `the test license is valid for ${minutes} more minutes`);
+}
+
 function dataDir(d: DoctorDeps): Result {
   if (!d.dataDir.writable) {
     return result(
@@ -153,8 +236,21 @@ function dataDir(d: DoctorDeps): Result {
 /**
  * Runs every check.
  */
-export function runDoctor(d: DoctorDeps): DoctorReport {
-  const results = [nodeVersion(d), confluenceConfig(d), serverType(d), tlsVerification(d), dataDir(d)];
+export async function runDoctor(d: DoctorDeps): Promise<DoctorReport> {
+  const config = confluenceConfig(d);
+  const type = serverType(d);
+  const auth = await confluenceAuth(d, config, type);
+  const results = [
+    nodeVersion(d),
+    config,
+    type,
+    auth,
+    tlsVerification(d),
+    dataDir(d),
+    ignoreFiles(d),
+    ignoreRules(d),
+    await testLicense(d, auth),
+  ];
   return { results, ok: !results.some((r) => r.level === 'fail') };
 }
 

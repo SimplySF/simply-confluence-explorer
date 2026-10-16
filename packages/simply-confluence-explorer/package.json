@@ -62,6 +62,7 @@
     "start": "node bin/run.js",
     "test": "wireit",
     "test:coverage": "vitest run --coverage --project simply-confluence-explorer",
+    "test:e2e": "vitest run --project simply-confluence-explorer-e2e",
     "test:only": "wireit",
     "test:watch": "vitest watch --project simply-confluence-explorer"
   },
@@ -196,6 +197,7 @@
     }
   },
   "dependencies": {
-    "@simplysf/simply-atlassian-core": "^0.7.0"
+    "@simplysf/simply-atlassian-core": "^0.7.0",
+    "yaml": "^2.9.1"
   }
 }

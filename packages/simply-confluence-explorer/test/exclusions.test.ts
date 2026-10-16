@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2026, SimplySF.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// Which pages a space's .confluenceignore keeps away from an AI (ADR-018). These rules protect
+// sensitive pages, so every way of failing must fail closed: hiding too much, never too little.
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { ExclusionManager, matchesPattern } from '../src/spaces/exclusionManager.js';
+
+const manager = (): { exclusions: ExclusionManager; dataDir: string; logged: string[] } => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-excl-'));
+  const logged: string[] = [];
+  return { exclusions: new ExclusionManager(dataDir, (m) => logged.push(m)), dataDir, logged };
+};
+
+describe('a rule', () => {
+  it('matches a title, a title pattern, or a path and everything below it, ignoring case', () => {
+    expect(matchesPattern('*Security*', 'HR Security Architecture')).toBe(true);
+    expect(matchesPattern('*Security*', 'Normal Documentation')).toBe(false);
+    expect(matchesPattern('SecretDir/', 'SecretDir/Nested Page')).toBe(true);
+    expect(matchesPattern('SecretDir/', 'OtherDir/Nested Page')).toBe(false);
+    expect(matchesPattern('salary bands', 'Salary Bands')).toBe(true);
+  });
+
+  it('treats a rule that is not a valid pattern as plain text instead of failing', () => {
+    expect(matchesPattern('Why??', 'FAQ: Why?? and how')).toBe(true);
+  });
+
+  // Known defect, deferred to the maintainer (ADR-013): a rule matches anywhere in a title.
+  it('also matches a title that only contains the rule, which over-excludes', () => {
+    expect(matchesPattern('Restricted/', 'Unrestricted Access Guide')).toBe(true);
+  });
+});
+
+describe('a space', () => {
+  it('excludes a page by id, by title, by an ancestor, and by its path', () => {
+    const { exclusions } = manager();
+    exclusions.savePatterns('HR', ['id:1001', 'Salary Bands', 'Interviews/Internal/']);
+    expect(exclusions.isPageExcluded({ id: '1001', title: 'Anything' }, 'HR')).toBe(true);
+    expect(exclusions.isPageExcluded({ id: '2', title: 'Salary Bands' }, 'hr')).toBe(true);
+    expect(
+      exclusions.isPageExcluded(
+        { id: '3', title: 'Feedback', ancestors: [{ title: 'Interviews' }, { title: 'Internal' }] },
+        'HR',
+      ),
+    ).toBe(true);
+    expect(
+      exclusions.isPageExcluded({ id: '4', title: 'Interview Guide', ancestors: [{ title: 'Interviews' }] }, 'HR'),
+    ).toBe(false);
+  });
+
+  it('excludes nothing when it has no rules file', () => {
+    expect(manager().exclusions.isPageExcluded({ id: '1', title: 'Anything' }, 'OPS')).toBe(false);
+  });
+
+  it('ignores comment lines, and reads a rule that was saved a moment ago', () => {
+    const { exclusions } = manager();
+    exclusions.savePatterns('OPS', ['# a comment', 'Deploy Notes']);
+    expect(exclusions.patterns('OPS')).toEqual(['Deploy Notes']);
+    exclusions.savePatterns('OPS', ['Team Contacts']);
+    expect(exclusions.patterns('OPS')).toEqual(['Team Contacts']);
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'excludes every page when its rules file cannot be read, rather than none',
+    () => {
+      const { exclusions, logged } = manager();
+      exclusions.savePatterns('HR', ['Secret']);
+      const file = exclusions.ignoreFilePath('HR');
+      fs.chmodSync(file, 0o000);
+      try {
+        expect(exclusions.isPageExcluded({ id: '1', title: 'Anything at all' }, 'HR')).toBe(true);
+        expect(logged[0]).toMatch(/every page in HR is excluded/);
+      } finally {
+        fs.chmodSync(file, 0o600);
+      }
+    },
+  );
+
+  it('keeps a space key of ".." inside the data directory', () => {
+    const { exclusions, dataDir } = manager();
+    expect(exclusions.ignoreFilePath('..')).toBe(path.join(dataDir, 'spaces', '_', '.confluenceignore'));
+  });
+});

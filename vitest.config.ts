@@ -27,18 +27,31 @@ const packagesDir = fileURLToPath(new URL('./packages/', import.meta.url));
 // actually inherit `include`, `environment`, and `globals` below, and also makes them resolve
 // correctly regardless of which directory `vitest run` is invoked from (each package's
 // `test:only` wireit task runs it from that package's own directory).
+//
+// Each package also gets an `<name>-e2e` project for its end-to-end suite (test/e2e/*.e2e.ts). It is
+// kept out of the unit project, so `pnpm test` never needs the Confluence test environment, and its
+// files run one at a time because they share that one environment.
 const packageProjects = fs
   .readdirSync(packagesDir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
-  .map((entry) => ({
-    test: {
-      name: entry.name,
-      root: fileURLToPath(new URL(`./packages/${entry.name}/`, import.meta.url)),
-      globals: true,
-      environment: 'node',
-      include: ['test/**/*.test.ts'],
-    },
-  }));
+  .flatMap((entry) => {
+    const root = fileURLToPath(new URL(`./packages/${entry.name}/`, import.meta.url));
+    return [
+      { test: { name: entry.name, root, globals: true, environment: 'node', include: ['test/**/*.test.ts'] } },
+      {
+        test: {
+          name: `${entry.name}-e2e`,
+          root,
+          globals: true,
+          environment: 'node',
+          include: ['test/e2e/**/*.e2e.ts'],
+          fileParallelism: false,
+          testTimeout: 120_000,
+          hookTimeout: 120_000,
+        },
+      },
+    ];
+  });
 
 export default defineConfig({
   root: rootDir,

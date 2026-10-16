@@ -157,3 +157,8 @@ lib
 
 # Nx cache
 .nx/
+
+# Confluence test environment: credentials, seed manifest and the e2e data directory. Its lib/ is
+# source, not the build output the `lib` rule above is for.
+test-env/.state
+!test-env/lib/

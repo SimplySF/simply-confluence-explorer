@@ -19,14 +19,21 @@ import type http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_HOST, main, USAGE } from '../src/cli.js';
+import { FAKE_TOKEN, startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 
 // Every test names its own data directory, so none of them reads or writes the real one.
 const dataDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-cli-'));
 
 describe('main', () => {
   let server: http.Server | undefined;
+  let fake: FakeConfluence;
+
+  beforeAll(async () => {
+    fake = await startFakeConfluence();
+  });
+  afterAll(() => fake.close());
 
   afterEach(async () => {
     if (server) await new Promise((resolve) => server!.close(resolve));
@@ -66,16 +73,12 @@ describe('main', () => {
 
   it('runs the doctor instead of the server, and reads the connection from the data directory .env', async () => {
     const dir = dataDir();
-    fs.writeFileSync(
-      path.join(dir, '.env'),
-      'CONFLUENCE_URL=https://wiki.example.com\nCONFLUENCE_PERSONAL_TOKEN=pat\n',
-    );
+    fs.writeFileSync(path.join(dir, '.env'), `CONFLUENCE_URL=${fake.url}\nCONFLUENCE_PERSONAL_TOKEN=${FAKE_TOKEN}\n`);
     const log = vi.fn();
     expect(await main({ argv: ['doctor', '--json', '--data-dir', dir], env: {}, log })).toBeUndefined();
     const report = JSON.parse(log.mock.calls[0][0] as string) as { results: Array<{ id: string; summary: string }> };
-    expect(report.results.find((r) => r.id === 'confluence-config')?.summary).toBe(
-      'Confluence at https://wiki.example.com',
-    );
+    expect(report.results.find((r) => r.id === 'confluence-config')?.summary).toBe(`Confluence at ${fake.url}`);
+    expect(report.results.find((r) => r.id === 'confluence-auth')?.summary).toBe('signed in as Test Admin');
   });
 
   it('lets the real environment win over the data directory .env', async () => {
@@ -84,10 +87,11 @@ describe('main', () => {
     const log = vi.fn();
     await main({
       argv: ['doctor', '--json', '--data-dir', dir],
-      env: { CONFLUENCE_URL: 'https://from-env.example.com', CONFLUENCE_PERSONAL_TOKEN: 't' },
+      env: { CONFLUENCE_URL: fake.url, CONFLUENCE_PERSONAL_TOKEN: FAKE_TOKEN },
       log,
     });
-    expect(log.mock.calls[0][0]).toContain('from-env.example.com');
+    expect(log.mock.calls[0][0]).toContain(fake.url);
+    expect(log.mock.calls[0][0]).not.toContain('from-file.example.com');
   });
 
   it('exits non-zero from the doctor when a check fails', async () => {

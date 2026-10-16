@@ -73,6 +73,9 @@ importers:
       '@simplysf/simply-atlassian-core':
         specifier: ^0.7.0
         version: 0.7.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.3.0
