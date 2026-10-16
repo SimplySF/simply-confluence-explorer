@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PageDetail, PageMetadata, PageTreeNode, SpaceTocNode, SyncedSpace } from '../api/types.js';
+import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { ExclusionManager } from './exclusionManager.js';
@@ -89,6 +90,11 @@ export class SpaceStore {
     // A newer version makes the old summary and tags stale.
     fs.rmSync(this.metadataFile(spaceKey, page.id), { force: true });
     this.trees.delete(spaceKey.toUpperCase());
+  }
+
+  /** Replaces a synced page's copy with the page as Confluence now holds it, keeping its attachments. */
+  public refreshPage(spaceKey: string, page: PageDetail): void {
+    this.writePage(spaceKey, page, parsePage(page).markdown, []);
   }
 
   /** The version of a page on disk, or 0 when it is not synced. */

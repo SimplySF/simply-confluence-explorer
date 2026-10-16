@@ -29,6 +29,7 @@ import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
 import { addAiRoutes } from './ai.js';
 import { addBrowseRoutes } from './browse.js';
+import { addPageRoutes } from './pages.js';
 import { addSessionRoutes } from './sessions.js';
 import { addSpaceRoutes } from './spaces.js';
 
@@ -74,7 +75,8 @@ export function createApi(services: Services): Router {
     .add('GET', '/api/doctor', () =>
       runDoctor(systemDeps(services.dataDir, connection, services.exclusions, services.ai, services.env)),
     );
-  for (const add of [addBrowseRoutes, addSpaceRoutes, addAiRoutes, addSessionRoutes]) add(router, services);
+  for (const add of [addBrowseRoutes, addSpaceRoutes, addAiRoutes, addSessionRoutes, addPageRoutes])
+    add(router, services);
   return router;
 }
 
