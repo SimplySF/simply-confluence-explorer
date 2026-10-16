@@ -1,6 +1,6 @@
 # 0001 — Confluence Explorer: what it does and how the package is built
 
-**Status:** Planned
+**Status:** Implemented (PR #12)
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-10-15
 

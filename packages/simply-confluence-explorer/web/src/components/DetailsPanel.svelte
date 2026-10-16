@@ -1,0 +1,163 @@
+<script lang="ts">
+  import { ChevronDown, Download, FolderTree, RefreshCw, Sparkles } from '@lucide/svelte';
+  import { onDestroy } from 'svelte';
+  import type { MetadataProgress, PageMetadata, PageResponse } from '../../../src/api/types.js';
+  import { api } from '../support/api.js';
+  import { pollJob } from '../support/poll.js';
+  import { messageOf, toast } from '../support/toast.svelte.js';
+  import JobProgress from './ui/JobProgress.svelte';
+  import Menu from './ui/Menu.svelte';
+
+  // The AI summary of a page, its frontmatter, and its attachments.
+  type Props = {
+    page: PageResponse;
+    spaceKey: string;
+    descendantCount: number;
+    metadata: PageMetadata | null;
+    metadataLoading: boolean;
+    onMetadata: (m: PageMetadata | null) => void;
+    onMetadataLoading: (loading: boolean) => void;
+    reloadMetadata: () => void;
+  };
+
+  let {
+    page,
+    spaceKey,
+    descendantCount,
+    metadata,
+    metadataLoading,
+    onMetadata,
+    onMetadataLoading,
+    reloadMetadata,
+  }: Props = $props();
+  let job = $state<MetadataProgress | null>(null);
+  let stopPoll = (): void => undefined;
+  onDestroy(() => stopPoll());
+  const detail = $derived(page.detail);
+
+  async function generateOne(): Promise<void> {
+    onMetadataLoading(true);
+    try {
+      onMetadata(await api.generatePageMetadata(spaceKey, detail.id));
+    } catch (e) {
+      toast(`Could not generate the summary: ${messageOf(e)}`, 'error');
+    } finally {
+      onMetadataLoading(false);
+    }
+  }
+
+  async function generateBranch(): Promise<void> {
+    try {
+      const { jobId } = await api.generateMetadata(spaceKey, detail.id);
+      job = { jobId, status: 'running', spaceKey, processed: 0, total: descendantCount + 1, errorCount: 0 };
+      stopPoll = pollJob(() => api.metadataStatus(jobId), {
+        onProgress: (p) => (job = p),
+        onFinished: (p) => {
+          job = null;
+          toast(
+            p.status === 'completed' ? 'Summaries generated for the branch.' : `Summaries for the branch ${p.status}.`,
+            p.status === 'completed' ? 'success' : 'info',
+          );
+          reloadMetadata();
+        },
+        onError: (e) => {
+          job = null;
+          toast(`The summary run stopped reporting: ${messageOf(e)}`, 'error');
+        },
+      });
+    } catch (e) {
+      toast(`Could not start summaries for the branch: ${messageOf(e)}`, 'error');
+    }
+  }
+
+  async function stop(): Promise<void> {
+    if (!job) return;
+    await api
+      .cancelMetadata(job.jobId)
+      .catch((e: unknown) => toast(`Could not stop the run: ${messageOf(e)}`, 'error'));
+    stopPoll();
+    job = null;
+  }
+
+  const generateLabel = $derived(metadataLoading ? 'Generating…' : metadata ? 'Regenerate' : 'Generate summary');
+</script>
+
+<div class="details-panel">
+  <section class="card">
+    <div class="card-head">
+      <h4><Sparkles size={15} /> AI summary</h4>
+      {#if job}
+        <JobProgress processed={job.processed} total={job.total} current={job.currentPageTitle} onStop={stop} />
+      {:else if descendantCount > 0}
+        <Menu
+          items={[
+            { label: 'This page only', onSelect: generateOne, disabled: metadataLoading },
+            {
+              label: `This page and its ${descendantCount} sub-pages`,
+              icon: FolderTree,
+              onSelect: generateBranch,
+              disabled: metadataLoading,
+            },
+          ]}
+        >
+          {#snippet label()}
+            <RefreshCw size={12} class={metadataLoading ? 'spin' : ''} />
+            {generateLabel}
+            <ChevronDown size={12} />
+          {/snippet}
+        </Menu>
+      {:else}
+        <button class="btn btn-secondary btn-sm" onclick={generateOne} disabled={metadataLoading}>
+          <RefreshCw size={12} class={metadataLoading ? 'spin' : ''} />
+          {generateLabel}
+        </button>
+      {/if}
+    </div>
+    {#if metadata}
+      <p class="details-summary">{metadata.summary}</p>
+      <div class="chip-row">
+        {#if metadata.documentType}<span class="pill pill-plain">{metadata.documentType}</span>{/if}
+        {#each metadata.tags as t (t)}<span class="pill">#{t}</span>{/each}
+        {#each metadata.systemsMentioned as s (s)}<span class="pill pill-plain">{s}</span>{/each}
+      </div>
+    {:else}
+      <p class="muted">
+        {metadataLoading
+          ? 'Loading…'
+          : 'No summary yet. Generate one for a two-sentence summary, topic tags and a document type.'}
+      </p>
+    {/if}
+  </section>
+
+  <h4 class="section-title">Frontmatter</h4>
+  <pre class="code-viewer-box">{JSON.stringify(page.parsed.frontmatter, null, 2)}</pre>
+
+  <h4 class="section-title">Attachments ({detail.attachments.length})</h4>
+  {#if detail.attachments.length === 0}
+    <p class="muted">No attachments.</p>
+  {:else}
+    <table class="data-table">
+      <thead><tr><th>File</th><th>Type</th><th>Size</th><th></th></tr></thead>
+      <tbody>
+        {#each detail.attachments as a (a.id)}
+          <tr>
+            <td>{a.title}</td>
+            <td class="muted">{a.mediaType}</td>
+            <td class="muted">{(a.fileSize / 1024).toFixed(1)} KB</td>
+            <td>
+              <a
+                href={a.downloadUrl}
+                class="btn btn-secondary btn-sm"
+                download={a.title}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Download size={12} /> Download
+              </a>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
+</div>
