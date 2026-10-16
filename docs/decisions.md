@@ -921,3 +921,27 @@ and ADR-014 said budgets start at what exists. The difference here is that every
 in an agreed design doc. A ceiling set at zero would be raised three times by the pull requests that
 follow, and a budget raised repeatedly is the standard's own warning sign that the budget is not
 being held.
+
+---
+
+## ADR-032 — Certificates are always verified; an internal certificate authority is trusted with `NODE_EXTRA_CA_CERTS` instead of a switch that turns checking off
+
+**Status:** accepted, 2026-10-15. Supersedes ADR-015.
+
+The app reaches Confluence through simply-atlassian-core (ADR-028), and that library always verifies
+TLS certificates. It offers no way to turn verification off, and it refuses the
+`CONFLUENCE_SSL_VERIFY=false` setting that other Atlassian tools accept, with an error explaining
+why. The "allow self-signed certificates" switch that ADR-015 kept therefore cannot work any more,
+and it is removed from the connection, from Settings and from the doctor.
+
+A company that runs Confluence behind its own certificate authority is still supported, in the way
+ADR-015 already named as the better answer. The person starts the app with the environment variable
+`NODE_EXTRA_CA_CERTS` set to the path of that authority's certificate file. Node then trusts
+certificates the authority issued, and every other certificate is still checked as usual. The doctor
+names the file when the variable is set, so the arrangement is visible rather than hidden.
+
+**The argument against:** ADR-015 kept the switch because finding a certificate file is harder for
+most people than ticking a box, and some will now be unable to connect until they have found one.
+That is true, and it is the cost of never sending the token over a connection that anyone in the
+middle could read. The doctor's message and the README say what to do, and the person's IT
+department will usually have the file, because their browsers already need it.

@@ -110,4 +110,4 @@ The UI is checked by walking through it in a browser, in both the light and the 
 ## Open questions
 
 - When to set up release automation. `CONTRIBUTING.md` defers it until the app has real features.
-  The repository owner decides when that point has been reached.
+  The maintainer decides when that point has been reached.

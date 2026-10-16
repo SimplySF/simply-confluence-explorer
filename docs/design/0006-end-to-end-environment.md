@@ -58,5 +58,5 @@ pull request that adds it will say so.
 
 ## Open questions
 
-- Whether the repository owner wants the job to run on every push to a branch, or only on pull
-  requests.
+- Whether the job should run on every push to a branch, or only on pull requests. The maintainer
+  decides.

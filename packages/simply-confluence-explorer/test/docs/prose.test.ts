@@ -110,8 +110,6 @@ const NOT_YET_MOVED = new Set([
   'branches/branchRuns.ts',
   'drafts/drafts.ts',
   'confluence/client.ts',
-  'confluence/connection.ts',
-  'util/privateFile.ts',
   'ai/providers.ts',
   'ai/guard.ts',
   'ai/engine.ts',
@@ -119,8 +117,6 @@ const NOT_YET_MOVED = new Set([
   'ai/settings.ts',
   'ai/geminiService.ts',
   'spaces/spaceSyncManager.ts',
-  'http/guards.ts',
-  'util/paths.ts',
   'spaces/exclusionManager.ts',
 ]);
 
@@ -156,7 +152,7 @@ describe('the documentation', () => {
   it('indexes every design doc with the status the doc itself states', () => {
     const index = read('docs/design/README.md');
     const rows = new Map(
-      [...index.matchAll(/^\| \[(\d{4})\]\(([\w.-]+)\) +\|.*\| *(\S+) *\|$/gm)].map((m) => [
+      [...index.matchAll(/^\| \[(\d{4})\]\(([\w.-]+)\) +\|.*\| *(\S+)[^|]*\|$/gm)].map((m) => [
         `docs/design/${m[2]}`,
         m[3],
       ]),

@@ -33,7 +33,7 @@ describe('createServer', () => {
     await mkdir(path.join(webRoot, 'assets'));
     await writeFile(path.join(webRoot, 'assets', 'app.js'), 'console.log("app");');
 
-    server = createServer({ webRoot, version: '1.2.3' });
+    server = createServer({ webRoot, version: '1.2.3', dataDir: path.join(webRoot, 'data'), env: {} });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
