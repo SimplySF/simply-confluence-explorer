@@ -1,11 +1,11 @@
 # History
 
-Retired documents, kept verbatim rather than deleted.
+This folder keeps retired documents exactly as they were, instead of deleting them.
 
-A plan that has shipped, or a document whose content has moved somewhere else,
-is retired here. It is not maintained and is not held to the present: the
-budgets skip this directory when counting live prose, and the conformance check
-skips it when grepping, because an append-only record cannot be fixed.
+A document is retired here when the plan it describes has shipped, or when its content has moved
+somewhere else. Retired documents are not maintained and are not expected to describe the program
+as it is today. For that reason the prose budget does not count this folder, and the conformance
+check does not search it: an append-only record cannot be corrected after the fact.
 
-Read something here as an answer to "what was the reasoning at the time", never
-as a description of how the program works now.
+Read a document here to learn what the reasoning was at the time it was written. Do not read it as a
+description of how the program works now.
