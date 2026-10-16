@@ -180,7 +180,17 @@
         "src/**/*.ts",
         "**/tsconfig.json",
         "../../tsconfig.json",
-        "../../vitest.config.ts"
+        "../../vitest.config.ts",
+        "package.json",
+        "web/src/**",
+        "../../package.json",
+        "../../scripts/**",
+        "../../docs/**",
+        "../../*.md",
+        "**/*.md",
+        "dist/web/**",
+        "!node_modules/**",
+        "../../.agent-standard"
       ],
       "output": []
     }

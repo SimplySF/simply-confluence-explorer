@@ -66,7 +66,7 @@ Each package is removed in the pull request that moves the code using it:
 - `axios`, `cheerio`, `turndown` and the push tool go with the move to the library.
 
 The dependency budget (ADR-014) is measured again against the new manifest. The new numbers are
-recorded in a later decision record, written in the change that makes the budgets part of `pnpm test`.
+recorded in ADR-031.
 
 ## Testing
 

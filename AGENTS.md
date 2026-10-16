@@ -94,8 +94,8 @@ owner's wording; our additions to them follow this rule.
 
 ### Checks
 
-- **Run `pnpm run build` and then `pnpm test` before every commit.** The budgets (ADR-014) run as
-  part of `pnpm test`. A budget is a limit on the size or shape of the project, such as the number of
+- **Run `pnpm run build` and then `pnpm test` before every commit.** The budgets (ADR-014, ADR-031) run
+  as part of `pnpm test`, and `pnpm run budgets` prints them with their current values. A budget is a limit on the size or shape of the project, such as the number of
   lines of code or of runtime dependencies, chosen so that growth is a deliberate decision rather
   than an accident. If a change breaks a budget, do not work around the check: write a decision
   record that argues for the new number.
@@ -206,8 +206,9 @@ is written down so that an agent recognises the urge before acting on it.
 This section lists the checks this file mentions that nothing in the repository enforces yet. Each
 item is removed in the commit that adds the command enforcing it.
 
-- The budgets and the documentation tests (`test/budgets.test.ts`).
-- `pnpm run standard` and the `.agent-standard` declaration.
 - `pnpm run test:e2e`, `pnpm run testenv:start`, the `test-env/` directory, and the end-to-end CI
   job.
 - The doctor (`confluence-explorer doctor`), which checks a user's setup.
+- The load-bearing modules in the table above that have not moved into this package yet.
+  `test/docs/prose.test.ts` keeps a list of them and fails when one of them lands, so that the list
+  is pruned as the move goes on.

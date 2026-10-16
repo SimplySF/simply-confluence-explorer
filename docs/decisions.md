@@ -859,3 +859,65 @@ rewritten, and this is a rewrite. Two things answer it. First, the rewrite was m
 after the log was first merged into this repository, before any later record or design doc had come
 to rely on its earlier wording. Second, this record says exactly what changed and what did not, and
 the earlier wording remains in the git history, in the commit that first added the log.
+
+---
+
+## ADR-031 — The budgets are counted on the template's layout and enforced by `pnpm test`, instead of by a shell script
+
+**Status:** accepted, 2026-10-15. Amends ADR-014 and ADR-021 where they name `scripts/budgets.sh`
+and describe what it counts.
+
+The budgets are now measured by `scripts/budgets.mjs`, a Node script. The package's
+`test/budgets.test.ts` runs that script and turns each budget into its own test, so a failure names
+the budget that was broken and the files that broke it. `pnpm run budgets` prints the same
+measurements for a person to read.
+
+The budgets moved out of a shell script because this repository's CI runs on Windows as well as
+Linux, and Windows runners do not run shell scripts. A budget that only some runners check would
+drift on the others without anyone noticing. Making the budgets part of `pnpm test` means every
+runner enforces them, and so does every contributor who runs the tests.
+
+What is counted had to change along with the layout, so these numbers are set again:
+
+| budget                                                                                     | limit       | measured when set |
+| ------------------------------------------------------------------------------------------ | ----------- | ----------------- |
+| live prose (`MAX_DOC_LINES`)                                                               | 2,400 lines | 2,085             |
+| runtime dependencies (`MAX_RUNTIME_DEPS`)                                                  | 7           | 0                 |
+| dev dependencies (`MAX_DEV_DEPS`)                                                          | 29          | 26                |
+| modules importing the library's clients or calling `fetch` (`MAX_CONFLUENCE_HTTP_MODULES`) | 1           | 0                 |
+| modules running external processes (`MAX_EXEC_MODULES`)                                    | 1           | 0                 |
+
+Each change, and the reason for it:
+
+- **Prose** now includes the template's contributing guides and the design docs the template
+  requires, and the documentation is written in full explanatory sentences (ADR-030), which take
+  more lines than the earlier clipped style. The Contributor Covenant is adopted text rather than
+  text this project wrote, so it is not counted. History and review stay excluded, as before,
+  because append-only documents cannot be shortened.
+- **Runtime dependencies** are capped at the seven that design doc 0002 names and argues for. The
+  number is set once here so that the pull requests bringing those dependencies in do not each have
+  to raise it.
+- **Dev dependencies** are the template's own tooling (26) plus three that the move needs:
+  `@lucide/svelte` for icons, `marked` for rendering Markdown, and `@types/archiver` for the ZIP
+  library's types.
+- **Code and comments** no longer count the license header that the linter requires at the top of
+  every file, or a Svelte `<style>` block, which is a stylesheet rather than code. The header is the
+  same fifteen lines everywhere and says nothing about the code below it.
+- **The HTTP row** counts the modules that import simply-atlassian-core's `ConfluenceClient` or
+  `HttpTransport`, or that call `fetch` themselves. It no longer counts imports of `node:http`,
+  because the server needs that module to serve the app (ADR-028).
+- **The exec row** allows one module, the Gemini CLI runner, because pushing to Confluence no longer
+  starts a separate program (ADR-028).
+
+The code budget, the comment ceiling, the test floor, the bundle size and the AI rows are unchanged.
+
+The unit-test task is also told about the files these tests read, such as the documentation, the
+scripts and the built bundle. Wireit, the template's build tool, skips a task whose input files have
+not changed, so without this a change to the documentation alone would not re-run the tests that
+check it.
+
+**The argument against:** the runtime and dev dependency ceilings are set above today's counts,
+and ADR-014 said budgets start at what exists. The difference here is that every addition is named
+in an agreed design doc. A ceiling set at zero would be raised three times by the pull requests that
+follow, and a budget raised repeatedly is the standard's own warning sign that the budget is not
+being held.

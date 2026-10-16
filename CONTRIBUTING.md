@@ -81,6 +81,8 @@ pnpm run test:only   # lerna run test:only
 pnpm run format      # lerna run format
 pnpm run reset       # clear node_modules, the lockfile, and all wireit/TS/ESLint caches
 pnpm run reset:install  # same as reset, then reinstall dependencies
+pnpm run budgets     # print the size and architecture budgets that pnpm test enforces
+pnpm run standard    # the development-standard conformance check, if it sits beside the checkout
 ```
 
 Run inside a single package directory to target just that package:
