@@ -106,17 +106,7 @@ function walk(dir: string): string[] {
 // Load-bearing modules that a later change will move into this package. The list is closed in both
 // directions: a path listed here that already exists fails the test, so the list shrinks as each
 // module lands, and a missing path that is not listed here fails too.
-const NOT_YET_MOVED = new Set([
-  'confluence/pagePush.ts',
-  'branches/branchRuns.ts',
-  'drafts/drafts.ts',
-  'ai/providers.ts',
-  'ai/guard.ts',
-  'ai/engine.ts',
-  'ai/sessions.ts',
-  'ai/settings.ts',
-  'ai/geminiService.ts',
-]);
+const NOT_YET_MOVED = new Set(['confluence/pagePush.ts', 'branches/branchRuns.ts', 'drafts/drafts.ts']);
 
 describe('the documentation', () => {
   it('names only pnpm scripts that exist, or says they are not armed yet', () => {

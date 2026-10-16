@@ -93,7 +93,9 @@ const testLines = tests.reduce((n, file) => n + read(file).replace(LICENSE_HEADE
 // which the project adopted rather than wrote, so it is not counted either.
 const docs = walk(root, (name) => name.endsWith('.md'))
   .map(rel)
-  .filter((file) => !/^(docs\/(history|review)\/|\.git\/)/.test(file))
+  // test-env/.state holds what the end-to-end suite synced from Confluence, which is test data and
+  // not the project's prose.
+  .filter((file) => !/^(docs\/(history|review)\/|\.git\/|test-env\/\.state\/)/.test(file))
   .filter((file) => file !== 'CODE_OF_CONDUCT.md' && file !== 'docs/decisions.md')
   .filter((file) => !file.includes('/node_modules/') && !file.includes('CHANGELOG.md'));
 const docLines = docs.reduce((n, file) => n + read(join(root, file)).split('\n').length, 0);

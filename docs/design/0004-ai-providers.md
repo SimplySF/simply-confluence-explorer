@@ -1,6 +1,6 @@
 # 0004 — Asking an AI: one engine, an outbound guard, and conversations on the server
 
-**Status:** Planned
+**Status:** Implemented (PR #7)
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-10-15
 

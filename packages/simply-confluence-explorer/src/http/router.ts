@@ -142,16 +142,16 @@ export class Router {
 
 function matchSegments(pattern: string[], parts: string[]): Record<string, string> | undefined {
   if (pattern.length !== parts.length) return undefined;
+  // Literal segments decide which route this is; only then are its parameters checked, so a request
+  // for one route is never refused by the parameter check of another.
+  if (pattern.some((segment, i) => !segment.startsWith(':') && segment !== parts[i])) return undefined;
   const params: Record<string, string> = {};
   for (const [i, segment] of pattern.entries()) {
-    if (segment.startsWith(':')) {
-      const name = segment.slice(1);
-      const value = safeDecode(parts[i]);
-      if (value === undefined || !PARAMS[name].valid(value)) throw new HttpError(400, `invalid ${PARAMS[name].label}`);
-      params[name] = value;
-    } else if (segment !== parts[i]) {
-      return undefined;
-    }
+    if (!segment.startsWith(':')) continue;
+    const name = segment.slice(1);
+    const value = safeDecode(parts[i]);
+    if (value === undefined || !PARAMS[name].valid(value)) throw new HttpError(400, `invalid ${PARAMS[name].label}`);
+    params[name] = value;
   }
   return params;
 }

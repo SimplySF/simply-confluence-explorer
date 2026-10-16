@@ -20,6 +20,8 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadEnvFile } from '@simplysf/simply-atlassian-core';
+import { ConfiguredAi } from './ai/engine.js';
+import { AiSettingsStore } from './ai/settings.js';
 import { ConnectionStore } from './confluence/connection.js';
 import { renderDoctor, runDoctor } from './doctor/checks.js';
 import { systemDeps } from './doctor/system.js';
@@ -83,7 +85,8 @@ export async function main(options: MainOptions = {}): Promise<http.Server | und
 
   if (positionals[0] === 'doctor') {
     const exclusions = new ExclusionManager(dataDir, log);
-    const report = await runDoctor(systemDeps(dataDir, new ConnectionStore(dataDir, env), exclusions, env));
+    const ai = new ConfiguredAi(new AiSettingsStore(dataDir, env), { dataDir, env, log });
+    const report = await runDoctor(systemDeps(dataDir, new ConnectionStore(dataDir, env), exclusions, ai, env));
     log(values.json ? JSON.stringify(report, null, 2) : renderDoctor(report));
     if (!report.ok) throw new Error('The doctor found a problem; see the fixes above.');
     return undefined;

@@ -30,6 +30,8 @@ export const CHECK_IDS = [
   'data-dir',
   'ignore-files',
   'ignore-rules',
+  'guard-rules',
+  'ai-engine',
   'test-license',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
@@ -51,6 +53,9 @@ export type DoctorDeps = {
   verify: () => Promise<{ success: boolean; displayName?: string; error?: string }>;
   /** Each space's `.confluenceignore`: whether it can be read, and its rules. */
   ignoreFiles: Array<{ spaceKey: string; readable: boolean; patterns: string[] }>;
+  /** Each space's `.confluenceguard`: how many rules it has, or why it does not parse. */
+  guardFiles: Array<{ spaceKey: string; rules?: number; error?: string }>;
+  ai: { available: boolean; engine: string };
   /** The Data Center license, or `null` when it cannot be read. */
   license: () => Promise<{ expired: boolean; expiryDate: number } | null>;
   now: number;
@@ -203,6 +208,39 @@ function ignoreRules(d: DoctorDeps): Result {
     : result('ignore-rules', 'ok', 'every page-id rule uses the id: form');
 }
 
+// A guard rule that does not parse would be a protection silently missing, so AI requests for that
+// space are refused until it parses (ADR-022).
+function guardRules(d: DoctorDeps): Result {
+  const broken = d.guardFiles.filter((g) => g.error);
+  if (broken.length > 0) {
+    return result(
+      'guard-rules',
+      'fail',
+      `.confluenceguard does not parse: ${broken.map((g) => `${g.spaceKey}: ${g.error ?? 'unknown error'}`).join('; ')}`,
+      'fix the rule named above; AI requests for that space are refused until it parses',
+    );
+  }
+  const rules = d.guardFiles.reduce((n, g) => n + (g.rules ?? 0), 0);
+  return result(
+    'guard-rules',
+    'ok',
+    rules > 0
+      ? `outbound guard active, with ${rules} custom rule(s)`
+      : 'outbound guard active, with its built-in rules',
+  );
+}
+
+function aiEngine(d: DoctorDeps): Result {
+  return d.ai.available
+    ? result('ai-engine', 'ok', `AI engine: ${d.ai.engine}`)
+    : result(
+        'ai-engine',
+        'warn',
+        'no AI engine is set up, so questions, summaries and improvement proposals are unavailable',
+        'choose a provider, model and key in Settings, or install the Gemini CLI',
+      );
+}
+
 // The test environment's license lasts three hours from when Confluence starts (ADR-004).
 async function testLicense(d: DoctorDeps, auth: Result): Promise<Result> {
   if (d.profile !== 'dev') return result('test-license', 'skip', 'not running against the test environment');
@@ -249,6 +287,8 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorReport> {
     dataDir(d),
     ignoreFiles(d),
     ignoreRules(d),
+    guardRules(d),
+    aiEngine(d),
     await testLicense(d, auth),
   ];
   return { results, ok: !results.some((r) => r.level === 'fail') };

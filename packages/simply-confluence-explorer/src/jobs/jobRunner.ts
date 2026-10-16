@@ -62,6 +62,10 @@ export class JobRunner<J extends JobRecord> {
     return this.jobs.get(jobId);
   }
 
+  public find(match: (job: J) => boolean): J | undefined {
+    return [...this.jobs.values()].find(match);
+  }
+
   public cancel(jobId: string): J | undefined {
     const job = this.jobs.get(jobId);
     if (!job) return undefined;

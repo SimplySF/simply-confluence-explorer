@@ -1026,3 +1026,26 @@ the ZIP is built, because a rule saved without purging leaves the excluded pages
 **The argument against:** both change what an existing rules file or download does. That is the
 intent: each closes a way for an excluded page to leave the machine, and the tests that hold it are
 in `test/exclusions.test.ts` and `test/localCopy.test.ts`.
+
+---
+
+## ADR-036 — A dependency's install script does not run unless a record allows it
+
+**Status:** accepted, 2026-10-16.
+
+pnpm asks before running the install scripts that packages declare, and lists each package's choice
+under `allowBuilds` in `pnpm-workspace.yaml`. An install script runs arbitrary code on every machine
+that installs the project, including CI, so a script is allowed only when the package cannot work
+without it, and that is recorded here.
+
+The template's tooling already allows `esbuild`, `nx` and `unrs-resolver`, whose scripts install the
+native binaries they are built on. The AI dependencies (ADR-017) brought two more, both denied:
+
+- `@google/genai` declares a `preinstall` script that prints that it does nothing, and a `prepare`
+  script that only runs when the package is developed from its own repository.
+- `protobufjs` declares a `postinstall` script that installs the dependencies of its separate
+  command-line tool, which this app does not use.
+
+**The argument against:** denying a script that a package needs breaks it in a way that may only
+show at run time. The tests that call the Gemini API through `@google/genai` (`test/ai.test.ts`)
+pass with both scripts denied, and that is the evidence the denial is safe.

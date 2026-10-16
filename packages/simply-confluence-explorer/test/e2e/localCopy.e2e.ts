@@ -22,19 +22,12 @@ import type http from 'node:http';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PageTreeNode, SyncProgress } from '../../src/api/types.js';
-import { hiddenTitles, loadTestEnv, SKIP_REASON, startApp } from './testEnv.js';
+import { hiddenTitles, loadTestEnv, removeCopy, SKIP_REASON, startApp } from './testEnv.js';
 
 const env = loadTestEnv();
 const SPACE = 'PEOPLE';
 
 const titles = (nodes: PageTreeNode[]): string[] => nodes.flatMap((n) => [n.title, ...titles(n.children)]);
-
-function removeCopy(): void {
-  const dir = path.join(env!.dataDir, 'spaces', SPACE);
-  for (const sub of ['pages_cache', 'pages', 'metadata', 'toc.json', 'TOC.md', 'manifest.json']) {
-    fs.rmSync(path.join(dir, sub), { recursive: true, force: true });
-  }
-}
 
 describe.skipIf(!env)(`a space synced from the test environment${env ? '' : ` (skipped: ${SKIP_REASON})`}`, () => {
   const space = env?.spaces[SPACE];
@@ -51,7 +44,7 @@ describe.skipIf(!env)(`a space synced from the test environment${env ? '' : ` (s
   };
 
   beforeAll(async () => {
-    removeCopy();
+    removeCopy(env!, SPACE);
     ({ server, api } = await startApp(env!));
     const started = await call<SyncProgress>('/space-cache/sync', { spaceKey: SPACE });
     for (let progress = started; ;) {
@@ -70,7 +63,7 @@ describe.skipIf(!env)(`a space synced from the test environment${env ? '' : ` (s
   // nothing behind for another suite to read. The seeded exclusion rules are kept.
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    removeCopy();
+    removeCopy(env!, SPACE);
   });
 
   it('writes every visible page and no excluded one', () => {

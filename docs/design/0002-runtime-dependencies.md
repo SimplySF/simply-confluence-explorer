@@ -1,6 +1,6 @@
 # 0002 — Runtime dependencies: simply-atlassian-core and `node:http` instead of fifteen packages
 
-**Status:** Planned
+**Status:** Implemented (PR #7)
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-10-15
 

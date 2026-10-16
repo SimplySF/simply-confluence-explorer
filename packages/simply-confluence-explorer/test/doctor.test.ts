@@ -30,6 +30,8 @@ const healthy = (over: Partial<DoctorDeps> = {}): DoctorDeps => ({
   profile: '',
   verify: () => Promise.resolve({ success: true, displayName: 'Test Admin' }),
   ignoreFiles: [{ spaceKey: 'PLAT', readable: true, patterns: ['Restricted/', 'id:1001'] }],
+  guardFiles: [{ spaceKey: 'PLAT', rules: 2 }],
+  ai: { available: true, engine: 'Claude (claude-opus-5-5)' },
   license: () => Promise.resolve({ expired: false, expiryDate: 2 * HOUR }),
   now: 0,
   ...over,
@@ -112,6 +114,21 @@ describe('the doctor', () => {
   it('warns about a bare page id rule, which also matches titles containing it (ADR-013)', async () => {
     const deps = healthy({ ignoreFiles: [{ spaceKey: 'OPS', readable: true, patterns: ['1234'] }] });
     expect((await find(deps, 'ignore-rules')).level).toBe('warn');
+  });
+
+  it('fails a .confluenceguard that does not parse, because its protection would be missing (ADR-022)', async () => {
+    const result = await find(
+      healthy({ guardFiles: [{ spaceKey: 'OPS', error: 'line 2: expected "allow:"' }] }),
+      'guard-rules',
+    );
+    expect(result.level).toBe('fail');
+    expect(result.summary).toContain('OPS: line 2');
+  });
+
+  it('warns when no AI engine is set up, and says what is unavailable without one', async () => {
+    const result = await find(healthy({ ai: { available: false, engine: 'none' } }), 'ai-engine');
+    expect(result.level).toBe('warn');
+    expect(result.summary).toMatch(/questions, summaries/);
   });
 
   it('checks the test license only against the test environment, and warns before it runs out (ADR-004)', async () => {
