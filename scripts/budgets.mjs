@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const MAX_CODE_LINES = 15000; // ADR-021: package src/ and web/src/, tests excluded
 const MAX_COMMENT_RATIO = 25; // ADR-014: a hard ceiling; when it is exceeded, a comment is removed and the limit stays
-const MAX_DOC_LINES = 2400; // ADR-031: every tracked .md except docs/history, docs/review and the code of conduct
+const MAX_DOC_LINES = 1700; // ADR-034: every tracked .md except the decision log, history, review and the code of conduct
 const MAX_RUNTIME_DEPS = 7; // ADR-031: direct dependencies across every package.json
 const MAX_DEV_DEPS = 29; // ADR-031: direct devDependencies across every package.json
 const MAX_BUNDLE_BYTES = 409600; // ADR-014: dist/web/assets, 400 KiB
@@ -85,12 +85,13 @@ const comments = totals.reduce((n, t) => n + t.comments, 0);
 const testLines = tests.reduce((n, file) => n + read(file).replace(LICENSE_HEADER, '').split('\n').length, 0);
 
 // --- prose ---------------------------------------------------------------------
-// Every Markdown file the project owns. History and review are append-only, so they cannot be
-// shortened and are not counted. The code of conduct is the Contributor Covenant, which the project
-// adopted rather than wrote, so it is not counted either.
+// Every Markdown file the project owns. The decision log, history and review are append-only, so
+// they cannot be shortened and are not counted. The code of conduct is the Contributor Covenant,
+// which the project adopted rather than wrote, so it is not counted either.
 const docs = walk(root, (name) => name.endsWith('.md'))
   .map(rel)
-  .filter((file) => !/^(docs\/(history|review)\/|\.git\/)/.test(file) && file !== 'CODE_OF_CONDUCT.md')
+  .filter((file) => !/^(docs\/(history|review)\/|\.git\/)/.test(file))
+  .filter((file) => file !== 'CODE_OF_CONDUCT.md' && file !== 'docs/decisions.md')
   .filter((file) => !file.includes('/node_modules/') && !file.includes('CHANGELOG.md'));
 const docLines = docs.reduce((n, file) => n + read(join(root, file)).split('\n').length, 0);
 
