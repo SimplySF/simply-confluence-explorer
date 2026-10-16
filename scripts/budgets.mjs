@@ -41,7 +41,10 @@ function walk(dir, keep) {
 }
 
 const rel = (file) => relative(root, file).split(sep).join('/');
-const read = (file) => readFileSync(file, 'utf8');
+// Line endings are made the same before anything is counted. A Windows checkout has \r\n endings,
+// and without this the license-header pattern would miss every header there, counting them all as
+// comments, so the budgets would measure differently on Windows than on Linux.
+const read = (file) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 
 // The code that ships: the server and the frontend, without tests or type declarations.
 const serverSources = packages.flatMap((pkg) =>
