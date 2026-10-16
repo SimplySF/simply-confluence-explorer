@@ -208,7 +208,6 @@ item is removed in the commit that adds the command enforcing it.
 
 - `pnpm run test:e2e`, `pnpm run testenv:start`, the `test-env/` directory, and the end-to-end CI
   job.
-- The doctor (`confluence-explorer doctor`), which checks a user's setup.
 - The load-bearing modules in the table above that have not moved into this package yet.
   `test/docs/prose.test.ts` keeps a list of them and fails when one of them lands, so that the list
   is pruned as the move goes on.

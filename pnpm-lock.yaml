@@ -69,6 +69,10 @@ importers:
         version: 0.14.13
 
   packages/simply-confluence-explorer:
+    dependencies:
+      '@simplysf/simply-atlassian-core':
+        specifier: ^0.7.0
+        version: 0.7.0
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.3.0
@@ -1010,6 +1014,11 @@ packages:
     resolution:
       { integrity: sha512-fCTuZK4QBa+39Oz9l4OGfJfz+GpwCp3AqO7Zch3to99xHPgstVsRFpeQ8LNd2o1Gv8raL2mCFwiaHh7bFSp5DQ== }
     engines: { node: '>=22' }
+
+  '@simplysf/simply-atlassian-core@0.7.0':
+    resolution:
+      { integrity: sha512-O3kSmGe2MsqcZko/DuPVoH9B3eKq0UPxoM3vRV8Qk7jTWQfEee397eFDT9SSxZqQBjcGMLlStAzphsyLsr59uQ== }
+    engines: { node: '>=22.0.0' }
 
   '@sindresorhus/base62@1.0.0':
     resolution:
@@ -4772,6 +4781,8 @@ snapshots:
   '@simple-libs/stream-utils@1.2.0': {}
 
   '@simple-libs/stream-utils@2.0.0': {}
+
+  '@simplysf/simply-atlassian-core@0.7.0': {}
 
   '@sindresorhus/base62@1.0.0': {}
 

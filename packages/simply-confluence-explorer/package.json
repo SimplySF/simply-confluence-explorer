@@ -194,5 +194,8 @@
       ],
       "output": []
     }
+  },
+  "dependencies": {
+    "@simplysf/simply-atlassian-core": "^0.7.0"
   }
 }

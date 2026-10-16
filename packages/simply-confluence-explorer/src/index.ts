@@ -16,3 +16,4 @@
 
 export { DEFAULT_HOST, DEFAULT_PORT, main, type MainOptions } from './cli.js';
 export { createServer, DEFAULT_WEB_ROOT, type HealthResponse, type ServerOptions } from './server.js';
+export type { ConnectionUpdate, ConnectionView, DoctorReport, DoctorResult, ErrorResponse } from './api/types.js';

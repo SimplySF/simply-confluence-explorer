@@ -1,6 +1,6 @@
 # 0003 — Where the app keeps its data, and the token with it
 
-**Status:** Planned
+**Status:** Implemented (PR #3)
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-10-15
 
@@ -43,9 +43,18 @@ These are the paths inside the data directory:
   crash can never leave half a file, and with mode `0600`, so only the owning user can read them.
   Windows does not honour that mode. There, the doctor tells the person that the file is protected
   only by the permissions on their user profile.
-- **The environment is a fallback.** If `CONFLUENCE_URL` and `CONFLUENCE_TOKEN` are set in the
-  environment, or in a `.env` file in the data directory, the app uses them. A value saved in
-  Settings takes priority over both, as it does today.
+- **The environment can set the connection instead of Settings.** When `CONFLUENCE_URL` is set,
+  the app uses it with `CONFLUENCE_PERSONAL_TOKEN`, and Settings shows the connection as fixed by the
+  environment and cannot change it (ADR-019). These are the variable names simply-atlassian-core
+  uses, so one `.env` file serves this app and the `simply` command alike.
+- **A `.env` file in the data directory is read at startup.** It fills in only the Atlassian
+  connection variables, and only where the real environment has not already set them. Reading
+  nothing else from it means a stray `.env` file cannot change how the app runs in any other way,
+  such as turning off certificate checks.
+- **An internal certificate authority is trusted, never bypassed.** Certificates are always
+  verified (ADR-032). A Confluence whose certificate comes from a company's own certificate
+  authority is reached by starting the app with `NODE_EXTRA_CA_CERTS` pointing at that authority's
+  certificate file. The doctor names the file when it is set.
 - **Request values cannot escape the directory.** Every path built from a value in a request goes
   through `within()`, which refuses any result that lands outside its base directory. A space key
   therefore cannot be used to read or write anything outside `spaces/`.
@@ -60,8 +69,9 @@ These are the paths inside the data directory:
 
 ## Implementation plan
 
-This lands with the server foundation. `src/util/dataDir.ts` resolves the directory, and every store
-that writes to disk receives its directory as a constructor argument instead of computing it.
+`src/util/dataDir.ts` resolves the directory, and `main()` in `src/cli.ts` passes it to
+`createServer`, which hands it to every store. The `.env` file is read in `main()` with the
+library's `loadEnvFile`, into a copy of the environment that the rest of the app receives.
 
 ## Testing
 
