@@ -43,6 +43,9 @@ This document describes where each part of it sits in the new package.
 - **Excluded pages are refused.** Before the engine is called, `gatePageForAi` checks whether the
   page is excluded. If it is, or if the check cannot be completed, the request is refused (ADR-018).
   Failing closed in this way means an error in the check can never let an excluded page through.
+  The page that is sent is the server's own copy, the one the check read: when a request names a
+  page, any text it carries is ignored, so text from another page can never go out under a checked
+  page's name (ADR-037). Text that names no page, such as a pasted snippet, is sent as given.
 - **Secrets and personal data are handled before sending.** A secret, such as a private key or an
   API token, stops the request. Personal data, such as an email address or a phone number, is
   replaced with a numbered placeholder. The response tells the person what was removed, but never
