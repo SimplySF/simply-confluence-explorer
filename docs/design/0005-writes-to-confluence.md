@@ -6,49 +6,66 @@
 
 ## Problem
 
-The app changes pages other people read. A change nobody accepted, or one made from a stale copy,
-is the failure the north star names first.
+The app changes pages that other people read and rely on. Two kinds of change would do real harm: a
+change that no person accepted, and a change made from an out-of-date copy of the page, which would
+silently overwrite someone else's edits. The north star names the first of these as a sign that the
+project has failed.
 
 ## Decision
 
-Three ways to write, one write path. `src/confluence/pagePush.ts` updates a page through
-simply-atlassian-core's page-update functions in process (ADR-028); branch runs and drafts call it
-or the library's page-create function, and nothing else writes.
+The app has three ways to write to Confluence, and all of them go through a single write path.
+
+- `src/confluence/pagePush.ts` updates a page, using simply-atlassian-core's page-update functions
+  directly in the server process (ADR-028).
+- Branch runs and new-page drafts write either by calling `pagePush.ts` or by calling the library's
+  page-create function.
+- Nothing else in the app writes to Confluence. A reviewer who wants to know everything the app can
+  change only has to read these modules.
 
 ## Behavior
 
-| route                               | what                                                       |
-| ----------------------------------- | ---------------------------------------------------------- |
-| `POST /api/pages/:pageId/recommend` | a proposed revision with a chosen focus                    |
-| `POST /api/pages/:pageId/dry-run`   | convert without writing; report what the converter rejects |
-| `POST /api/pages/:pageId/push`      | write, naming the version the proposal was made from       |
-| `/api/branches/runs/...`            | review or improve a branch; accept, edit, reject; push     |
-| `/api/drafts/...`                   | a new page: redundancy check, co-writing, create           |
+| route                               | what it does                                                                                                                      |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/pages/:pageId/recommend` | Asks the AI for a proposed revision of the page, with a focus the person chooses.                                                 |
+| `POST /api/pages/:pageId/dry-run`   | Converts the proposal to Confluence's format without writing it, and reports anything the converter rejects.                      |
+| `POST /api/pages/:pageId/push`      | Writes the proposal to Confluence, stating which version of the page it was made from.                                            |
+| `/api/branches/runs/...`            | Reviews or improves a branch (a page and everything under it); accepts, edits or rejects each page; and pushes the accepted ones. |
+| `/api/drafts/...`                   | Creates a new page: runs the redundancy check, supports writing the page with the AI, and creates it.                             |
 
-- **A push names its base version.** If the page has moved on, the push is refused with "changed
-  since"; nothing is merged.
-- Frontmatter is stripped before converting. After a push, the local copy's body and version are
-  refreshed from what Confluence now holds.
-- **A branch queue writes only pages a person accepted**, one at a time, and reports each result
-  (ADR-024). It survives a restart.
-- **A page is created only after the redundancy check has been answered** (ADR-025). A duplicate
-  title is reported as such.
+- **A push states the version it was made from.** If the page has changed in Confluence since the
+  proposal was made, the push is refused with a "changed since" message. The app never tries to
+  merge the two versions, because a merge could quietly drop someone else's edit.
+- **The page on disk is kept accurate.** Frontmatter, the block of metadata at the top of each saved
+  page, is removed before the page is converted, so it never ends up in Confluence. After a push,
+  the local copy's body and version are refreshed from what Confluence now holds.
+- **A branch's queue writes only the pages a person accepted.** It pushes them one at a time and
+  reports the result for each page (ADR-024). The queue is saved to disk, so it survives a restart
+  of the server.
+- **A new page is created only after the redundancy check has been answered** (ADR-025). The check
+  looks for existing pages that already cover the same topic, and the author must decide what to do
+  about them. If the title is already taken, the app reports that the title is a duplicate.
 
 ## Alternatives considered
 
-- **Keep the separate push tool.** Declined in ADR-028: the library it is built on does the same
-  work without starting a process.
+- **Keep calling the separate push tool.** Declined in ADR-028. The library that the tool is built
+  on does the same work without starting a separate process.
 
 ## Implementation plan
 
-Its own pull request, after AI, flagged as load-bearing.
+This lands as its own pull request, after the AI work. It is flagged as load-bearing, because it
+changes the code that writes to Confluence, and it gets human review before release.
 
 ## Testing
 
-End-to-end against the Data Center test environment: a push changes the page and bumps its version;
-a stale base version is refused; a branch push changes only the accepted pages; a draft creates its
-page under the chosen parent, and a near-duplicate of an existing page is flagged. The unit tests
-for the version check and frontmatter strip carry over.
+The end-to-end suite runs these checks against the Data Center test environment:
+
+- a push changes the page and increases its version number;
+- a push based on an out-of-date version is refused;
+- pushing a branch changes only the pages that were accepted;
+- a draft creates its page under the chosen parent page;
+- a draft that closely repeats an existing page is flagged.
+
+The unit tests for the version check and for removing frontmatter carry over unchanged.
 
 ## Open questions
 

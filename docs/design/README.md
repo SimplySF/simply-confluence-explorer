@@ -40,10 +40,13 @@ refactors that keep the public surface identical (though a short doc is welcome 
 | [0005](0005-writes-to-confluence.md)   | Writing to Confluence: a push, a branch's review queue, and a new page       | Planned |
 | [0006](0006-end-to-end-environment.md) | The end-to-end suite runs against a real Data Center                         | Planned |
 
-Design docs sit beside the [decision log](../decisions.md). A design doc describes a feature and is
-corrected as the feature changes; the log is append-only and holds the rules, budgets and refusals
-that are not one feature's (ADR-027). A design doc cites a record by number rather than restating
-it.
+Design docs work alongside the [decision log](../decisions.md), and each has a different job. A
+design doc describes one feature: what it does, how it behaves, and why it has that shape. It is
+corrected whenever the feature changes, so it always describes the feature as it is. The decision
+log is append-only. It holds the decisions that are not about a single feature, such as the
+project's rules, its budgets, and the proposals that were turned down (ADR-027). When a design doc
+depends on one of those decisions, it cites the record by number instead of repeating it, so each
+decision is written down in exactly one place.
 
 ## Template
 

@@ -1,11 +1,12 @@
 # Review
 
-One packet per release, named for the version it covers.
+This folder holds one review packet per release, named after the version it covers.
 
-A packet states what was checked, what was not, and what is known to be
-outstanding. The point is the second half: a review that lists only what passed
-is a changelog, and the things nobody looked at are exactly the things a reader
-needs told.
+A review packet records what was checked before the release, what was not checked, and what is
+known to be outstanding. The second and third parts matter most. A packet that lists only what
+passed reads like a changelog, and the things nobody looked at are exactly what a reader needs to be
+told about.
 
-At stakes `real` (ADR-001), a second person answers the packet's questions for
-every load-bearing surface, independently, before the release ships.
+This project declares stakes `real` (ADR-001). At that level, a second person must answer the
+packet's questions for every load-bearing surface, working independently of the first reviewer,
+before the release ships.

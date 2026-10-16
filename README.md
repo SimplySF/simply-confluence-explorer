@@ -9,6 +9,8 @@ browsing and exploring Confluence. It ships as a Node.js package: install it, ru
 > **Status:** framework only. The server and frontend are wired end to end, but there are no
 > Confluence features yet. See [docs/design](docs/design/README.md) for what is planned.
 
+**Maintenance:** maintained by the team that uses it against its Confluence, for as long as it does.
+
 ## Packages
 
 | Package                                                                       | Description                                        |

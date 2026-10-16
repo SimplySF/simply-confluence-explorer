@@ -1,12 +1,13 @@
 # Decisions
 
-Numbered and append-only. A record is superseded or amended by a later record,
-never edited away and never deleted. Titles state the decision rather than
-naming a topic.
+This file records the project's decisions, one numbered record per decision. It is append-only: a
+record is never edited away or deleted. When a decision changes, a later record supersedes or
+amends the earlier one, and both stay in the file, so a reader can always see what was decided and
+why. Each record's title is a sentence that states the decision itself, not the topic it concerns.
 
-Refusals are recorded here as well as choices. A decision already declined is
-settled, and a proposal to revisit it is answered with the record's number
-rather than by arguing it again.
+The log records refusals as well as choices. When something has been considered and declined, the
+record explains why. If the same idea is proposed again, the answer is a pointer to that record's
+number, and the discussion does not have to start over.
 
 ---
 
@@ -14,26 +15,25 @@ rather than by arguing it again.
 
 **Status:** accepted, 2026-10-15.
 
-A team depends on Confluence Explorer, and it can push edits to pages other
-people read. That is the standard's `real` tier: others depend on it and data
-is at risk.
+The agent-led development standard sorts projects into tiers by what is at stake if they go wrong.
+Confluence Explorer belongs in the `real` tier, the tier for projects that other people depend on
+and that can put data at risk. A team relies on this app, and the app can push edits to Confluence
+pages that other people read.
 
-What the tier adds, beyond the base standard:
+The `real` tier adds these requirements to the base standard:
 
-- a second person answers the review packet for every load-bearing surface,
-  independently, before a release;
-- a full cold read of the codebase, not one package per release;
-- a security review of the load-bearing surfaces by someone who did not build
-  them;
-- cross-model audits are a gate in addition to human review, never instead of
-  it.
+- Before a release, a second person independently answers the review packet for every
+  load-bearing surface. A load-bearing surface is a part of the code where a mistake would cause
+  real harm, such as the code that writes to Confluence.
+- Each release gets a full cold read of the codebase, not a read of one package at a time.
+- Someone who did not build the load-bearing surfaces reviews them for security.
+- Audits by a different AI model are a gate in addition to human review. They never replace it.
 
-**The argument against:** `real` asks for a second reviewer, and the project
-has one maintainer. Declaring a lower tier would make the check pass sooner.
-It would also be false, and a project that understates its stakes to get past
-its own gate has broken the standard in the first commit that claims it.
-Until a second reviewer is named, releases are blocked rather than the tier
-lowered.
+**The argument against:** the `real` tier requires a second reviewer, and the project currently
+has one maintainer. Declaring a lower tier would let the conformance check pass sooner. It would
+also be untrue, and a project that understates its stakes to get past its own gate has broken the
+standard in the very commit that claims to follow it. Until a second reviewer is named, releases
+are blocked instead of the tier being lowered.
 
 ---
 
@@ -41,13 +41,13 @@ lowered.
 
 **Status:** accepted, 2026-10-15.
 
-The client speaks the Server/Data Center REST API (`/rest/api/...`) and
-authenticates with a Personal Access Token as a bearer token. Cloud uses
-different endpoints, API tokens with basic auth, and a different content
-model for newer pages. Supporting both doubles the surface that talks to
-Confluence, which is load-bearing, for an audience that does not need it.
+The app talks to the Server and Data Center REST API (`/rest/api/...`) and authenticates with a
+Personal Access Token sent as a bearer token. Atlassian Cloud uses different endpoints,
+authenticates with API tokens over basic auth, and stores newer pages in a different content
+model. Supporting both would double the code that talks to Confluence, which is one of the
+project's load-bearing surfaces, and the people who use this app do not need Cloud.
 
-A request for Cloud support is answered with this record.
+A request to support Cloud is answered by pointing to this record.
 
 ---
 
@@ -55,18 +55,17 @@ A request for Cloud support is answered with this record.
 
 **Status:** accepted, 2026-10-15.
 
-`npm run dev` and the CI end-to-end job run Atlassian's own Confluence Data
-Center image, in podman or docker, against Postgres.
+`npm run dev` and the end-to-end job in CI both run Atlassian's own Confluence Data Center image,
+in podman or docker, backed by Postgres.
 
-**The argument against, and it is a good one:** a small fake server would
-start in under a second, need no license, and never change underneath us. It
-was offered and declined. A fake encodes our reading of Confluence's
-behaviour, so tests against it prove the code matches our assumptions, not
-that it works against Confluence. The e2e suite exists to answer the second
-question.
+**The argument against, and it is a good one:** a small fake server would start in under a
+second, would need no license, and would never change unexpectedly. That option was considered
+and declined. A fake can only behave the way we believe Confluence behaves, so tests against it
+prove that the code matches our assumptions, not that the code works against Confluence. The
+end-to-end suite exists to answer the second question, which only a real Confluence can.
 
-The fake would still be the right answer if the license (ADR-004) stops being
-available. That is the condition under which this is revisited.
+A fake would become the right choice if the license described in ADR-004 stopped being
+available. That is the condition under which this decision should be revisited.
 
 ---
 
@@ -74,21 +73,20 @@ available. That is the condition under which this is revisited.
 
 **Status:** accepted, 2026-10-15.
 
-Atlassian stopped selling Data Center to new customers on 2026-03-30, and the
-trial-license page no longer issues keys for it. The only license available to
-this project is the published developer "timebomb" key, committed at
-`test-env/licenses/confluence-dc-timebomb.key` and passed to the container as
-`ATL_LICENSE_KEY`.
+Atlassian stopped selling Data Center to new customers on 2026-03-30, and its trial-license page
+no longer issues Data Center keys. The only license this project can use is Atlassian's published
+developer key, sometimes called the "timebomb" key. It is committed at
+`test-env/licenses/confluence-dc-timebomb.key` and passed to the container as `ATL_LICENSE_KEY`.
 
-Decoded, its expiry is the duration `P3H`, not a date. Confluence counts it
-from startup: restarting the container moved the expiry reported by
-`/rest/license/1.0/license/details` forward by the restart interval. So every
-`npm run dev` starts with three hours, and `scripts/dev.mjs` restarts
-Confluence about ten minutes before expiry, which costs about a minute of
-downtime.
+When the key is decoded, its expiry turns out to be a duration, `P3H` (three hours), rather than a
+date. Confluence counts those three hours from the moment it starts: restarting the container moved
+the expiry reported by `/rest/license/1.0/license/details` forward by the time between the
+restarts. As a result, every `npm run dev` starts with a full three hours, and `scripts/dev.mjs`
+restarts Confluence about ten minutes before the license expires. Each restart costs about a
+minute of downtime.
 
-The key is for testing only. It never configures a Confluence anyone else
-uses.
+The key is for testing only. It is never used to configure a Confluence that anyone else relies
+on.
 
 ---
 
@@ -96,16 +94,18 @@ uses.
 
 **Status:** accepted, 2026-10-15.
 
-`test-env/lib/wizard.mjs` walks the setup wizard as forms: a cookie jar, the
-hidden `atl_token`, and one POST per step. The license and database steps are
-skipped by container environment variables.
+A fresh Confluence must be taken through its setup wizard before it can be used.
+`test-env/lib/wizard.mjs` completes the wizard by submitting its forms directly over HTTP. It
+keeps the session cookies, carries the hidden `atl_token` field from page to page, and sends one
+POST request per wizard step. The license and database steps are skipped entirely, because
+container environment variables supply those values.
 
-Declined: a headless browser, which is a large dependency to click five
-buttons; and a snapshot of an already-provisioned database, which is hundreds
-of megabytes of opaque state tied to one Confluence version. The cost of the
-HTTP approach is that the step names are specific to the version pinned in
-`test-env/testenv.config.json`, so changing that version means re-walking the
-wizard and updating `provision.mjs`.
+Two alternatives were declined. A headless browser would be a large dependency added only to
+click five buttons. A snapshot of an already-provisioned database would be hundreds of megabytes
+of state that nobody can inspect, and it would only work with one Confluence version. The HTTP
+approach has its own cost: the wizard's step names belong to the Confluence version pinned in
+`test-env/testenv.config.json`. Changing that version means walking through the wizard again and
+updating `provision.mjs` to match.
 
 ---
 
@@ -113,15 +113,14 @@ wizard and updating `provision.mjs`.
 
 **Status:** accepted, 2026-10-15.
 
-`npm run dev` starts Postgres and Confluence, provisions and seeds them,
-starts the API and UI connected to them, and stops all of it on Ctrl+C. Data
-persists in named volumes between runs, and the seed adds only what is
-missing.
+`npm run dev` starts Postgres and Confluence, provisions and seeds them, and starts the API and
+the UI connected to them. Pressing Ctrl+C stops all of it. The data is kept in named volumes
+between runs, and the seed step adds only what is missing.
 
-Leaving Confluence running between sessions would make the next start
-instant. It was declined in favour of nothing left running that the developer
-did not start; it also gives every session a fresh license (ADR-004).
-`npm run dev:mock` keeps the demo-data mode for work that needs no Confluence.
+Leaving Confluence running between sessions would make the next start instant. That option was
+declined so that nothing keeps running that the developer did not start. Starting Confluence fresh
+each session also gives every session a full license period (ADR-004). `npm run dev:mock` keeps
+the demo-data mode available for work that does not need Confluence at all.
 
 ---
 
@@ -129,16 +128,15 @@ did not start; it also gives every session a fresh license (ADR-004).
 
 **Status:** accepted, 2026-10-15.
 
-`test-env/fixtures/dataset.mjs` declares the spaces, the page tree, the
-`.confluenceignore` rules, and the expected outcome of each rule. The seeder
-creates what is missing, rewrites `spaces/<KEY>/.confluenceignore` on every
-run, and records the real page ids in `test-env/.state/seed-manifest.json` for
-the tests.
+`test-env/fixtures/dataset.mjs` declares the test spaces, their page trees, the
+`.confluenceignore` rules, and the result each rule is expected to produce. The seeder creates any
+pages that are missing, rewrites `spaces/<KEY>/.confluenceignore` on every run, and records the
+real page ids in `test-env/.state/seed-manifest.json` so the tests can find them.
 
-Rewriting the ignore files means an edit made to them in the UI during
-development does not survive the next start. That is the point: the e2e
-expectations are written against the fixture, and a rule that drifts from it
-makes every exclusion test a test of the drift.
+Because the seeder rewrites the ignore files, an edit made to them through the UI during
+development is lost at the next start. This is intentional. The end-to-end tests are written
+against the rules in the dataset, and if the rules on disk drifted away from it, every exclusion
+test would end up testing the drift instead of the code.
 
 ---
 
@@ -146,14 +144,14 @@ makes every exclusion test a test of the drift.
 
 **Status:** accepted, 2026-10-15.
 
-The server falls back to `CONFLUENCE_URL` and `CONFLUENCE_TOKEN` when a
-request carries no connection. `resolveConnection`
-(`server/src/confluence/envConnection.ts`) applies the token fallback only
-when the request's URL is empty or equals `CONFLUENCE_URL`. A browser-supplied
-URL with no token gets no token.
+When a request carries no connection details, the server falls back to the `CONFLUENCE_URL` and
+`CONFLUENCE_TOKEN` it was configured with. `resolveConnection`
+(`server/src/confluence/envConnection.ts`) applies the token fallback only when the request's URL
+is empty or equal to `CONFLUENCE_URL`. If the browser supplies some other URL without a token, no
+token is added.
 
-Without this, any URL typed into the UI would receive the server's credential
-in an `Authorization` header.
+Without this rule, any URL typed into the UI would receive the server's credential in an
+`Authorization` header, and a mistyped or malicious address would collect it.
 
 ---
 
@@ -161,14 +159,14 @@ in an `Authorization` header.
 
 **Status:** accepted, 2026-10-15.
 
-When the server has a connection of its own, the UI uses it by sending an
-empty URL and token, and the server fills them in (ADR-008). `GET
-/api/settings` reports that a token exists, never its value.
+When the server has a connection of its own, the UI uses it by sending an empty URL and token, and
+the server fills them in (ADR-008). `GET /api/settings` reports whether a token exists, but never
+returns its value.
 
-A connection the user saves in the UI is still stored in the browser's
-`localStorage`, token included. That is a known exposure, recorded here
-rather than fixed in passing; changing it changes how the settings dialog
-works, and needs its own record.
+A connection that the user saves in the UI is still stored in the browser's `localStorage`, and
+that includes its token. This is a known exposure. It is recorded here rather than fixed as a side
+effect of other work, because fixing it changes how the settings dialog works, and that change
+needs its own record.
 
 ---
 
@@ -176,12 +174,12 @@ works, and needs its own record.
 
 **Status:** accepted, 2026-10-15.
 
-`scripts/prod.mjs` requires `CONFLUENCE_URL` and `CONFLUENCE_TOKEN` from `.env`
-or the environment, builds, and serves the UI and API on one port. It refuses
-to start without both, and it never uses the test environment's profile.
+`scripts/prod.mjs` reads `CONFLUENCE_URL` and `CONFLUENCE_TOKEN` from `.env` or the environment,
+builds the app, and serves the UI and the API on one port. It refuses to start unless both values
+are set, and it never uses the test environment's profile.
 
-There is no container image, host, or deploy step. Adding one is a new
-record, with the target named.
+The project has no container image, no host and no deploy step. Adding any of them requires a new
+record that names the deployment target.
 
 ---
 
@@ -189,13 +187,19 @@ record, with the target named.
 
 **Status:** accepted, 2026-10-15. Unverified: the workflow has not run yet.
 
-`.github/workflows/ci.yml` has a `unit` job and an `e2e` job. The e2e job runs
-`node test-env/testenv.mjs start` with `CONTAINER_RUNTIME=docker`, which is
-the same provisioning as `npm run dev`, then `npm run test:e2e`. A fresh CI
-install always starts a full license period.
+Continuous integration runs on GitHub Actions. The workflow, `.github/workflows/ci.yml`, has two
+jobs: a `unit` job that runs the fast suite, and an `e2e` job that runs the end-to-end suite against
+a real Confluence Data Center.
 
-The docker path has not been run anywhere: the workstation has podman only.
-Its first run is the first evidence it works.
+The `e2e` job starts the test environment with `node test-env/testenv.mjs start`, setting
+`CONTAINER_RUNTIME=docker` because GitHub's runners provide docker rather than podman. This is the
+same provisioning that `npm run dev` performs locally. Once Confluence is up, the job runs
+`npm run test:e2e`. Because every CI run starts from a fresh install, each one also starts a full
+three-hour license period (ADR-004).
+
+The docker path has not been run anywhere yet, because the development workstation has only podman.
+The workflow's first run will therefore be the first evidence that the docker path works, and until
+then this record is marked unverified.
 
 ---
 
@@ -203,12 +207,17 @@ Its first run is the first evidence it works.
 
 **Status:** accepted, 2026-10-15.
 
-`npm test` is the fast suite against mock data. `npm run test:e2e` runs
-`server/src/e2e/*.e2e.ts` against the test environment, and skips with a
-reason when it is not running. The e2e files are not named `*.test.ts`, so the
-fast suite's glob cannot pick them up.
+The project has two test suites, and they are run separately:
 
-"All tests pass" therefore always names which suite ran.
+- `npm test` runs the fast suite against mock data. It needs nothing but the code, so it can run on
+  every change.
+- `npm run test:e2e` runs the files in `server/src/e2e/*.e2e.ts` against the test environment. When
+  the test environment is not running, the suite skips and says why, rather than failing.
+
+The end-to-end files are deliberately not named `*.test.ts`. The fast suite finds its tests by that
+pattern, so the naming alone keeps the slow suite out of it.
+
+Because there are two suites, a report that "all tests pass" must always say which suite ran.
 
 ---
 
@@ -216,14 +225,16 @@ fast suite's glob cannot pick them up.
 
 **Status:** deferred, 2026-10-15.
 
-`ExclusionManager.matchesPattern` tries an anchored match and then an
-unanchored one, so the rule `Restricted/` also hides a page titled
-`Unrestricted Access Guide`. The e2e suite records this as a `todo` test.
+`ExclusionManager.matchesPattern` decides whether a page title matches a rule in
+`.confluenceignore`. It first tries an anchored match, which compares the rule against the whole
+title, and then falls back to an unanchored match, which accepts the rule anywhere in the title.
+The fallback over-matches: the rule `Restricted/` also hides a page titled
+`Unrestricted Access Guide`. The end-to-end suite records this known defect as a `todo` test.
 
-Over-exclusion is the safe direction for sensitive-data rules: it hides too
-much, never too little. Anchoring the match would fix the over-match and could
-also expose pages that existing ignore files hide today only by accident.
-Which of those matters more is the maintainer's call, and until it is made the
+For rules that protect sensitive data, over-exclusion is the safe direction of error, because it
+hides too much rather than too little. Anchoring the match would fix the over-match, but it could
+also expose pages that existing ignore files currently hide only because of it. Deciding which of
+those risks matters more is the maintainer's call. Until that decision is made, the matching
 behaviour stays as it is.
 
 ---
@@ -232,8 +243,10 @@ behaviour stays as it is.
 
 **Status:** accepted, 2026-10-15.
 
-The budgets arrived after the code, so they start from what exists and may
-only tighten. `scripts/budgets.sh` asserts them and `npm run check` runs it.
+A budget is a limit on the size or shape of the project, checked by a command, so that growth is a
+deliberate decision rather than something that happens unnoticed. These budgets were introduced
+after the code already existed, so they start from what the code measured at the time, and from here
+they may only tighten. `scripts/budgets.sh` checks them, and `npm run check` runs that script.
 
 | budget                                                              | limit                         | measured when set |
 | ------------------------------------------------------------------- | ----------------------------- | ----------------- |
@@ -247,21 +260,21 @@ only tighten. `scripts/budgets.sh` asserts them and `npm run check` runs it.
 | server modules making HTTP requests (`MAX_CONFLUENCE_HTTP_MODULES`) | 1                             | 1                 |
 | modules running external processes (`MAX_EXEC_MODULES`)             | 2                             | 2                 |
 
-The comment ratio is the one hard ceiling: over it, a comment is retired,
-never the number raised. The rest are soft, which means the choice between
-raising one and writing worse code belongs to the maintainer, who says the
-ceiling is in the way rather than quietly trimming a guard to fit.
+The comment ratio is the only hard ceiling. If the code goes over it, a comment is removed; the
+number is never raised. The other budgets are soft. When one of them gets in the way, the choice
+between raising it and writing worse code to stay under it belongs to the maintainer. The person who
+hits the limit says so openly, rather than quietly weakening a safeguard to make the code fit.
 
-Dependencies are frozen at the current count: adding one means removing one
-or writing a record. The last two rows assert architecture rather than size —
-which file talks to Confluence, and which files start programs — and are the
-two most valuable rows in the file.
+The dependency counts are frozen at their current values, so adding a dependency means either
+removing another or writing a decision record that justifies it. The last two rows measure the
+architecture rather than size: they check which file talks to Confluence and which files start other
+programs. They are the two most valuable rows in the script, because they keep those answers to a
+single, known place.
 
-**The argument against:** a test floor of one in ten is low, and the standard's
-reference projects hold one in three. Setting it there today would fail the
-check on the first run and stay failing, and a gate that is always red is one
-that gets ignored. The floor is where the suite is; it tightens as tests are
-added.
+**The argument against:** a test floor of one test line for every ten code lines is low; the
+standard's reference projects hold one in three. Setting the floor at one in three today, however,
+would fail the check on its first run and keep failing, and a check that is always red soon gets
+ignored. The floor is therefore set where the suite is now, and it tightens as tests are added.
 
 ---
 
@@ -269,23 +282,23 @@ added.
 
 **Status:** accepted, 2026-10-15.
 
-The "allow self-signed certificates" option turns off certificate checking for
-the connection to Confluence (`rejectUnauthorized: false` in
-`server/src/confluence/client.ts`, and the same for the push tool in
-`simplyClient.ts`). With it on, anyone able to sit between the app and
-Confluence can read the token and every page.
+The "allow self-signed certificates" option turns off TLS certificate verification for the
+connection to Confluence. It does this with `rejectUnauthorized: false` in
+`server/src/confluence/client.ts`, and in the same way for the push tool in `simplyClient.ts`. With
+verification off, anyone who can place themselves between the app and Confluence can read the token
+and every page that passes over the connection.
 
-It stays because many companies run Confluence Server behind an internal
-certificate authority, and a tool that cannot connect there does not serve the
-team it is for. It is off by default everywhere: the UI's connection dialogs,
-the saved connection, the server's `ALLOW_SELF_SIGNED`, and the test
-environment, which is plain HTTP and needs no exception.
+The option is kept because many companies run Confluence Server behind an internal certificate
+authority, whose certificates a default Node installation does not trust. A tool that cannot connect
+in that setting cannot serve the team it was built for. The option is off by default everywhere: in
+the UI's connection dialogs, in the saved connection, in the server's `ALLOW_SELF_SIGNED` setting,
+and in the test environment, which uses plain HTTP and so needs no exception.
 
-Declined for now: replacing the switch with a setting that trusts a named
-company certificate file. That keeps verification on and is the better answer.
-It needs a file most users would have to go and find, and it is the change to
-make when the switch is first seen turned on for a connection that could have
-used a certificate instead.
+**Declined for now:** replacing the switch with a setting that trusts a named company certificate
+file. That approach keeps verification on, and it is the better answer. It is not built yet because
+it asks most users to locate a certificate file they may never have dealt with. It becomes the right
+change the first time the switch is seen turned on for a connection that could have used a
+certificate instead.
 
 ---
 
@@ -293,30 +306,39 @@ used a certificate instead.
 
 **Status:** accepted, 2026-10-15.
 
-`npm run doctor` (and `GET /api/doctor` for the connection a browser is using)
-runs every check in `CHECK_IDS` (`server/src/doctor/checks.ts`) and prints one
-line each: `✓` working, `!` works but something is unavailable, `✗` broken, `-`
-not applicable. Every `!` and `✗` carries a `fix:` line saying what to type. It
-ends by saying which capabilities the setup has — browse, sync, exclusions, ai,
-push — and a capability is listed only when every check behind it passes. Only
-a `✗` exits non-zero.
+The doctor is a command that checks whether this machine is set up to run the app. `npm run doctor`
+runs every check listed in `CHECK_IDS` (`server/src/doctor/checks.ts`), and `GET /api/doctor` runs
+the same checks for the connection a browser is using. Each check prints one line, marked with one
+of four symbols:
 
-The checks read the machine through `DoctorDeps`, so the doctor's own tests
-use values, not a machine. The test that holds `CHECK_IDS` against what runs
-fails until a new check is listed and given a capability.
+- `✓` means it works.
+- `!` means it works, but something it could use is unavailable.
+- `✗` means it is broken.
+- `-` means the check does not apply to this setup.
 
-`npm run dev` runs it after provisioning and `npm run prod` after building, and
-neither starts on a `✗`: anything that sets things up verifies its own work.
+Every `!` and `✗` line carries a `fix:` line that says what to type to fix it. The report ends by
+listing the capabilities the setup has (browse, sync, exclusions, ai and push), and a capability is
+listed only when every check behind it passes. Only a `✗` makes the command exit with a non-zero
+status.
 
-The rule that keeps it worth running: **a setup failure that gets fixed ships
-with a doctor check that detects it.** A unit test asks what the code does; the
-doctor asks what the machine has. A test that asks whether something is
-installed is moved here.
+The checks read the machine through an interface, `DoctorDeps`, so the doctor's own tests supply
+values instead of depending on whatever the test machine has installed. A test holds `CHECK_IDS`
+against the checks that actually run; it fails until a new check is added to the list and assigned
+to a capability.
 
-**The argument against:** the UI already tests a connection and reports AI
-status, so a doctor repeats them. It does not duplicate the code — it calls
-the same client and services — and it answers where the UI cannot: before the
-app starts, in CI, and as the last step of `npm run dev` and `npm run prod`.
+`npm run dev` runs the doctor after provisioning the test environment, and `npm run prod` runs it
+after building. Neither starts the app if a check reports `✗`. The principle is that anything which
+sets something up also verifies its own work.
+
+One rule keeps the doctor worth running: **a setup failure that gets fixed ships with a doctor check
+that detects it.** A unit test asks what the code does, while the doctor asks what the machine has.
+A test that asks whether something is installed therefore belongs in the doctor, not in the test
+suite.
+
+**The argument against:** the UI can already test a connection and report the AI's status, so the
+doctor repeats those checks. It does not duplicate the code, though: it calls the same client and
+services the UI uses. And it can answer in places the UI cannot reach: before the app starts, in CI,
+and as the last step of `npm run dev` and `npm run prod`.
 
 ---
 
@@ -324,48 +346,47 @@ app starts, in CI, and as the last step of `npm run dev` and `npm run prod`.
 
 **Status:** accepted, 2026-10-15. Open: the shared-server case (below).
 
-Four providers sit behind one engine (`server/src/ai/engine.ts`), and every
-feature that asks an AI goes through it:
+Four AI providers sit behind one engine, `server/src/ai/engine.ts`, and every feature that asks an
+AI anything goes through that engine. The person using the app chooses the provider in Settings:
 
-- **Gemini CLI**, run as `node <bundle>` with no shell. The bundle is found from
-  a configured path, then PATH (the `gemini.cmd` shim on Windows, the `gemini`
-  symlink elsewhere), then the npm prefix and portable Node installs under
-  `%LOCALAPPDATA%\Programs` on Windows.
-- **Claude**, through Anthropic's SDK: streamed, effort `high`, defaulting to
-  `claude-opus-5-5`, with the server-side refusal fallback requested when
-  talking to Anthropic directly.
-- **ChatGPT**, through OpenAI's SDK and the Responses API. No default model:
-  Settings lists the models the key can use.
-- **Gemini API**, through Google's SDK, defaulting to the `gemini-pro-latest`
-  alias.
+- **Gemini CLI**, Google's command-line tool, run as `node <bundle>` with no shell in between. The
+  app looks for the bundle in a configured path first, then on PATH (the `gemini.cmd` shim on
+  Windows, the `gemini` symlink elsewhere), and then under the npm prefix and the portable Node
+  installs in `%LOCALAPPDATA%\Programs` on Windows.
+- **Claude**, through Anthropic's SDK. Responses are streamed, effort is set to `high`, and the model
+  defaults to `claude-opus-5-5`. When the app talks to Anthropic directly, it also requests the
+  server-side refusal fallback.
+- **ChatGPT**, through OpenAI's SDK and its Responses API. There is no default model; instead,
+  Settings lists the models the saved key is allowed to use.
+- **Gemini API**, through Google's SDK. The model defaults to the `gemini-pro-latest` alias.
 
-Each API provider takes an optional endpoint, so a company AI gateway can stand
-in for the public API.
+Each API provider accepts an optional endpoint, so a company's own AI gateway can stand in for the
+public API.
 
-**Keys are written once and never read back.** Settings sends a key to the
-server, which keeps it in `config/ai-settings.json`, mode `0600`, written
-atomically; the browser is told only whether a key is set and where it came
-from. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_PROVIDER`
-and `GEMINI_CLI_PATH` in the environment are fallbacks; a value saved in
-Settings wins over them.
+**Keys are written once and never read back.** When a person saves a key in Settings, the browser
+sends it to the server, which writes it atomically to `config/ai-settings.json` with file mode
+`0600`, readable only by the user who runs the app. From then on, the browser is told only whether a
+key is set and where it came from, never the key itself. The environment variables
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `AI_PROVIDER` and `GEMINI_CLI_PATH` act as
+fallbacks; a value saved in Settings takes precedence over them.
 
-**Dependencies: 16 → 19** (`MAX_RUNTIME_DEPS`): `@anthropic-ai/sdk`, `openai`
-and `@google/genai`. The maintainer chose the official SDK for each provider
-over hand-written HTTP; Anthropic's guidance is to call Claude through its SDK.
-The cost is the largest new review surface in the project, so it is fenced:
-`MAX_AI_SDK_MODULES` holds the three SDKs to `server/src/ai/providers.ts`, the
-one file that sends Confluence content to a third party.
+**Dependencies: 16 → 19** (`MAX_RUNTIME_DEPS`). The three added dependencies are
+`@anthropic-ai/sdk`, `openai` and `@google/genai`. The maintainer chose each provider's official SDK
+over hand-written HTTP calls, and Anthropic's own guidance is to call Claude through its SDK. These
+SDKs are the largest new surface in the project that a reviewer has to understand, so they are
+confined: `MAX_AI_SDK_MODULES` holds all three to `server/src/ai/providers.ts`, the one file that
+sends Confluence content to a third party.
 
-**The argument against:** the Gemini CLI was enough to use the AI features, and
-every provider added is another place pages can go. What answers it is that
-the provider is the maintainer's choice of where pages go, and that the
-exclusion rules run before the engine is called, whichever provider it is.
+**The argument against:** the Gemini CLI alone was enough to use every AI feature, and each added
+provider is another place that pages can be sent. The answer is that which provider receives the
+pages is the maintainer's decision to make, and that the exclusion rules run before the engine is
+called, whichever provider is selected.
 
-**Open: a shared server.** Settings changes the AI for everyone using that
-server, so on a shared deployment anyone who can open the UI can change the
-provider and key. That is acceptable while each person runs the app locally.
-How it will be deployed is undecided; a shared deployment needs this revisited
-before it ships.
+**Open: a shared server.** A change in Settings changes the AI for everyone who uses that server. On
+a shared deployment, then, anyone who can open the UI can change the provider and the key. That is
+acceptable while each person runs the app on their own machine. How the app will eventually be
+deployed has not been decided, and a shared deployment needs this question revisited before it
+ships.
 
 ---
 
@@ -373,38 +394,39 @@ before it ships.
 
 **Status:** accepted, 2026-10-15.
 
-Three rules, each closing a hole found in review:
+This record sets three rules, each of which closes a hole found in review:
 
-- **Local only.** The server listens on `127.0.0.1`, unless `HOST` says
-  otherwise. Requests are refused unless their `Host` is one of this machine's
-  names, plus any in `ALLOWED_HOSTS`. A browser request is refused unless the
-  page that sent it is served from one of those names. Bodies are JSON only, so
-  a plain form on another site cannot post here. The `cors` package is
-  removed: no cross-origin response is ever allowed.
-- **Identifiers are shaped, and paths stay inside their directory.** Space keys,
-  page ids and job ids are validated wherever they arrive: route, body or query.
-  `within()` refuses any path that resolves outside its data directory, and
-  `sanitizeFilename` maps `.` and `..` to `_`. Before this, a space key of `..`
-  zipped the project root, `.env` and the AI key file included.
-- **The AI gate fails closed.** Every route that sends a page to an AI calls
-  `gatePageForAi` (`server/src/spaces/aiGate.ts`). It checks the cached copy, or
-  else the live page, against `.confluenceignore`. A page that cannot be looked
-  up is not sent. Sub-pages fetched live are filtered, and the space site map is
-  filtered against the current rules rather than trusted as written. An
-  unreadable `.confluenceignore` excludes its whole space.
+- **The server is local only.** It listens on `127.0.0.1` unless the `HOST` setting says otherwise.
+  It refuses any request whose `Host` header is not one of this machine's names or a name listed in
+  `ALLOWED_HOSTS`. It also refuses any browser request sent from a page that is not served from one
+  of those names. Request bodies must be JSON, so an ordinary HTML form on another website cannot
+  post to the server. The `cors` package is removed, so the server never allows a cross-origin
+  response.
+- **Identifiers must have the right shape, and paths stay inside their directory.** Space keys, page
+  ids and job ids are validated wherever they arrive, whether in the route, the body or the query
+  string. `within()` refuses any path that resolves outside its data directory, and
+  `sanitizeFilename` turns `.` and `..` into `_`. Before these checks existed, a space key of `..`
+  would have zipped the project root, including `.env` and the AI key file.
+- **The AI gate fails closed.** Every route that sends a page to an AI first calls `gatePageForAi`
+  (`server/src/spaces/aiGate.ts`). The gate checks the cached copy of the page against
+  `.confluenceignore`, or the live page if there is no cached copy. If the page cannot be looked up,
+  it is not sent. Sub-pages fetched live are filtered in the same way, and the space's site map is
+  filtered against the current rules instead of being trusted as it was written. If a space's
+  `.confluenceignore` cannot be read, the whole space is treated as excluded.
 
-One rule for writes: **a push names the version it was made from.** The server
-compares that with the page's current version and refuses with 409 if they
-differ, because the push tool otherwise writes over whatever is there. The
-frontmatter block is stripped before anything is written, and after a push the
-cached copy is replaced from Confluence, body included.
+The record also sets one rule for writes: **a push names the version it was made from.** The server
+compares that version with the page's current version in Confluence and refuses the push with a 409
+response if they differ. Without this check, the push tool would write over whatever the page
+currently holds, including changes someone else made in the meantime. The frontmatter block is
+removed before anything is written, and after a successful push the cached copy is replaced from
+Confluence, including the page body.
 
-**The argument against local-only:** a team that wants one shared instance now
-has to set `HOST` and `ALLOWED_HOSTS`. That is the point: sharing is a decision
-(ADR-017's open item), not a default.
+**The argument against local-only:** a team that wants one shared instance must now set `HOST` and
+`ALLOWED_HOSTS` itself. That extra step is intended. Sharing the server is a decision that has not
+been made yet (it is ADR-017's open item), and it should not happen by default.
 
-**Dependencies:** `cors` and `@types/cors` are removed. The budgets keep their
-ceilings (`MAX_RUNTIME_DEPS`, ADR-017), which may tighten later.
+**Dependencies:** `cors` and `@types/cors` are removed. The dependency budgets keep their current
+ceilings (`MAX_RUNTIME_DEPS`, ADR-017) for now, and may be tightened later.
 
 ---
 
@@ -412,29 +434,27 @@ ceilings (`MAX_RUNTIME_DEPS`, ADR-017), which may tighten later.
 
 **Status:** accepted, 2026-10-15. Supersedes ADR-008 and amends ADR-009.
 
-The connection (URL, Personal Access Token, the self-signed choice) is kept by
-the server (`server/src/confluence/connection.ts`): set in Settings and written
-to `config/connection.json`, mode `0600`. `CONFLUENCE_URL` in the environment
-takes precedence and cannot be changed from Settings, so a deployment's own
-configuration is the one in force. `GET /api/connection` returns everything
-except the token; `PUT /api/connection` sets it.
+The connection to Confluence consists of the URL, the Personal Access Token and the choice about
+self-signed certificates. The server keeps it, in `server/src/confluence/connection.ts`. A person
+sets it in Settings, and the server writes it to `config/connection.json` with file mode `0600`. If
+`CONFLUENCE_URL` is set in the environment, it takes precedence and cannot be changed from Settings,
+so that a deployment's own configuration is the one in force. `GET /api/connection` returns
+everything about the connection except the token, and `PUT /api/connection` sets it.
 
-Requests no longer carry `x-confluence-*` headers, and the server ignores them.
-Before this, every request named the Confluence it wanted and could bring a
-token, which made each route a place where the server's credentials and a
-caller's URL could meet (ADR-008 fenced that at one function). With one
-connection there is nothing to fence. Testing a connection before saving it
-(`POST /api/auth/verify`) reuses the saved token only for the saved URL, and
-a new URL saved without a new token drops the old token.
+Requests no longer carry `x-confluence-*` headers, and the server ignores them if they appear.
+Previously, every request named the Confluence it wanted and could bring its own token. That made
+every route a place where the server's credentials could be combined with a URL the caller chose,
+which ADR-008 contained by confining it to one function. With a single connection held by the
+server, there is nothing left to contain. Testing a connection before saving it
+(`POST /api/auth/verify`) reuses the saved token only when the URL being tested is the saved URL, and
+saving a new URL without a new token discards the old token.
 
-The browser never held the server's token (ADR-009). Now it holds no token at
-all: the copy older versions kept in `localStorage`, in plain text, is
-deleted when the app loads.
+The browser never held the server's token (ADR-009). It now holds no token of any kind: when the app
+loads, it deletes the plain-text copy that older versions kept in `localStorage`.
 
-**The argument against:** each person's browser could have kept its own
-connection, which is the shared-server case's natural shape. That case is open
-(ADR-017, ADR-018), and a per-browser token in plain text is the wrong answer
-to it either way.
+**The argument against:** each person's browser could have kept its own connection, which would be
+the natural shape for a shared server. That case is still open (ADR-017, ADR-018), and a token stored
+per browser in plain text would be the wrong answer to it in any case.
 
 ---
 
@@ -442,21 +462,21 @@ to it either way.
 
 **Status:** accepted, 2026-10-15.
 
-**Demo mode** answered every Confluence call from built-in data when no URL was
-set: about 400 lines in the client and routes, and a silent fallback that
-showed fake pages when a server was misconfigured. The Confluence test
-environment (ADR-003) does that job for development with real behaviour. The
-fast suite runs against a stand-in (`server/src/test-fixtures/fakeConfluence.ts`)
-that answers the same data over HTTP in REST shapes, so tests go through the
-production client instead of around it. With nothing configured, the app and
-the doctor say so.
+**Demo mode** answered every Confluence call from built-in sample data whenever no URL was set. It
+took about 400 lines across the client and the routes, and it had a dangerous side effect: when a
+server was misconfigured, the app silently showed fake pages instead of reporting the problem. The
+Confluence test environment (ADR-003) now does the job demo mode did for development, and it does it
+with real Confluence behaviour. The fast suite runs against a stand-in,
+`server/src/test-fixtures/fakeConfluence.ts`, which serves the same data over HTTP in the shapes of
+the REST API, so the tests exercise the production client instead of going around it. With no
+Confluence configured, the app and the doctor say so.
 
-**The batch export pipeline** (the export job manager, the ZIP archiver, the
-disk writer and four routes) was reachable only from a dialog nothing
-rendered. Sync to disk and the space ZIP are the offline copies. Its tests
-went with it.
+**The batch export pipeline** consisted of the export job manager, the ZIP archiver, the disk writer
+and four routes. It could be reached only from a dialog that nothing in the app displayed. Syncing a
+space to disk and downloading the space ZIP already provide offline copies, so the pipeline was
+removed, along with its tests.
 
-A proposal to bring either back is answered with this record.
+A proposal to bring back either feature is answered with this record.
 
 ---
 
@@ -464,12 +484,13 @@ A proposal to bring either back is answered with this record.
 
 **Status:** accepted, 2026-10-15.
 
-The roadmap's feature phases (the outbound guard, sessions and uploads, branch
-actions, the page co-writer) were estimated at 3,500–5,000 lines, against a
-code budget with 545 lines left. The maintainer agreed to a raise on one
-condition: cleanup first, and the cut measured.
+The roadmap's next feature phases were the outbound guard, conversations with uploaded files,
+branch actions and the page co-writer. Together they were estimated at 3,500 to 5,000 lines of code,
+and the code budget had only 545 lines left. The maintainer agreed to raise the budget on one
+condition: the existing code would be cleaned up first, and the reduction would be measured before
+the new number was set.
 
-Measured by `scripts/budgets.sh`, before and after the cleanup:
+`scripts/budgets.sh` measured the code before and after the cleanup:
 
 |                            | before  | after   |
 | -------------------------- | ------- | ------- |
@@ -477,26 +498,33 @@ Measured by `scripts/budgets.sh`, before and after the cleanup:
 | test lines                 | 1,461   | 2,175   |
 | runtime / dev dependencies | 19 / 15 | 18 / 14 |
 
-The cut was dead code (the export pipeline, two unrendered dialogs, ADR-020),
-demo mode (ADR-020), one request and error layer instead of 24 copies, one
-service instance instead of one per router, one job runner instead of two
-copies of the same bookkeeping, and one metadata generator instead of two.
-The compiler now fails on unused imports, locals and parameters
-(`noUnusedLocals` / `noUnusedParameters`), so what was cut does not grow back.
+The lines removed came from these changes:
 
-So:
+- dead code was deleted: the export pipeline and two dialogs that were never rendered (ADR-020);
+- demo mode was removed (ADR-020);
+- 24 copies of request and error handling were replaced by one shared layer;
+- each router had created its own service instance, and now they share one;
+- two copies of the same job bookkeeping were replaced by one job runner;
+- two metadata generators were replaced by one.
 
-- `MAX_CODE_LINES` → **15,000**: the 8,225 measured plus the upper estimate,
-  with about 1,800 lines of margin.
-- `MIN_TEST_RATIO` → **5** (one test line per five code lines, from ten). The
-  suite now has one per 3.8; a floor at five keeps new features carrying tests.
-- `MAX_RUNTIME_DEPS` → **18** and `MAX_DEV_DEPS` → **14**: the current counts.
+The compiler now fails on unused imports, local variables and parameters (`noUnusedLocals` and
+`noUnusedParameters`), so code that has been cut cannot quietly come back.
 
-**The argument against:** a budget raised in the same programme that will spend
-it is a budget that bends. What answers it is the order: the lines were
-removed first and measured, and the other ceilings moved down at the same time.
-A second raise inside this roadmap would trip the standard's own failure
-condition (any budget raised twice) and needs the shrink review it prescribes.
+The budgets were then set as follows:
+
+- `MAX_CODE_LINES` rises to **15,000**. That is the 8,225 lines measured, plus the upper estimate for
+  the feature phases, plus about 1,800 lines of margin.
+- `MIN_TEST_RATIO` tightens to **5**, meaning at least one line of test for every five lines of code
+  (it was one for every ten). The suite currently has one test line for every 3.8 code lines; a
+  floor of five makes sure new features keep arriving with tests.
+- `MAX_RUNTIME_DEPS` tightens to **18** and `MAX_DEV_DEPS` to **14**, which are the counts after the
+  cleanup.
+
+**The argument against:** raising a budget inside the same programme of work that will spend it
+suggests the budget will bend whenever it gets in the way. The answer is the order in which this was
+done: the lines were removed and measured first, and the other ceilings were lowered at the same
+time as this one was raised. The standard treats any budget raised twice as a sign of failure, so a
+second raise during this roadmap would require the shrink review the standard prescribes.
 
 ---
 
@@ -504,42 +532,46 @@ condition (any budget raised twice) and needs the shrink review it prescribes.
 
 **Status:** accepted, 2026-10-15.
 
-`.confluenceignore` keeps whole pages from an AI. The guard is the second
-layer, for what an allowed page may still contain. It runs in the engine
-(`server/src/ai/engine.ts`) on everything sent: the user's request, the page,
-sub-pages, space context and the title.
+`.confluenceignore` keeps whole pages away from an AI. The outbound guard is a second layer of
+protection, for sensitive content that a page which is allowed may still contain. It runs in the
+engine (`server/src/ai/engine.ts`) and inspects everything that is about to be sent: the user's
+request, the page, its sub-pages, any space context and the page title.
 
-- **Secrets block.** Private keys, cloud and SaaS tokens (AWS, GitHub, GitLab,
-  Slack, Atlassian, Google, Anthropic/OpenAI, Stripe), JSON web tokens,
-  connection strings with a password, and `password = …` style assignments.
-  Placeholder values such as `********`, `<your password>` and `${VAR}` are not
-  findings. A refusal (422) names the kind and the line, never the value.
-- **Personal data is replaced** with placeholders (`[EMAIL-1]`, `[PHONE-1]`, …),
-  stable within a conversation: emails, phone numbers, US social security
-  numbers, card numbers (prefix and checksum), IBANs (checksum). The reply has
-  the values put back locally, so the person reading it sees them and the model
-  never did, and an Improve proposal cannot write a placeholder into a page.
-- **Per space,** `spaces/<KEY>/.confluenceguard` adds `block:`, `redact:` and
-  `allow:` rules. A rule that does not parse refuses AI requests, and the doctor
-  reports it (`guard-rules`): a protection that silently fails to load is a
-  leak.
-- **Multi-page context leaves the page out instead of refusing.** A sub-page or
-  a space-context page holding a secret is dropped and named in the answer's
-  summary; one page cannot block every question about its space. A single page
-  asked about directly is refused.
+- **Secrets stop the request.** The guard detects private keys; cloud and service tokens (AWS,
+  GitHub, GitLab, Slack, Atlassian, Google, Anthropic and OpenAI, Stripe); JSON web tokens;
+  connection strings that contain a password; and `password = …` style assignments. Placeholder
+  values such as `********`, `<your password>` and `${VAR}` are not treated as secrets. When a
+  request is refused, the response (a 422) names the kind of secret and the line it was on, but never
+  the value itself.
+- **Personal data is replaced with placeholders** such as `[EMAIL-1]` and `[PHONE-1]`, which stay the
+  same throughout a conversation. This covers email addresses, phone numbers, US social security
+  numbers, card numbers (recognised by prefix and checksum) and IBANs (recognised by checksum). When
+  the reply comes back, the real values are put back in on this machine, so the person reading the
+  answer sees them while the model never did. This also means an Improve proposal cannot write a
+  placeholder into a page.
+- **Each space can add its own rules** in `spaces/<KEY>/.confluenceguard`, using `block:`, `redact:`
+  and `allow:` lines. If a rule cannot be parsed, AI requests for that space are refused and the
+  doctor reports the problem (`guard-rules`). A protection that silently fails to load would let
+  content through that the space owner meant to stop.
+- **When the context spans many pages, a page with a secret is left out instead of refusing the whole
+  request.** A sub-page or space-context page that holds a secret is dropped, and the answer's summary
+  names it. Otherwise one page could block every question about its space. A single page that is asked
+  about directly is refused.
 
-**Enforced by structure, not convention.** `complete` and `runGeminiCli` accept
-only a `GuardedPayload`, which only `OutboundGuard.inspect` constructs, so
-unguarded text does not compile. `MAX_AI_SENDER_IMPORTERS` holds the senders to
-one importer, the engine. Every request is recorded in `data/ai-audit.jsonl`
-(`0600`): time, engine, space, size and what was replaced. It never records content.
+**The guard is enforced by the structure of the code, not by convention.** The functions that send
+to an AI, `complete` and `runGeminiCli`, accept only a `GuardedPayload`, and only
+`OutboundGuard.inspect` can construct one. Text that has not passed the guard therefore does not
+compile. `MAX_AI_SENDER_IMPORTERS` limits the modules that import those senders to one, the engine.
+Every request is recorded in `data/ai-audit.jsonl` (mode `0600`) with the time, the engine, the
+space, the size and what was replaced. The audit log never records content.
 
-**The argument against:** pattern detectors miss what they were not written
-for and sometimes flag what is harmless. Both are true. The answer is that they
-are a second layer, not the first, and that each kind of miss has a remedy:
-`block:` and `redact:` rules for the first, `allow:` rules for the second. The
-detectors are held to a corpus of real-shaped samples and near-misses, closed
-in both directions (`server/src/ai/guard.test.ts`).
+**The argument against:** pattern detectors miss things they were not written to find, and they
+sometimes flag things that are harmless. Both are true. The answer is that the guard is the second
+layer of protection, not the first, and that each kind of mistake has a remedy: `block:` and
+`redact:` rules catch what the detectors miss, and `allow:` rules clear what they flag wrongly. The
+detectors are tested against a corpus of realistic samples and near-misses that is closed in both
+directions, so every sample must be caught and every near-miss must be let through
+(`server/src/ai/guard.test.ts`).
 
 ---
 
@@ -547,44 +579,43 @@ in both directions (`server/src/ai/guard.test.ts`).
 
 **Status:** accepted, 2026-10-15.
 
-A conversation (`server/src/ai/sessions.ts`) is about one page, a page and its
-sub-pages (a branch), or a space. It is kept in `data/sessions/<id>.json`,
-mode `0600`, so it survives a reload and is resumed when that page or space is
-opened again. Each turn sends the earlier turns with it, newest first up to
-`HISTORY_CHAR_LIMIT`, as a real message array to each provider.
+A conversation (`server/src/ai/sessions.ts`) is about one page, about a page and its sub-pages
+(called a branch), or about a whole space. It is stored in `data/sessions/<id>.json` with mode
+`0600`, so it survives a reload of the browser and is resumed when that page or space is opened
+again. Each new turn sends the earlier turns along with it, newest first, up to
+`HISTORY_CHAR_LIMIT` characters, as a proper message array in each provider's own format.
 
-**Every turn rebuilds its context** from the scope: the page is checked by the
-exclusion gate again, a branch is collected again, and a space's pages are
-retrieved for the new question. A rule changed between turns applies at once.
-The context leads the first message and stays byte-identical across turns, so
-providers that cache prompts (Claude, marked with `cache_control`) do not pay
-for it again. A branch is capped at `CONTEXT_CHAR_LIMIT`; pages past the cap are
-named as left out, never dropped silently.
+**Every turn rebuilds its context from the conversation's scope.** The page is checked against the
+exclusion rules again, a branch's pages are collected again, and a space's pages are retrieved again
+for the new question. A rule that changes between two turns therefore applies immediately. The
+context is placed at the start of the first message and stays byte-for-byte identical from turn to
+turn, so providers that cache prompts (Claude, where it is marked with `cache_control`) do not charge
+for it again. A branch's context is capped at `CONTEXT_CHAR_LIMIT` characters; pages beyond the cap
+are named in the answer as left out, never dropped silently.
 
-**The guard keeps its placeholders per conversation.** The placeholder map is
-saved with the session, so `[EMAIL-1]` means the same person on every turn and
-after a restart. The map holds real values. It stays on this machine and is
-never returned to a browser.
+**The guard keeps its placeholders for the whole conversation.** The map from placeholders to real
+values is saved with the session, so `[EMAIL-1]` refers to the same person on every turn, even after
+a restart. Because the map holds real values, it stays on this machine and is never sent to a
+browser.
 
-**Uploaded files are text, extracted here.** PDF, HTML (converted to
-Markdown), Markdown, plain text, CSV, JSON, YAML and XML are accepted, up to
-10 MB and `FILE_CHAR_LIMIT` of text each; anything else is refused with a
-reason. A file is context for the conversation, not part of Confluence: it is
-not subject to `.confluenceignore`, and the UI says so. It is subject to the
-outbound guard like everything else. That is why a PDF is sent as its
-extracted text and not as a document: the guard cannot read inside a PDF, and
-ADR-022 allows nothing to reach an AI unguarded. Layout and images in a PDF
-are not sent.
+**Uploaded files are converted to text on this machine.** The accepted types are PDF, HTML
+(converted to Markdown), Markdown, plain text, CSV, JSON, YAML and XML, up to 10 MB per file and
+`FILE_CHAR_LIMIT` characters of text. Any other type is refused with a reason. An uploaded file is
+context for the conversation, not part of Confluence, so `.confluenceignore` does not apply to it,
+and the UI says so. The outbound guard does apply to it, as it does to everything else. That is why
+a PDF is sent as its extracted text rather than as a document: the guard cannot inspect the inside
+of a PDF, and ADR-022 allows nothing to reach an AI without passing the guard. As a result, the
+layout and images of a PDF are not sent.
 
-**Dependencies: 18 → 19** (`MAX_RUNTIME_DEPS`): `unpdf`, a server build of
-Mozilla's PDF.js with no dependencies of its own, pinned to an exact version
-released more than two weeks before it was added. The maintainer chose text
-extraction over refusing PDFs or sending them unguarded.
+**Dependencies rise from 18 to 19** (`MAX_RUNTIME_DEPS`) to add `unpdf`, a server build of
+Mozilla's PDF.js that has no dependencies of its own. It is pinned to an exact version that was
+released more than two weeks before it was added. The maintainer chose extracting the text over the
+two alternatives, refusing PDFs or sending them unguarded.
 
-**The argument against:** a conversation store is state that can go stale or
-hold more than intended. It holds what the person typed and the answers they
-were shown, which they could already see. It is local, private to the server's
-user, and deletable per conversation.
+**The argument against:** a conversation store is saved state, and saved state can go stale or end
+up holding more than anyone intended. What it holds is what the person typed and the answers they
+were shown, which they could already see. It is kept locally, readable only by the user the server
+runs as, and each conversation can be deleted.
 
 ---
 
@@ -592,97 +623,112 @@ user, and deletable per conversation.
 
 **Status:** accepted, 2026-10-15.
 
-"Work on branch" acts on a page and everything under it
-(`server/src/branches/branchRuns.ts`), as a run saved in `data/branch-runs/`.
+"Work on branch" acts on a page and everything under it (`server/src/branches/branchRuns.ts`). Each
+piece of work is a run, saved in `data/branch-runs/`. There are two kinds of run:
 
-- **Review** sends the branch as one context (capped, exclusions and the
-  outbound guard applied) and asks for findings in a fixed shape: incorrect,
-  redundant, stale, structure, gap. It changes nothing.
-- **Improve** asks for a proposal per page, each sent on its own. The person
-  accepts (optionally with edits), rejects or undecides each page. Dry run and
-  push act on accepted pages only, one at a time, through the one write path
-  (`server/src/confluence/pagePush.ts`): each is checked against the version its
-  proposal was made from, so a page a colleague changed since is refused and
-  named, while the others go.
+- **Review** sends the branch to the AI as one context, with the size cap, the exclusion rules and
+  the outbound guard applied. It asks for findings in a fixed set of categories: incorrect,
+  redundant, stale, structure and gap. A review changes nothing.
+- **Improve** asks for a proposed revision of each page, sending each page on its own. The person then
+  decides about every page: accept it (with or without their own edits), reject it, or leave it
+  undecided. The dry run and the push act only on accepted pages, one at a time, through the one
+  write path (`server/src/confluence/pagePush.ts`). Each page is checked against the version its
+  proposal was made from, so if a colleague has changed a page since, that page is refused and named
+  while the other accepted pages are still written.
 
-A page holding a secret is skipped and named; an excluded page is never listed.
-A run being filled is one shared object, so a decision made while proposals
-arrive is not lost to the next save.
+A page that holds a secret is skipped and named, and an excluded page is never listed at all. While
+a run is still being filled with proposals, it is held as one shared object, so a decision the person
+makes while proposals are arriving is not overwritten by the next save.
 
-**Declined: pushing a branch in one step.** It is faster and it is the change
-this tool exists not to make: a person reads each page before it changes
-(north star). **Declined for now: cancelling a page mid-request.** Stop takes
-effect between pages.
+**Declined: pushing a whole branch in one step.** It would be faster, but it is exactly the kind of
+change this tool exists to prevent: the north star requires that a person reads each page before it
+changes. **Declined for now: cancelling a page while its request is in progress.** Stopping a run
+takes effect between pages.
+
+---
 
 ## ADR-025 — A page is created only after a check for pages that already say it, which the author has answered
 
 **Status:** accepted, 2026-10-15.
 
-"New page" (`server/src/drafts/drafts.ts`) is a draft session under a chosen
-parent. Before any drafting, the planned title and notes are searched for in
-the existing pages: a local BM25 index over the synced copy
-(`server/src/spaces/searchIndex.ts`, no new dependency, excluded pages never
-indexed) and a live CQL search for pages not synced. Each candidate passes the
-exclusion gate before it is shown or sent, and the AI, if configured, judges how
-much each one overlaps.
+"New page" (`server/src/drafts/drafts.ts`) opens a draft session under a parent page the author
+chooses. Before any drafting starts, the planned title and the author's notes are searched for among
+the existing pages, in two ways: a local BM25 search index over the synced copy
+(`server/src/spaces/searchIndex.ts`, which needs no new dependency and never indexes excluded
+pages), and a live CQL search for pages that have not been synced. Every candidate page passes the
+exclusion check before it is shown or sent anywhere. If an AI is configured, it then judges how much
+each candidate overlaps with the planned page.
 
-The author then answers: **update that page instead** (creation is refused, and
-Improve is the way), **link to it and continue** (the linked pages become the
-co-writer's context), or **continue anyway**. The co-writer does not run, and
-the page cannot be created, until that answer is recorded on the draft.
+The author must then choose one of three answers:
 
-The co-writer proposes a whole revised draft between fixed markers; it is kept
-on the turn as a proposal and shown as a diff, never applied without the author.
-Every turn passes the outbound guard. Creating is a dry run, then the create,
-through the one write path (`server/src/confluence/pagePush.ts`); a title that
-already exists in the space is refused, not overwritten.
+- **update that page instead**, in which case creating the new page is refused and the existing page
+  is improved through Improve;
+- **link to it and continue**, in which case the linked pages become context for the co-writer;
+- **continue anyway**.
 
-**Dependencies: dev 14 → 17** (`MAX_DEV_DEPS`): `eslint`,
-`eslint-plugin-react-hooks` and `@typescript-eslint/parser`, run as
-`npm run lint --workspace=client` inside `npm run check` with only the
-Rules-of-Hooks rule on. A hook placed after an early return blanked the whole UI
-while every other check passed; the rule is the command that disagrees with it.
+The co-writer does not run, and the page cannot be created, until the author's answer is recorded on
+the draft.
 
-**The space's table of contents opens from the space bar,** beside Update Space
-and ZIP, not as a page tab: it describes the space, not the page.
+The co-writer proposes a complete revised draft between fixed markers. The proposal is kept with the
+turn that produced it and shown as a diff, and it is never applied without the author's approval.
+Every turn passes the outbound guard. Creating the page means a dry run followed by the create
+itself, through the one write path (`server/src/confluence/pagePush.ts`). If a page with the same
+title already exists in the space, the create is refused rather than overwriting it.
 
-**Declined: creating without the check** when the AI is not configured. The
-search still runs and the author still answers; only the overlap judgement is
-missing, and the dialog says so.
+**Dev dependencies rise from 14 to 17** (`MAX_DEV_DEPS`) to add `eslint`,
+`eslint-plugin-react-hooks` and `@typescript-eslint/parser`. They run as
+`npm run lint --workspace=client` inside `npm run check`, with only the Rules of Hooks rule enabled.
+A React hook placed after an early return once left the whole UI blank while every other check
+passed, and this rule is the check that catches that mistake.
+
+**The space's table of contents opens from the space bar,** next to Update Space and ZIP, rather
+than as a tab on the page, because it describes the whole space and not the current page.
+
+**Declined: creating a page without the check** when no AI is configured. The search still runs and
+the author still has to answer; only the AI's judgement of the overlap is missing, and the dialog
+says so.
+
+---
 
 ## ADR-026 — The page has four tabs, a space's actions live in one Space menu, and branch work starts from the page, not that menu
 
-**Status:** accepted, 2026-10-15. Amends ADR-025: the table of contents sits
-with Update space and the ZIP in the Space menu, rather than as buttons beside
-them.
+**Status:** accepted, 2026-10-15. Amends ADR-025: the table of contents sits with Update space and
+the ZIP in the Space menu, rather than as buttons beside them.
 
-- **Header:** connection, New page, Snippet parser, Settings, theme.
-- **Sidebar:** jump to a URL or id, one space switcher (synced spaces first,
-  then the rest of Confluence), the **Space** menu (sync, AI summaries, table
-  of contents, ZIP, exclusions and leak guard, remove stale cache), the page
-  filter and the tree.
-- **Page:** Work on branch, Open in Confluence, and a menu (copy, download,
-  remove from this machine), over four tabs: **Read** (rendered, Markdown,
-  storage XML), **Ask AI** (this page, with sub-pages, or the whole space),
-  **Improve**, **Details**. The panels stay mounted, so a question or an edited
-  proposal survives a tab switch.
-- **Settings** holds the connection and the AI provider only. Exclusions and
-  guard rules are a space's, so they are edited from its menu.
+The layout is:
 
-Saving exclusions still deletes, by default, the synced copies the new rules
-exclude, because a ZIP is built from the synced copy. The checkbox now says so
-and can be cleared, and the outcome is reported instead of happening silently.
+- **Header:** the connection status, New page, Snippet parser, Settings and the theme switch.
+- **Sidebar:** a box to jump to a page by URL or id; one space switcher, listing synced spaces first
+  and then the rest of Confluence; the **Space** menu, which holds sync, AI summaries, the table of
+  contents, the ZIP download, exclusions and the leak guard, and removing stale cached pages; and
+  finally the page filter and the page tree.
+- **Page:** Work on branch, Open in Confluence, and a menu with copy, download and remove from this
+  machine. Below them are four tabs:
+  - **Read** shows the page rendered, as Markdown, or as storage XML;
+  - **Ask AI** asks about this page, this page with its sub-pages, or the whole space;
+  - **Improve** proposes a revision;
+  - **Details** shows the page's AI summary, its Confluence details and its attachments.
 
-The UI's own promises have commands that disagree with them: every class name
-has a rule (`server/src/docs/clientStyles.test.ts`); colours come from the
-theme's variables, and outcomes are toasts or inline, never `alert()` or
-`confirm()` (`server/src/docs/clientConventions.test.ts`). A review run records
-the id of each page it read, so a finding opens the page it names.
+  The tab panels stay mounted when hidden, so a half-typed question or an edited proposal survives a
+  switch to another tab.
 
-**Declined: branch actions in the Space menu.** A branch is a page and what is
-under it, so it starts from the page. **Declined for now: a component test
-runner.** It is new dependencies for a small UI; keyboard, dialog and theme
-behaviour are checked by walking the app in a browser, and that check is manual.
+- **Settings** holds only the connection and the AI provider. Exclusions and guard rules belong to a
+  space, so they are edited from that space's menu.
+
+Saving new exclusion rules still deletes, by default, the synced copies of pages the new rules
+exclude, because the space ZIP is built from the synced copy. A checkbox in the dialog now explains
+this and can be cleared, and the result is reported to the person rather than happening silently.
+
+Each of the UI's own conventions is backed by a test that fails when it is broken. Every CSS class a
+component uses must have a rule (`server/src/docs/clientStyles.test.ts`). Colours must come from the
+theme's variables, and outcomes must be shown as toasts or inline messages, never with `alert()` or
+`confirm()` (`server/src/docs/clientConventions.test.ts`). A review run also records the id of each
+page it read, so a finding can open the page it refers to.
+
+**Declined: branch actions in the Space menu.** A branch is a page together with everything under
+it, so branch work starts from that page. **Declined for now: a component test runner.** It would
+mean new dependencies for a small UI. Instead, keyboard, dialog and theme behaviour are checked by
+walking through the app in a browser, and that check is manual.
 
 ---
 
@@ -690,75 +736,75 @@ behaviour are checked by walking the app in a browser, and that check is manual.
 
 **Status:** accepted, 2026-10-15.
 
-The code lives in `SimplySF/simply-confluence-explorer` and takes that
-repository's shape:
+The code lives in the `SimplySF/simply-confluence-explorer` repository and follows that
+repository's structure:
 
-- **One package**, `packages/simply-confluence-explorer`: a `node:http` server
-  in `src/`, a Svelte 5 frontend in `web/`, and the `confluence-explorer`
-  command in `bin/`. The three npm workspaces (`shared`, `server`, `client`)
-  fold into it; the API types both halves need are one module, imported by
-  the frontend as types only.
-- **pnpm, Lerna and Wireit**, ESM throughout, Vitest, and the template's
-  ESLint and Prettier rules. CI runs on Linux and Windows.
-- **The React UI is rewritten in Svelte.** The layout and behaviour ADR-026
-  settled carry over unchanged; only the framework moves.
+- **One package**, `packages/simply-confluence-explorer`, contains a `node:http` server in `src/`, a
+  Svelte 5 frontend in `web/`, and the `confluence-explorer` command in `bin/`. The three npm
+  workspaces the app used before (`shared`, `server` and `client`) are folded into it. The API types
+  that both the server and the frontend need are kept in one module, which the frontend imports as
+  types only.
+- **The tooling is the template's:** pnpm, Lerna and Wireit, ESM throughout, Vitest for tests, and
+  the template's ESLint and Prettier rules. CI runs on both Linux and Windows.
+- **The React UI is rewritten in Svelte.** The layout and behaviour settled in ADR-026 carry over
+  unchanged; only the framework changes.
 
-**Two records, split by job.** A feature, screen, route or change to how the
-app starts or stores credentials gets a design doc in `docs/design/`, as the
-template requires. A design doc says what a feature is and how it behaves, and
-is corrected when the implementation teaches it something. This log keeps
-what is not a feature: the rules, the budgets, exceptions to a fence, and
-every refusal. A design doc cites records by number rather than restating
-them, and a refusal made while designing a feature is recorded here as well,
-so what is settled stays in one file.
+**There are two kinds of record, each with its own job.** A feature, a screen, a route, or a change
+to how the app starts or stores credentials gets a design doc in `docs/design/`, as the template
+requires. A design doc describes what a feature is and how it behaves, and it is corrected whenever
+the implementation shows it to be wrong. This decision log keeps everything that is not a single
+feature: the project's rules, its budgets, any exceptions to a fence, and every refusal. A design doc
+refers to records here by number instead of repeating them. A refusal made while designing a feature
+is also recorded here, so that everything already settled can be found in one file.
 
-Commands named in earlier records map as follows: `npm run check` is
-`pnpm run build` then `pnpm test`; `npm run dev` is `pnpm run dev`;
-`npm run prod` is `pnpm start`; `npm run doctor` is `confluence-explorer
-doctor`; `npm test` and `npm run test:e2e` keep their names under pnpm. Paths
-under `server/src/` and `client/src/` are under the package's `src/` and
-`web/src/`.
+Commands named in earlier records correspond to these commands now:
 
-**Declined: keeping React.** It would have been the smaller move, and it
-departs from a structure the repository requires.
+- `npm run check` is `pnpm run build` followed by `pnpm test`;
+- `npm run dev` is `pnpm run dev`;
+- `npm run prod` is `pnpm start`;
+- `npm run doctor` is `confluence-explorer doctor`;
+- `npm test` and `npm run test:e2e` keep their names under pnpm.
 
-**The argument against:** two kinds of record means two places to look, and a
-reader may not know which holds an answer. The template makes design docs
-mandatory, and folding the refusals into them would scatter what is settled
-across one file per feature, to be found only by someone who already knew
-which feature to look under. The split costs a sentence of orientation in
-`AGENTS.md`.
+Paths that earlier records give under `server/src/` and `client/src/` are now under the package's
+`src/` and `web/src/`.
+
+**Declined: keeping React.** It would have been the smaller change, but it departs from a structure
+the repository requires.
+
+**The argument against:** two kinds of record means two places to look, and a reader may not know
+which one holds the answer to their question. The template makes design docs mandatory, so they
+cannot be dropped. Folding the refusals into them instead would spread what is settled across one
+file per feature, where only someone who already knew which feature to look under could find it.
+Keeping both costs one sentence of orientation in `AGENTS.md`.
 
 ---
 
 ## ADR-028 — Confluence is reached through simply-atlassian-core; our own HTTP client and the spawned push tool are retired
 
-**Status:** accepted, 2026-10-15. Amends ADR-014: the HTTP row counts the
-modules that import the library's clients, and the exec row drops to the
-Gemini CLI alone.
+**Status:** accepted, 2026-10-15. Amends ADR-014: the HTTP row counts the modules that import the
+library's clients, and the exec row drops to the Gemini CLI alone.
 
-`@simplysf/simply-atlassian-core` is the library the push tool is built on.
-It has no runtime dependencies, uses Node's `fetch`, retries 429 and 5xx with
-`Retry-After`, and converts between Markdown and storage format in process.
-The template asks for it in preference to a second client.
+`@simplysf/simply-atlassian-core` is the library that the push tool is built on. It has no runtime
+dependencies of its own, makes its requests with Node's built-in `fetch`, retries 429 and 5xx
+responses while respecting `Retry-After`, and converts between Markdown and Confluence's storage
+format inside the process. The template asks projects to use it rather than writing a second client.
 
-- `src/confluence/client.ts` stays the one module that talks to Confluence:
-  it wraps the library's `ConfluenceClient`, and nothing else imports it.
-- A push converts and writes in process, through the library's page-update
-  functions, instead of starting a separate program. The version check, the
-  frontmatter strip and the refresh after a push are unchanged.
-- axios, cheerio, turndown and its GFM plugin, the push tool and its host are
-  removed. Design doc 0002 lists what remains and why.
+- `src/confluence/client.ts` remains the one module that talks to Confluence. It wraps the library's
+  `ConfluenceClient`, and no other module imports that client.
+- A push now converts and writes the page inside the server process, using the library's page-update
+  functions, instead of starting a separate program. The version check, the removal of frontmatter
+  before converting, and the refresh of the local copy after a push all work as before.
+- axios, cheerio, turndown and its GFM plugin, the push tool and the command that hosted it are
+  removed. Design doc 0002 lists the dependencies that remain and the reason for each.
 
-**The argument against:** the library says Server and Data Center are
-implemented but not yet verified against a live instance, and Data Center is
-the only target (ADR-002). Its Markdown conversion is also not ours, so pages
-on disk and in prompts will read differently. The end-to-end suite runs
-against a real Data Center (ADR-003), so this project is where that
-verification happens; the change that swaps the converter carries a fixture
-test that puts the old output beside the new for every page in the test
-dataset, and any difference is reported in that pull request rather than
-accepted quietly.
+**The argument against:** the library's own documentation says its Server and Data Center support is
+implemented but has not yet been verified against a live instance, and Data Center is this project's
+only target (ADR-002). Its Markdown conversion is also different from the one this project used, so
+pages saved to disk and pages sent in prompts will read differently. The answer is that this
+project's end-to-end suite runs against a real Data Center (ADR-003), so this project is where that
+verification will happen. The change that swaps the converter will include a fixture test that sets
+the old output beside the new output for every page in the test dataset, and that pull request will
+report every difference rather than accepting them quietly.
 
 ---
 
@@ -766,16 +812,112 @@ accepted quietly.
 
 **Status:** accepted, 2026-10-15. Amends ADR-006.
 
-`pnpm run dev` is the template's: the server and the Vite dev server, as
-Wireit services. Starting Postgres and Confluence from it would turn a
-contributor's first command into a container boot of several minutes that needs
-podman or docker. The test environment is `pnpm run testenv:start`, and
-`testenv:down` stops it; the doctor says when the app is pointed at a test
-environment that is not running.
+`pnpm run dev` belongs to the template: it starts the server and the Vite dev server as Wireit
+services. If it also started Postgres and Confluence, a contributor's first command would become a
+container start-up that takes several minutes and requires podman or docker. Instead, the test
+environment is started with `pnpm run testenv:start` and stopped with `testenv:down`. The doctor
+reports when the app is configured to use a test environment that is not running.
 
-ADR-006's reason holds: nothing runs that the developer did not start, now
-by a separate command.
+The reason behind ADR-006 still holds: nothing runs that the developer did not start. The difference
+is that the developer now starts the test environment with its own command.
 
-**The argument against:** one command that brought up everything was the
-fastest path to a working app against a real Confluence. It still is two
-commands, and the template's quick start is the one most contributors need.
+**The argument against:** a single command that brought everything up was the fastest way to get a
+working app connected to a real Confluence. It now takes two commands, and the template's quick
+start is the one most contributors need.
+
+---
+
+## ADR-030 — The decision log was reworded once for clarity, and no decision in it was changed
+
+**Status:** accepted, 2026-10-15. An exception, authorised by the maintainer, to the rule that a
+record is never edited.
+
+The records up to ADR-029 were first written in a clipped, compressed style: short fragments,
+slogans in place of explanations, and sentences that assumed the reader already knew the project.
+The maintainer judged that style unacceptable for this repository, which a new contributor or the
+repository owner should be able to read without help. Every record from ADR-001 to ADR-029 was
+therefore rewritten once, in full sentences that say what was decided and why.
+
+The rewrite was limited to wording. These things were kept exactly, and were checked against the
+previous text before the change was committed:
+
+- every record's number, title and order;
+- every `**Status:**` line's status and date, and every statement that a record supersedes or
+  amends another;
+- every number, table value, file path, command and identifier, and every budget name in the record
+  that names it;
+- every citation of one record by another.
+
+Where the rewrite added a sentence, it explains something the record already relied on, such as
+what a term means or why a rule exists. It does not add a rule.
+
+The append-only rule still holds for everything else. A future change of wording is not made this
+way. It is made by a new record that supersedes the old one, as for any other change.
+
+**The argument against:** an append-only log is trustworthy because nothing in it is ever
+rewritten, and this is a rewrite. Two things answer it. First, the rewrite was made immediately
+after the log was first merged into this repository, before any later record or design doc had come
+to rely on its earlier wording. Second, this record says exactly what changed and what did not, and
+the earlier wording remains in the git history, in the commit that first added the log.
+
+---
+
+## ADR-031 — The budgets are counted on the template's layout and enforced by `pnpm test`, instead of by a shell script
+
+**Status:** accepted, 2026-10-15. Amends ADR-014 and ADR-021 where they name `scripts/budgets.sh`
+and describe what it counts.
+
+The budgets are now measured by `scripts/budgets.mjs`, a Node script. The package's
+`test/budgets.test.ts` runs that script and turns each budget into its own test, so a failure names
+the budget that was broken and the files that broke it. `pnpm run budgets` prints the same
+measurements for a person to read.
+
+The budgets moved out of a shell script because this repository's CI runs on Windows as well as
+Linux, and Windows runners do not run shell scripts. A budget that only some runners check would
+drift on the others without anyone noticing. Making the budgets part of `pnpm test` means every
+runner enforces them, and so does every contributor who runs the tests.
+
+What is counted had to change along with the layout, so these numbers are set again:
+
+| budget                                                                                     | limit       | measured when set |
+| ------------------------------------------------------------------------------------------ | ----------- | ----------------- |
+| live prose (`MAX_DOC_LINES`)                                                               | 2,400 lines | 2,085             |
+| runtime dependencies (`MAX_RUNTIME_DEPS`)                                                  | 7           | 0                 |
+| dev dependencies (`MAX_DEV_DEPS`)                                                          | 29          | 26                |
+| modules importing the library's clients or calling `fetch` (`MAX_CONFLUENCE_HTTP_MODULES`) | 1           | 0                 |
+| modules running external processes (`MAX_EXEC_MODULES`)                                    | 1           | 0                 |
+
+Each change, and the reason for it:
+
+- **Prose** now includes the template's contributing guides and the design docs the template
+  requires, and the documentation is written in full explanatory sentences (ADR-030), which take
+  more lines than the earlier clipped style. The Contributor Covenant is adopted text rather than
+  text this project wrote, so it is not counted. History and review stay excluded, as before,
+  because append-only documents cannot be shortened.
+- **Runtime dependencies** are capped at the seven that design doc 0002 names and argues for. The
+  number is set once here so that the pull requests bringing those dependencies in do not each have
+  to raise it.
+- **Dev dependencies** are the template's own tooling (26) plus three that the move needs:
+  `@lucide/svelte` for icons, `marked` for rendering Markdown, and `@types/archiver` for the ZIP
+  library's types.
+- **Code and comments** no longer count the license header that the linter requires at the top of
+  every file, or a Svelte `<style>` block, which is a stylesheet rather than code. The header is the
+  same fifteen lines everywhere and says nothing about the code below it.
+- **The HTTP row** counts the modules that import simply-atlassian-core's `ConfluenceClient` or
+  `HttpTransport`, or that call `fetch` themselves. It no longer counts imports of `node:http`,
+  because the server needs that module to serve the app (ADR-028).
+- **The exec row** allows one module, the Gemini CLI runner, because pushing to Confluence no longer
+  starts a separate program (ADR-028).
+
+The code budget, the comment ceiling, the test floor, the bundle size and the AI rows are unchanged.
+
+The unit-test task is also told about the files these tests read, such as the documentation, the
+scripts and the built bundle. Wireit, the template's build tool, skips a task whose input files have
+not changed, so without this a change to the documentation alone would not re-run the tests that
+check it.
+
+**The argument against:** the runtime and dev dependency ceilings are set above today's counts,
+and ADR-014 said budgets start at what exists. The difference here is that every addition is named
+in an agreed design doc. A ceiling set at zero would be raised three times by the pull requests that
+follow, and a budget raised repeatedly is the standard's own warning sign that the budget is not
+being held.

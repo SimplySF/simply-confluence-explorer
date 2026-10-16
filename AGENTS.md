@@ -6,6 +6,15 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and the pull-request 
 package's own `CONTRIBUTING.md` for what is specific to it. New features start as a design doc in
 [docs/design/](docs/design/README.md).
 
+At the start of every session, also read [docs/north-star.md](docs/north-star.md), which states
+what the app is for, and the record titles in [docs/decisions.md](docs/decisions.md). The two kinds
+of record have different jobs (ADR-027). A design doc describes one feature: what it does and how it
+behaves. The decision log holds everything that is not a single feature: the project's rules, its
+budgets, any exception to a fence, and every proposal that was refused. When something has already
+been declined, it is settled. If it comes up again, answer it by citing the record's number instead
+of arguing it a second time. The north star belongs to the maintainer, so an agent may propose a
+change to it but must not make one.
+
 ## Working conventions
 
 - `@simplysf/simply-confluence-explorer` is two halves in one package: a Node server in `src/`
@@ -19,66 +28,97 @@ package's own `CONTRIBUTING.md` for what is specific to it. New features start a
   injectable sink, so tests never need stubbed globals.
 - Commits follow Conventional Commits; commitlint enforces it and Lerna versions from it.
 
-Every session, also read [docs/north-star.md](docs/north-star.md) and the record titles in
-[docs/decisions.md](docs/decisions.md). A design doc says what a feature is; the decision log holds
-the rules, the budgets, exceptions to a fence, and every refusal (ADR-027). A decision already
-declined is settled, and a proposal to revisit it is answered with the record's number rather than a
-fresh argument. The north star is the maintainer's: an agent proposes changes to it, it does not
-make them.
-
 ## The standard this project is held to
 
-The project is held to the agent-led development standard, version 1, at **stakes `real`**
-(ADR-001): a team depends on it, and it can change shared Confluence pages. `.agent-standard` is the
-declaration. The standard's conformance check is kept outside this repository; `pnpm run standard`
-runs it when it sits beside the checkout and says it was skipped otherwise.
+This project follows the agent-led development standard, version 1. The standard is a set of rules
+for projects where an AI agent writes much of the code: it asks for a written purpose, a log of
+decisions, size limits that a command enforces, and tests for what the documentation claims. Each
+project declares a level of stakes, which sets how much review a release needs. This one declares
+**stakes `real`** (ADR-001), because a team depends on it and it can change Confluence pages that
+other people read. The declaration lives in `.agent-standard`.
+
+The standard's conformance check is kept outside this repository. `pnpm run standard` runs it when
+the check sits beside this checkout, and otherwise prints that it was skipped, so a contributor
+without the standard can still build and test.
 
 ### The decision log
 
-`docs/decisions.md` is numbered and append-only. A record is superseded or amended by a later
-record, never edited away and never deleted.
+`docs/decisions.md` is numbered and append-only. A record is never edited away or deleted. When a
+decision changes, a later record supersedes or amends the earlier one and says which one it
+replaces. This keeps the reasoning behind every past decision readable. The one exception is the wording-only pass
+recorded in ADR-030, which the maintainer authorised and which changed no decision.
 
-- A title is a sentence stating the decision, never a topic.
-- Every record carries a `**Status:**` line.
-- **Refusals are recorded as well as choices.** A title that refuses says so plainly (`not`, `no`,
-  `never`, `instead of`, `declined`, `deferred`).
-- A decision made in conversation is not made until it is in the log or in a design doc.
-- Adding or removing a dependency, changing a budget, or making an exception to a fence needs a
-  record, and the commit cites its number. A version bump within the existing set does not.
+- **Each title states the decision as a sentence**, such as "The server answers this machine only",
+  rather than naming a topic such as "Networking". A reader scanning the titles should learn what was
+  decided without opening the record.
+- **Each record has a `**Status:**` line** saying whether it is accepted, deferred or superseded.
+- **Refusals are recorded as well as choices.** Writing down what was declined, and why, stops the
+  same idea from being proposed again every session. A title that refuses something says so plainly,
+  using words such as `not`, `no`, `never`, `instead of`, `declined` or `deferred`.
+- **A decision is not made until it is written down.** Agreement reached in conversation goes into
+  the log or into a design doc in the next change.
+- **Some changes need a record before they happen:** adding or removing a dependency, changing a
+  budget, or making an exception to one of the fences below. The commit that makes the change cites
+  the record's number. A version bump within the existing set of dependencies does not need one.
 
 ### Comments record intent, never history
 
-A comment answers "why is this code shaped this way". It does not record what the code used to be;
-git and the decision log hold history. The test: **would this comment still make sense to someone
-who had never seen the previous version?** The same test governs user-facing prose, whose one
-reader is someone arriving for the first time. Each document keeps its existing voice; the standard
-governs what it claims, not how it sounds.
+A code comment explains why the code is shaped the way it is, so that someone changing it later
+understands what they might break. It does not describe what the code used to be. Git and the
+decision log already hold that history, and a source file that repeats it becomes a changelog that
+nobody maintains.
 
-- A bug fix ships with a test, and the test name carries the story. A fixed setup failure ships
-  with a doctor check instead (ADR-016).
-- A 30-line function does not need 40 lines of preamble. If the reasoning is that long, it is a
-  design doc or a record.
-- No self-narration. Comments describe the code, not the process that produced it.
-- Prefer deleting a comment to writing one that restates the line below it.
+To check a comment, ask: **would it still make sense to someone who had never seen the previous
+version?** If it only makes sense as "we got this wrong once", it belongs in the commit message.
+
+The same test applies to documentation. Every document is written for someone reading it for the
+first time, so a sentence that only makes sense to someone who saw an earlier draft should be
+rewritten or removed.
+
+**Documentation is written clearly and with purpose.** Use full sentences that say what something
+is, why it matters, and what the reader should do about it. Define a term the first time it appears.
+Prefer a plain explanation to a slogan. This applies to everything this project writes: the north
+star, the decision log, the design docs, this file, and comments in code. The documents that came
+with the repository template (the root README, CONTRIBUTING.md, and the design-doc README) keep their
+owner's wording; our additions to them follow this rule.
+
+- **A bug fix ships with a test**, and the test's name describes the failure it guards against, so
+  the suite records the story. A fixed setup failure ships with a doctor check instead, because a
+  setup problem is detected on the user's machine rather than in the suite (ADR-016).
+- **Keep explanations proportionate.** A 30-line function does not need 40 lines of comments. If the
+  reasoning really is that long, it belongs in a design doc or a decision record, and the comment
+  can point there.
+- **Describe the code, not the person or process that wrote it.** Comments such as "I changed this
+  to" or "now we" describe the session that produced the code and are meaningless later.
+- **Prefer deleting a comment to keeping one that restates the line below it.**
 
 ### Checks
 
-- `pnpm run build` then `pnpm test` before every commit. The budgets (ADR-014) are part of
-  `pnpm test`. Do not argue with a budget; write a record to change it.
-- `pnpm test` is the fast suite and **excludes** the end-to-end suite. `pnpm run test:e2e` runs
-  against the Confluence test environment (`pnpm run testenv:start`) and skips without it. "All
-  tests pass" names which suite ran.
-- Every user-facing claim names the test or CI job that proves it, or the claim goes.
-- A new result in a closed-world set goes in the expectation table: `expectations` in
-  `test-env/fixtures/dataset.mjs` for exclusions. The test failure will say so.
-- Where the same fact is stated twice, once authored and once generated, a test holds the two
-  together.
+- **Run `pnpm run build` and then `pnpm test` before every commit.** The budgets (ADR-014, ADR-031) run
+  as part of `pnpm test`, and `pnpm run budgets` prints them with their current values. A budget is a limit on the size or shape of the project, such as the number of
+  lines of code or of runtime dependencies, chosen so that growth is a deliberate decision rather
+  than an accident. If a change breaks a budget, do not work around the check: write a decision
+  record that argues for the new number.
+- **Say which suite ran.** `pnpm test` is the fast suite and does not include the end-to-end suite.
+  `pnpm run test:e2e` runs against the Confluence test environment (`pnpm run testenv:start`) and
+  skips itself when no environment is running. A report that "all tests pass" names the suite, so
+  that a skipped end-to-end run is not mistaken for a passing one.
+- **Every claim made to users names the test or CI job that proves it.** If nothing proves a claim,
+  remove the claim.
+- **Closed-world results go in the expectation table.** Some tests check a fixed, known set of
+  results, such as which test pages a `.confluenceignore` file excludes. A new result in such a set
+  is added to `expectations` in `test-env/fixtures/dataset.mjs`, and the failing test will say so.
+- **When one fact is stated in two places**, once written by hand and once generated by tooling, a
+  test checks that the two agree, so neither can drift.
 
 ### Load-bearing surfaces
 
-Every change here is flagged in the pull request description and gets human review. At stakes
-`real`, a second person answers the review packet (`docs/review/`) for these independently before
-release. Paths are under `packages/simply-confluence-explorer/src/`.
+A load-bearing surface is a part of the code where a mistake would leak data, change Confluence
+without consent, or switch off one of the project's safeguards. Every change to one is flagged in
+the pull request description and reviewed by a person. Because this project declares stakes `real`,
+a second person also answers the release's review packet for these surfaces before the release
+ships. A review packet is a document in `docs/review/` that lists what was checked, what was not,
+and what is still outstanding. The paths below are relative to `packages/simply-confluence-explorer/src/`.
 
 | surface                         | where                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -97,55 +137,78 @@ release. Paths are under `packages/simply-confluence-explorer/src/`.
 
 ### The rules specific to this program
 
-- **The server holds the connection.** A request never names its own Confluence, and no token is
-  ever returned to a browser (ADR-019).
+These rules protect the people whose pages and credentials the app handles. Each one is backed by a
+decision record that explains it in full.
+
+- **The server holds the Confluence connection.** A request from the browser never chooses which
+  Confluence to talk to, and no token is ever sent back to a browser (ADR-019). This means a web page
+  cannot redirect the app to another server or read the token.
 - **An excluded page never leaves the machine.** Every path that sends page content to an AI goes
-  through `gatePageForAi`, which fails closed (ADR-018).
-- **Nothing reaches an AI unguarded.** Providers take only a `GuardedPayload`; a new detector goes in
-  the corpus in the guard's test, which fails until it does (ADR-022).
-- **The server answers this machine only.** Host and Origin are checked; sharing is an explicit
-  `--host` plus an allow-list, never a widened default (ADR-018).
-- **A push names the version it was made from**, and a mismatch is refused.
-- **The test dataset is the source of truth** for the test environment's spaces and
-  `.confluenceignore` files; generated copies are overwritten on every seed (ADR-007).
+  through `gatePageForAi`. If that function cannot confirm a page is allowed, it refuses the page
+  rather than sending it (it fails closed) (ADR-018).
+- **Nothing reaches an AI without passing the outbound guard.** The provider code accepts only a
+  `GuardedPayload`, a type that only the guard can create, so unguarded content does not compile. A
+  new detector is added together with test cases in the guard's test corpus; the test fails until
+  those cases exist (ADR-022).
+- **The server answers this machine only.** It checks the Host and Origin of every request. Sharing
+  it with other machines requires an explicit `--host` setting plus an allow-list of hosts, never a
+  wider default (ADR-018).
+- **A push names the page version it was made from.** If the page in Confluence has changed since
+  then, the push is refused, so nobody's newer edit is overwritten.
+- **The test dataset is the source of truth** for the test environment's spaces and their
+  `.confluenceignore` files. Any generated copy is overwritten every time the environment is seeded
+  (ADR-007).
 
 ### Instinct fences
 
-Each is a failure that has actually shipped in agent-led work, so the instinct is named before it
-fires.
+An instinct fence is a rule against a mistake that has actually happened in agent-led work. Each one
+is written down so that an agent recognises the urge before acting on it.
 
-- **Answer the ask.** Extra scope is proposed in prose, never shipped in the diff.
-- **Fix in place.** No `_v2`/`_new`/`_old` parallel files; a replacement and the deletion it replaces
-  travel in one commit.
-- **Never discard an error** without a comment saying why ignoring it is correct.
-- **Never weaken or delete a test to go green.** A known defect is a `todo` test, not a deleted one.
-- **Never claim something ran** without the command and its output. Anything unverified is labelled
-  unverified.
-- **Test the code, not the machine.** A test that asks whether something is installed passes where it
-  was written and fails where the artifact is built.
-- **Done is the consumed artefact.** A green workflow is a step; the packed app used against
-  Confluence is finished.
+- **Answer the ask.** Do what was requested. If you see other work worth doing, propose it in your
+  reply; do not add it to the change.
+- **Fix in place.** Do not create parallel copies such as `_v2`, `_new` or `_old` files. When code is
+  replaced, the new version and the deletion of the old one go in the same commit, so the repository
+  never holds two versions of the same thing.
+- **Never discard an error silently.** If ignoring an error is correct, add a comment that says why.
+  An empty `catch` block hides failures that someone will later need to find.
+- **Never weaken or delete a test to make the suite pass.** A failing test is reporting something
+  real, so report what it found. A known defect that cannot be fixed yet becomes a `todo` test, which
+  keeps it visible, rather than a deleted one.
+- **Never claim something ran unless you have its command and output.** Anything you did not verify
+  is labelled as unverified, including in reports about your own work.
+- **Test the code, not the machine.** A test that checks whether a tool is installed passes on the
+  machine where it was written and fails wherever the package is built. Tests should exercise the
+  project's code with the inputs it controls.
+- **Work is finished when the shipped app works, not when CI is green.** A passing workflow is one
+  step. The work is done when the packed app has been installed and used against Confluence.
 - **No local detail leaves the machine.** This repository is public. Absolute paths, hostnames,
-  account names, real space keys and real page content never reach a commit, an issue, a comment or
-  a document. Use the test dataset's generic cast.
-- **No placeholders** without a named tracking issue. The TODO count is declared in
-  `.agent-standard`, and it is zero.
-- **One diff, one intent.** Refactors and fixes ship separately.
-- **Security is not traded for convenience.** TLS verification off, broad permissions, inline secrets
-  and string-built shell commands need a record.
-- **Give the strongest counter-argument first** on any proposal, and build only what survives it.
-- **Polish is not proof.** Only executed checks count.
-- **A standard without a gate is a wish.** Adding one means adding the command that disagrees with
-  it, in the same commit.
-- **Open the pull request when the work is done** and the checks are green, not before. Do not keep
-  pushing to a pull request under review.
+  account names, real space keys and real page content must never appear in a commit, an issue, a
+  comment or a document. Use the test dataset's generic names instead.
+- **No placeholders without a tracking issue.** A `TODO` without a named issue tends to be forgotten.
+  The number of TODOs is a budget declared in `.agent-standard`, and it is zero.
+- **One diff, one intent.** A refactor and a bug fix ship as separate changes, so each can be
+  reviewed and reverted on its own.
+- **Security is not traded for convenience.** Turning off TLS verification, granting broad
+  permissions, putting secrets in code, or building shell commands from strings each need a decision
+  record that explains why.
+- **Give the strongest argument against a proposal first**, and build only what still makes sense
+  after it. Enthusiasm is not a reason to change direction; a decision record is.
+- **Only checks that actually ran count as evidence.** The existence of documentation, tests or
+  decision records does not show that the code works. What shows it is a check that was run and
+  passed.
+- **A rule needs a command that enforces it.** When you add a rule to this file, add the test or
+  check that fails when the rule is broken, in the same commit. A rule nothing checks will drift.
+- **Open the pull request when the work is done** and the checks pass, not before. Once a pull
+  request is under review, do not keep pushing new work to it; open another one.
 
 ### Not yet armed
 
-Each line is a gate this file names that nothing in this repository enforces yet. It is retired from
-this list in the commit that adds its command.
+This section lists the checks this file mentions that nothing in the repository enforces yet. Each
+item is removed in the commit that adds the command enforcing it.
 
-- The budgets and docs-convention tests (`test/budgets.test.ts`).
-- `pnpm run standard` and `.agent-standard`.
-- `pnpm run test:e2e`, `pnpm run testenv:start`, `test-env/`, and the end-to-end CI job.
-- The doctor (`confluence-explorer doctor`).
+- `pnpm run test:e2e`, `pnpm run testenv:start`, the `test-env/` directory, and the end-to-end CI
+  job.
+- The doctor (`confluence-explorer doctor`), which checks a user's setup.
+- The load-bearing modules in the table above that have not moved into this package yet.
+  `test/docs/prose.test.ts` keeps a list of them and fails when one of them lands, so that the list
+  is pruned as the move goes on.

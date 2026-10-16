@@ -15,6 +15,7 @@
   },
   "packageManager": "pnpm@11.21.0",
   "scripts": {
+    "budgets": "node scripts/budgets.mjs",
     "build": "lerna run build",
     "compile": "lerna run compile",
     "dev": "pnpm --filter @simplysf/simply-confluence-explorer run dev",
@@ -23,6 +24,7 @@
     "prepare": "husky",
     "reset": "node scripts/reset.mjs",
     "reset:install": "node scripts/reset.mjs --install",
+    "standard": "node scripts/standard.mjs",
     "test": "lerna run test",
     "test:only": "lerna run test:only"
   },
