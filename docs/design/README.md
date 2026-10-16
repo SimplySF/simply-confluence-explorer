@@ -34,9 +34,9 @@ refactors that keep the public surface identical (though a short doc is welcome 
 | #                                      | Title                                                                        | Status              |
 | -------------------------------------- | ---------------------------------------------------------------------------- | ------------------- |
 | [0001](0001-confluence-explorer.md)    | Confluence Explorer: what it does and how the package is built               | Planned             |
-| [0002](0002-runtime-dependencies.md)   | Runtime dependencies: simply-atlassian-core and `node:http`                  | Planned             |
+| [0002](0002-runtime-dependencies.md)   | Runtime dependencies: simply-atlassian-core and `node:http`                  | Implemented (PR #7) |
 | [0003](0003-data-directory.md)         | Where the app keeps its data, and the token with it                          | Implemented (PR #3) |
-| [0004](0004-ai-providers.md)           | Asking an AI: one engine, an outbound guard, and conversations on the server | Planned             |
+| [0004](0004-ai-providers.md)           | Asking an AI: one engine, an outbound guard, and conversations on the server | Implemented (PR #7) |
 | [0005](0005-writes-to-confluence.md)   | Writing to Confluence: a push, a branch's review queue, and a new page       | Planned             |
 | [0006](0006-end-to-end-environment.md) | The end-to-end suite runs against a real Data Center                         | Planned             |
 

@@ -1,0 +1,96 @@
+/*
+ * Copyright (c) 2026, SimplySF.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// An app on a temporary data directory, pointed at the fake Confluence, with an AI that records what
+// it is sent instead of sending it. The outbound guard runs exactly as it does in production, so a
+// test sees what would have left the machine.
+
+import fs from 'node:fs';
+import type http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import type { GuardedPayload } from '../../src/ai/guard.js';
+import { createServer } from '../../src/server.js';
+import { FAKE_TOKEN, type FakeConfluence } from './fakeConfluence.js';
+
+export type TestApp = {
+  base: string;
+  dataDir: string;
+  /** Every payload the AI was sent, in order. */
+  sent: GuardedPayload[];
+  /** Everything that was sent, as one string, for checking what left the machine. */
+  sentText: () => string;
+  call: <T = Record<string, unknown>>(
+    method: string,
+    route: string,
+    body?: unknown,
+  ) => Promise<{ status: number; body: T }>;
+  close: () => Promise<void>;
+};
+
+/** Replies with the request's placeholders echoed back, so a test can see them restored. */
+const echo = (payload: GuardedPayload, n: number): string => {
+  const placeholders =
+    payload.messages
+      .map((m) => m.content)
+      .join('\n')
+      .match(/\[[A-Z_]+-\d+\]/g) ?? [];
+  if (payload.system.includes('return a JSON object')) {
+    return '{"summary":"A page about operations.","tags":["ops"],"documentType":"runbook","systemsMentioned":["Postgres"]}';
+  }
+  return `answer ${n} ${placeholders.join(' ')}`.trim();
+};
+
+export async function startTestApp(
+  fake: FakeConfluence,
+  reply: (payload: GuardedPayload, n: number) => string = echo,
+): Promise<TestApp> {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-app-'));
+  fake.writeIgnoreFiles(dataDir);
+  const sent: GuardedPayload[] = [];
+  const server: http.Server = createServer({
+    webRoot: dataDir,
+    dataDir,
+    env: {
+      CONFLUENCE_URL: fake.url,
+      CONFLUENCE_PERSONAL_TOKEN: FAKE_TOKEN,
+      ANTHROPIC_API_KEY: 'k',
+      AI_PROVIDER: 'anthropic',
+    },
+    aiTransport: (payload) => {
+      sent.push(payload);
+      return Promise.resolve(reply(payload, sent.length));
+    },
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
+  return {
+    base,
+    dataDir,
+    sent,
+    sentText: () => sent.map((p) => [p.system, ...p.messages.map((m) => m.content)].join('\n')).join('\n'),
+    call: async <T>(method: string, route: string, body?: unknown) => {
+      const res = await fetch(`${base}${route}`, {
+        method,
+        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: res.status, body: (await res.json()) as T };
+    },
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}

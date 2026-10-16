@@ -39,6 +39,7 @@ export const PARAMS: Readonly<Record<string, { label: string; valid: (value: str
   sessionId: { label: 'session id', valid: (v) => UUID.test(v) },
   fileId: { label: 'file id', valid: (v) => UUID.test(v) },
   runId: { label: 'run id', valid: (v) => UUID.test(v) },
+  provider: { label: 'provider', valid: (v) => /^[a-z-]{1,32}$/.test(v) },
 };
 
 /**

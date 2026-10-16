@@ -3,10 +3,10 @@
 A local web app for browsing and exploring Confluence, packaged as a Node.js CLI. Part of the
 [`simply-confluence-explorer`](https://github.com/SimplySF/simply-confluence-explorer) monorepo.
 
-> **Status:** the server reads Confluence and keeps a copy of a space on this machine: it lists
-> spaces, reads page trees and pages as Markdown, syncs a space to disk with its table of contents
-> and ZIP, and keeps excluded pages out of every answer and off the disk. The AI features, writing to
-> Confluence and the browser interface are not built yet.
+> **Status:** the server reads Confluence, keeps a copy of a space on this machine, and asks an AI
+> about pages and spaces, in single questions or conversations, with AI summaries for a space's
+> table of contents. Excluded pages never reach an AI, and every request passes the outbound guard.
+> Writing to Confluence and the browser interface are not built yet.
 
 ## Usage
 
@@ -49,6 +49,19 @@ CONFLUENCE_URL=https://confluence.example.com
 CONFLUENCE_PERSONAL_TOKEN=<your personal access token>
 ```
 
+### Choosing an AI
+
+Choose the provider, model and key in the app's Settings. Keys are kept on the server and never sent
+back to the browser (`test/ai.test.ts`). The environment can supply them instead:
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`, with `AI_PROVIDER` naming which one to use
+(`anthropic`, `openai`, `gemini`, or `gemini-cli` for the Gemini command-line tool, found on `PATH`
+or at `GEMINI_CLI_PATH`). A value saved in Settings wins over the environment.
+
+Before anything is sent, the page is checked against the space's `.confluenceignore`, and the
+request passes the outbound guard: a secret stops it, and personal data is replaced with
+placeholders that are put back in the answer here (`test/aiRoutes.test.ts`, `test/guard.test.ts`).
+Each request is recorded in `data/ai-audit.jsonl` in the data directory, without its content.
+
 Certificates are always verified. If your Confluence uses a certificate from your company's own
 certificate authority, ask your IT team for that authority's certificate file and start the app with
 `NODE_EXTRA_CA_CERTS` pointing at it:
@@ -79,6 +92,14 @@ NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-expl
 | `GET /api/space-cache/:spaceKey/zip`                  | The synced space as a ZIP of Markdown and attachments, without excluded pages                                             |
 | `POST /api/space-cache/:spaceKey/pages/:pageId/purge` | Removes a synced page, optionally with what is below it and a rule to keep it away                                        |
 | `POST /api/space-cache/:spaceKey/cache/purge`         | Removes synced copies that are excluded, or whose Markdown was deleted from the folder                                    |
+| `GET`/`PUT /api/ai/settings`                          | The AI provider, model and endpoint; keys can be saved but are never returned                                             |
+| `GET /api/ai/models/:provider`                        | The models the saved key can use                                                                                          |
+| `GET /api/ai/status`, `POST /api/ai/test`             | Whether an AI is set up; a test call that sends no page                                                                   |
+| `POST /api/ai/analyze`                                | One question about a page, optionally with its sub-pages                                                                  |
+| `POST /api/space-cache/:spaceKey/ai/ask`              | One question about a synced space, answered from its best-matching pages                                                  |
+| `/api/ai/sessions/...`                                | Conversations: create, list, read, delete, upload a file, send a message                                                  |
+| `POST /api/space-cache/:spaceKey/metadata/generate`   | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                |
+| `GET`/`POST /api/space-cache/:spaceKey/guard`         | Reads or saves the space's `.confluenceguard` rules; a rule that does not parse is refused                                |
 | `/api/*`                                              | Anything else under `/api` is a JSON `404`, never the app shell                                                           |
 | everything else                                       | The built frontend, falling back to `index.html` for client-side routes                                                   |
 

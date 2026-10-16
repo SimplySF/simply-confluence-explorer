@@ -198,8 +198,12 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
+    "@google/genai": "^2.30.0",
     "@simplysf/simply-atlassian-core": "^0.7.0",
     "archiver": "^7.0.1",
+    "openai": "^7.34.0",
+    "unpdf": "1.8.1",
     "yaml": "^2.9.1"
   }
 }

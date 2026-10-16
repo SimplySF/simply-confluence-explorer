@@ -24,6 +24,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { SpaceExpectations } from '../../../../test-env/fixtures/dataset.mjs';
+import type { Transport } from '../../src/ai/engine.js';
 import { createServer } from '../../src/server.js';
 
 export type SeedSpace = {
@@ -64,12 +65,21 @@ export function loadTestEnv(): TestEnv | undefined {
 
 export const SKIP_REASON = 'the Confluence test environment is not running: start it with pnpm run testenv:start';
 
-/** Starts the app against the test environment, as `confluence-explorer` would run it. */
-export async function startApp(env: TestEnv): Promise<{ server: http.Server; api: string }> {
+/**
+ * Starts the app against the test environment, as `confluence-explorer` would run it. With a
+ * transport, AI requests go to it instead of a provider, after passing the outbound guard as usual.
+ */
+export async function startApp(env: TestEnv, aiTransport?: Transport): Promise<{ server: http.Server; api: string }> {
   const server = createServer({
     webRoot: env.dataDir,
     dataDir: env.dataDir,
-    env: { CONFLUENCE_URL: env.baseUrl, CONFLUENCE_PERSONAL_TOKEN: env.token, CONFLUENCE_EXPLORER_PROFILE: 'dev' },
+    env: {
+      CONFLUENCE_URL: env.baseUrl,
+      CONFLUENCE_PERSONAL_TOKEN: env.token,
+      CONFLUENCE_EXPLORER_PROFILE: 'dev',
+      ...(aiTransport ? { ANTHROPIC_API_KEY: 'not-used', AI_PROVIDER: 'anthropic' } : {}),
+    },
+    aiTransport,
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return { server, api: `http://127.0.0.1:${(server.address() as AddressInfo).port}/api` };
@@ -88,4 +98,12 @@ export function hiddenTitles(space: SeedSpace): Set<string> {
     }
   }
   return hidden;
+}
+
+/** Removes a space's synced copy, keeping the seeded exclusion rules, so suites do not share state. */
+export function removeCopy(env: TestEnv, spaceKey: string): void {
+  const dir = path.join(env.dataDir, 'spaces', spaceKey);
+  for (const sub of ['pages_cache', 'pages', 'metadata', 'toc.json', 'TOC.md', 'manifest.json']) {
+    fs.rmSync(path.join(dir, sub), { recursive: true, force: true });
+  }
 }

@@ -3,6 +3,8 @@ packages:
 onlyBuiltDependencies:
   - nx
 allowBuilds:
+  '@google/genai': false
   esbuild: true
   nx: true
+  protobufjs: false
   unrs-resolver: true

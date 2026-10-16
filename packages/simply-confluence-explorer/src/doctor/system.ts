@@ -16,6 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { guardRulesPath, parseGuardRules } from '../ai/guard.js';
 import { ConfluenceClient } from '../confluence/client.js';
 import type { ConnectionStore } from '../confluence/connection.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
@@ -55,6 +56,22 @@ function ignoreFiles(dataDir: string, exclusions: ExclusionManager): DoctorDeps[
     });
 }
 
+function guardFiles(dataDir: string): DoctorDeps['guardFiles'] {
+  const spacesDir = path.join(dataDir, 'spaces');
+  if (!fs.existsSync(spacesDir)) return [];
+  return fs
+    .readdirSync(spacesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(guardRulesPath(dataDir, entry.name)))
+    .map((entry) => {
+      try {
+        const rules = parseGuardRules(fs.readFileSync(guardRulesPath(dataDir, entry.name), 'utf8'));
+        return { spaceKey: entry.name, rules: rules.allow.length + rules.block.length + rules.redact.length };
+      } catch (error) {
+        return { spaceKey: entry.name, error: (error as Error).message };
+      }
+    });
+}
+
 /**
  * Reads what the doctor's checks need from this machine and from Confluence.
  */
@@ -62,6 +79,7 @@ export function systemDeps(
   dataDir: string,
   connection: ConnectionStore,
   exclusions: ExclusionManager,
+  ai: { isAvailable: () => boolean; getEngine: () => string },
   env: NodeJS.ProcessEnv,
 ): DoctorDeps {
   const { baseUrl, token } = connection.resolve();
@@ -78,6 +96,8 @@ export function systemDeps(
       return { success: answer.success, displayName: answer.user?.displayName, error: answer.error };
     },
     ignoreFiles: ignoreFiles(dataDir, exclusions),
+    guardFiles: guardFiles(dataDir),
+    ai: { available: ai.isAvailable(), engine: ai.getEngine() },
     license: () => client.getLicenseDetails(),
     now: Date.now(),
   };

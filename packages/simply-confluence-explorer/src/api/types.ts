@@ -181,3 +181,96 @@ export type SpaceTocNode = {
 };
 
 export type PurgeResult = { purgedCount: number; remainingPages: number };
+
+/** The AI providers a person can choose in Settings (ADR-017). */
+export type AiProvider = 'gemini-cli' | 'anthropic' | 'openai' | 'gemini';
+
+/** What a browser may know about the AI settings. Keys are never included, only whether one is set. */
+export type AiSettingsView = {
+  provider: AiProvider;
+  providers: Record<
+    Exclude<AiProvider, 'gemini-cli'>,
+    { model: string; baseUrl: string; keySet: boolean; keySource: 'settings' | 'env' | 'none' }
+  >;
+  geminiCli: { path: string };
+  defaults: Record<Exclude<AiProvider, 'gemini-cli'>, string>;
+  /** Where the Gemini CLI was found, or `null` when it was not. */
+  geminiCliFound: string | null;
+};
+
+/** What the outbound guard did to a request: what it blocked and how much personal data it replaced. */
+export type GuardReport = {
+  blocked: Array<{ kind: 'secret' | 'pii'; type: string; part: string; line: number }>;
+  redacted: Record<string, number>;
+  /** One sentence for the browser: what was removed, or that nothing was. */
+  summary: string;
+};
+
+/** The answer to a one-off question about a page or a space. */
+export type AnalyzeResponse = {
+  answer: string;
+  guard: GuardReport;
+  engine: string;
+  selectedPages?: Array<{ id: string; title: string; score: number }>;
+};
+
+/** An AI summary of one page, kept in the space's `metadata/` directory. */
+export type PageMetadata = {
+  pageId: string;
+  title: string;
+  summary: string;
+  tags: string[];
+  documentType: string;
+  systemsMentioned: string[];
+  generatedAt: string;
+};
+
+/** The progress of generating AI summaries for a space, polled while it runs. */
+export type MetadataProgress = {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  spaceKey: string;
+  total: number;
+  processed: number;
+  errorCount: number;
+  currentPageTitle?: string;
+  completedAt?: string;
+};
+
+/** What a conversation is about: one page, a page and everything below it, or a whole space. */
+export type SessionScope = {
+  kind: 'page' | 'branch' | 'space';
+  spaceKey: string;
+  pageId?: string;
+  title?: string;
+};
+
+export type SessionTurn = {
+  role: 'user' | 'assistant';
+  text: string;
+  at: string;
+  /** On an answer: what the outbound guard removed, and which pages were left out of the context. */
+  guardSummary?: string;
+  engine?: string;
+  matchedPages?: Array<{ id: string; title: string; score: number }>;
+};
+
+export type SessionFileInfo = {
+  id: string;
+  name: string;
+  chars: number;
+  /** True when the file's text was longer than one file may contribute, and was cut. */
+  truncated: boolean;
+  addedAt: string;
+};
+
+/** A conversation as a browser sees it. Its guard placeholders stay on the server. */
+export type AiSessionView = {
+  id: string;
+  scope: SessionScope;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  turns: SessionTurn[];
+  files: SessionFileInfo[];
+};

@@ -23,8 +23,12 @@ import { ConnectionStore } from './confluence/connection.js';
 import { localOnly } from './http/guards.js';
 import { sendJson, type Router } from './http/router.js';
 import { createApi } from './routes/api.js';
+import { ConfiguredAi, type Transport } from './ai/engine.js';
+import { SessionStore } from './ai/sessions.js';
+import { AiSettingsStore } from './ai/settings.js';
 import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
+import { MetadataPipeline } from './spaces/metadata.js';
 import { SpaceStore } from './spaces/spaceStore.js';
 import { SpaceSync } from './spaces/sync.js';
 import { resolveDataDir } from './util/dataDir.js';
@@ -57,6 +61,11 @@ export type ServerOptions = {
   env?: NodeJS.ProcessEnv;
   /** Where server errors are reported. Defaults to discarding them. */
   log?: (message: string) => void;
+  /**
+   * Sends AI requests in place of the configured provider. Tests pass one, so that what would be
+   * sent can be checked and nothing leaves the machine.
+   */
+  aiTransport?: Transport;
 };
 
 // Sent with every response. They stop the app being framed by another site, stop a browser
@@ -87,10 +96,24 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const dataDir = options.dataDir ?? resolveDataDir(undefined, env);
   const log = options.log ?? ((): void => {});
   const connection = new ConnectionStore(dataDir, env);
+  const client = (): ConfluenceClient => new ConfluenceClient(connection.resolve());
   const exclusions = new ExclusionManager(dataDir, log);
   const store = new SpaceStore(dataDir, exclusions, log);
-  const sync = new SpaceSync(store, exclusions, () => new ConfluenceClient(connection.resolve()), log);
-  const api = createApi({ version, dataDir, env, log, connection, exclusions, store, sync });
+  const ai = new ConfiguredAi(new AiSettingsStore(dataDir, env), { dataDir, env, log, transport: options.aiTransport });
+  const api = createApi({
+    version,
+    dataDir,
+    env,
+    log,
+    connection,
+    client,
+    exclusions,
+    store,
+    sync: new SpaceSync(store, exclusions, client, log),
+    ai,
+    sessions: new SessionStore(dataDir),
+    metadata: new MetadataPipeline(store, exclusions, () => ai, log),
+  });
   const isLocal = localOnly(env);
 
   return http.createServer((req, res) => {

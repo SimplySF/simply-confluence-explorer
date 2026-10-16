@@ -15,15 +15,21 @@
  */
 
 import type { ConnectionUpdate } from '../api/types.js';
+import type { ConfiguredAi } from '../ai/engine.js';
+import type { SessionStore } from '../ai/sessions.js';
+import type { ConfluenceClient } from '../confluence/client.js';
 import type { ConnectionStore } from '../confluence/connection.js';
 import { runDoctor } from '../doctor/checks.js';
 import { systemDeps } from '../doctor/system.js';
 import { HttpError, Router } from '../http/router.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
+import type { MetadataPipeline } from '../spaces/metadata.js';
 import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
+import { addAiRoutes } from './ai.js';
 import { addBrowseRoutes } from './browse.js';
+import { addSessionRoutes } from './sessions.js';
 import { addSpaceRoutes } from './spaces.js';
 
 /** The long-lived parts of the app that routes share. One of each exists per server. */
@@ -35,6 +41,11 @@ export type Services = {
   exclusions: ExclusionManager;
   store: SpaceStore;
   sync: SpaceSync;
+  ai: ConfiguredAi;
+  sessions: SessionStore;
+  metadata: MetadataPipeline;
+  /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */
+  client: () => ConfluenceClient;
   log: (message: string) => void;
 };
 
@@ -61,9 +72,10 @@ export function createApi(services: Services): Router {
       return connection.publicView();
     })
     .add('GET', '/api/doctor', () =>
-      runDoctor(systemDeps(services.dataDir, connection, services.exclusions, services.env)),
+      runDoctor(systemDeps(services.dataDir, connection, services.exclusions, services.ai, services.env)),
     );
-  return addSpaceRoutes(addBrowseRoutes(router, services), services);
+  for (const add of [addBrowseRoutes, addSpaceRoutes, addAiRoutes, addSessionRoutes]) add(router, services);
+  return router;
 }
 
 function connectionUpdate(body: unknown): ConnectionUpdate {

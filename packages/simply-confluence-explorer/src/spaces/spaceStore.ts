@@ -16,7 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { PageDetail, PageTreeNode, SpaceTocNode, SyncedSpace } from '../api/types.js';
+import type { PageDetail, PageMetadata, PageTreeNode, SpaceTocNode, SyncedSpace } from '../api/types.js';
 import { errorMessage } from '../util/errors.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { ExclusionManager } from './exclusionManager.js';
@@ -242,16 +242,27 @@ export class SpaceStore {
     return entries;
   }
 
+  /** Every synced page in the space that is not excluded. */
+  public visiblePages(spaceKey: string): PageDetail[] {
+    return this.cachedIds(spaceKey).flatMap((id) => {
+      const page = this.readPage(spaceKey, id);
+      return page && !this.exclusions.isPageExcluded(page, spaceKey) ? [page] : [];
+    });
+  }
+
+  public writeMetadata(spaceKey: string, metadata: PageMetadata): void {
+    const file = this.metadataFile(spaceKey, metadata.pageId);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(metadata, null, 2), 'utf8');
+  }
+
   public invalidate(spaceKey: string): void {
     this.trees.delete(spaceKey.toUpperCase());
   }
 
-  public readMetadata(
-    spaceKey: string,
-    pageId: string,
-  ): { summary?: string; tags?: string[]; documentType?: string } | undefined {
+  public readMetadata(spaceKey: string, pageId: string): PageMetadata | undefined {
     const file = this.metadataFile(spaceKey, pageId);
-    return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as { summary?: string }) : undefined;
+    return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as PageMetadata) : undefined;
   }
 
   private loadTree(spaceKey: string): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
