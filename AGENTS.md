@@ -120,20 +120,20 @@ a second person also answers the release's review packet for these surfaces befo
 ships. A review packet is a document in `docs/review/` that lists what was checked, what was not,
 and what is still outstanding. The paths below are relative to `packages/simply-confluence-explorer/src/`.
 
-| surface                         | where                                                                                                |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts` |
-| HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)       |
-| Tokens                          | `confluence/connection.ts` (the Confluence token), `util/privateFile.ts`                             |
-| Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                   |
-| The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022)                                  |
-| AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                            |
-| AI keys                         | `ai/settings.ts`                                                                                     |
-| External processes              | `ai/geminiService.ts`                                                                                |
-| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                       |
-| Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                         |
-| Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                    |
-| The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`  |
+| surface                         | where                                                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts`                            |
+| HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)                                  |
+| Tokens                          | `confluence/connection.ts` (the Confluence token), `util/privateFile.ts`                                                        |
+| Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                                              |
+| The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022)                                                             |
+| AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                                                       |
+| AI keys                         | `ai/settings.ts`                                                                                                                |
+| External processes              | `ai/geminiService.ts`                                                                                                           |
+| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                                                  |
+| Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                                                    |
+| Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                                               |
+| The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`, `scripts/release-gate.mjs` |
 
 ### The rules specific to this program
 
