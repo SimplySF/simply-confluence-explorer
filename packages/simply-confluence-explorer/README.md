@@ -12,7 +12,7 @@ monorepo.
 > as betas under npm's `beta` tag; there is no stable release yet. The AI features have so far run
 > only against a stand-in for each provider, not with real provider keys.
 
-The [guides](#guides) explain each feature in full, with screenshots. This README is the reference:
+The [guides](https://simplysf.github.io/simply-confluence-explorer/) explain each feature in full, with screenshots. This README is the reference:
 options, environment variables, where data is kept, the HTTP routes and the embedding API.
 
 ## Requirements
@@ -53,7 +53,7 @@ npx @simplysf/simply-confluence-explorer@beta doctor
 The doctor checks the Node version, the Confluence connection, certificate checking, the data
 directory, each space's exclusion and leak guard rules, and the AI setup. It prints what to do about
 each problem it finds, and exits with a non-zero status only when something is broken. `--json`
-prints the report as JSON (`test/doctor.test.ts`). [Troubleshooting](docs/guides/troubleshooting.md)
+prints the report as JSON (`test/doctor.test.ts`). [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)
 explains every check.
 
 ### Connecting to Confluence
@@ -78,7 +78,7 @@ certificate authority, ask your IT team for that authority's certificate file an
 NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer@beta
 ```
 
-[Connecting to Confluence](docs/guides/connecting.md) covers creating a token and the connection in
+[Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/) covers creating a token and the connection in
 detail.
 
 ### Choosing an AI
@@ -93,7 +93,7 @@ Before anything is sent, the page is checked against the space's `.confluenceign
 request passes the outbound guard: a secret stops it, and personal data is replaced with
 placeholders that are put back in the answer here (`test/aiRoutes.test.ts`, `test/guard.test.ts`).
 Each request is recorded in `data/ai-audit.jsonl` in the data directory, without its content.
-[What leaves your computer](docs/guides/data-safety.md) explains the exclusion rules and the leak
+[What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/) explains the exclusion rules and the leak
 guard, including how to write your own rules.
 
 ### Writing to Confluence
@@ -120,20 +120,20 @@ title already used in the space is refused with the reason (`test/drafts.test.ts
 
 ## Guides
 
-| Guide                                                    | What it covers                                                              |
-| -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Get started](docs/getting-started.md)                   | Requirements, starting the app, connecting, and your first few minutes      |
-| [Connecting to Confluence](docs/guides/connecting.md)    | Personal access tokens, environment variables, company certificates         |
-| [Keeping a copy on disk](docs/guides/syncing-a-space.md) | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
-| [Asking an AI](docs/guides/asking-ai.md)                 | Providers, questions about a page, a branch or a space, files, summaries    |
-| [What leaves your computer](docs/guides/data-safety.md)  | Excluded pages, the leak guard and its rules, the audit log, network access |
-| [Improving a page](docs/guides/improving-pages.md)       | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
-| [Reviewing a branch](docs/guides/branch-review.md)       | Reviewing a page and everything under it, and the queue of proposals        |
-| [Writing a new page](docs/guides/new-pages.md)           | The check for existing pages, writing with an AI, creating the page         |
-| [Troubleshooting](docs/guides/troubleshooting.md)        | The doctor's checks, and the messages you are most likely to see            |
+| Guide                                                                                                   | What it covers                                                              |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Get started](https://simplysf.github.io/simply-confluence-explorer/getting-started/)                   | Requirements, starting the app, connecting, and your first few minutes      |
+| [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/)    | Personal access tokens, environment variables, company certificates         |
+| [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/) | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
+| [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)                 | Providers, questions about a page, a branch or a space, files, summaries    |
+| [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)  | Excluded pages, the leak guard and its rules, the audit log, network access |
+| [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)       | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
+| [Reviewing a branch](https://simplysf.github.io/simply-confluence-explorer/guides/branch-review/)       | Reviewing a page and everything under it, and the queue of proposals        |
+| [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)           | The check for existing pages, writing with an AI, creating the page         |
+| [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)        | The doctor's checks, and the messages you are most likely to see            |
 
-The same guides are published, with search, on the
-[documentation site](https://simplysf.github.io/simply-confluence-explorer/).
+The guides are on the [documentation site](https://simplysf.github.io/simply-confluence-explorer/), with
+search. They are written in this package's [`docs/`](docs) folder.
 
 ## Where data is kept
 
