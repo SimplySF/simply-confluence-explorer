@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.1.0-beta.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.0...%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.1) (2026-10-17)
+
+### Bug Fixes
+
+- **simply-confluence-explorer:** refuse to push a page whose macros or images Markdown drops ([ace7b51](https://github.com/SimplySF/simply-confluence-explorer/commit/ace7b51895a9a8e5a01804f9cf33bab852d1ca31))
+
 # 0.1.0-beta.0 (2026-10-16)
 
 ### Bug Fixes
