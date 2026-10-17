@@ -1215,3 +1215,35 @@ not attempted here.
 most of them, and the feature is far less useful than it looked. That is accepted, because the
 alternative is a feature that quietly damages the pages it touches, and the refusal says exactly why
 so the person can make the change in Confluence instead.
+
+---
+
+## ADR-042 — The user guides ship inside the package and have a prose budget of their own, instead of raising the budget for the project's documents
+
+**Status:** accepted, 2026-10-16.
+
+The app's user documentation lives in `packages/simply-confluence-explorer/docs/`: a getting-started
+page, a guide to each part of the app, and the screenshots they show. It follows the other SimplySF
+repositories, whose guides ship inside each package so that the combined documentation site at
+`simplysf.github.io/simply-cli` can build its pages from the package as published. The package's
+`files` list therefore includes `/docs`. The maintainer chose this home for the documentation over a
+GitHub wiki, which no other SimplySF repository uses and which would not be versioned with the code.
+
+The guides are written for people using the app, and they are long by nature: one guide per feature,
+each explaining what to do and what to expect. Counting them under `MAX_DOC_LINES`, the budget for the
+documents a person working on the project must keep up with (ADR-034), would have meant raising that
+budget by half, and it would then no longer notice the project's own documents growing. The guides are
+counted separately instead:
+
+| budget                          | limit       | measured when set |
+| ------------------------------- | ----------- | ----------------- |
+| user guides (`MAX_GUIDE_LINES`) | 1,100 lines | 896               |
+| project prose (`MAX_DOC_LINES`) | 1,700 lines | 1,585 (unchanged) |
+
+The screenshots are captured from the test environment's generic dataset (ADR-007), so no real space
+or page appears in them. They are WebP images, about 1 MB together, which the package now carries.
+
+**The argument against:** a separate budget is a second place for prose to grow. That is accepted
+because the two kinds of document grow for different reasons: a guide grows when the app gains a
+feature, and the limit is set with room for that, while the project's documents should not grow at
+all without a reason.

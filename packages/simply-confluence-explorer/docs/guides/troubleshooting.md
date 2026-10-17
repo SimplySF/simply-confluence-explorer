@@ -1,0 +1,100 @@
+---
+title: Troubleshooting
+description: Run the doctor, understand each of its checks, and fix the problems and messages you are most likely to meet.
+sidebar:
+  order: 9
+---
+
+Start with the doctor. It checks everything the app depends on and prints a fix for each problem:
+
+```sh
+npx @simplysf/simply-confluence-explorer@beta doctor
+```
+
+Each line starts with `✓` (fine), `!` (a warning), `✗` (a failure) or `-` (does not apply), followed
+by a `fix:` line for anything that is not fine. The doctor exits with an error only when a check
+fails, so you can use it in a script. Add `--json` for the report as JSON. While the app is running,
+the same report is at `http://127.0.0.1:4280/api/doctor`.
+
+## The doctor's checks
+
+| Check               | What it looks at                                      | If it complains                                                                                   |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `node-version`      | Node.js is version 22 or later                        | Install a current Node.js.                                                                        |
+| `confluence-config` | A Confluence address and token are saved              | Connect in Settings, or set `CONFLUENCE_URL` and `CONFLUENCE_PERSONAL_TOKEN`.                     |
+| `server-type`       | The address is not Atlassian Cloud                    | Connect to a Confluence Server or Data Center instead.                                            |
+| `confluence-auth`   | Confluence accepts the token                          | Check the address opens from this computer and the token has not expired; see certificates below. |
+| `tls-verification`  | The connection is encrypted                           | Use the `https://` address of your Confluence.                                                    |
+| `data-dir`          | The app can write to its data folder                  | Make the folder writable, or choose another with `--data-dir`.                                    |
+| `ignore-files`      | Each space's exclusion rules can be read              | Fix the file's permissions. Until then, every page in that space is excluded.                     |
+| `ignore-rules`      | Page ids in exclusion rules are written as `id:12345` | Change bare numbers to `id:` rules.                                                               |
+| `guard-rules`       | Each space's leak guard rules parse                   | Fix the rule named. Until then, AI requests for that space are refused.                           |
+| `ai-engine`         | An AI provider is set up                              | Choose a provider in Settings, or install the Gemini CLI.                                         |
+
+## Common problems
+
+### The app does not start
+
+- **"Invalid port"**: the port given with `--port` or `PORT` is not a number from 0 to 65535. Use `0`
+  to let the app pick a free one.
+- **The port is already in use**: another program, or another copy of the app, is using 4280. Stop
+  it, or start with `--port 4281`.
+
+### It cannot connect to Confluence
+
+- **"Confluence refused the token"**: the token is wrong or has expired. Create a new one and save it
+  in Settings.
+- **"The certificate could not be verified"**: your Confluence uses a company certificate. Start the
+  app with `NODE_EXTRA_CA_CERTS` pointing at your company's certificate authority file; see
+  [Connecting to Confluence](/guides/connecting/).
+- **"Confluence is not configured"**: no address or token is saved, or the address is an Atlassian
+  Cloud one, which is not supported.
+- **The address in Settings is greyed out**: the connection comes from `CONFLUENCE_URL` in the
+  environment. Change it there and restart the app.
+
+### A page or space is missing
+
+- **"No pages found"**: your account cannot see any pages in that space, or the space is empty. Check
+  in Confluence that you can open it.
+- **"Page not found, or excluded by .confluenceignore"**: the page is excluded by the space's rules,
+  or it no longer exists. Check **Space → Exclusions and leak guard…**; remember that a rule matches
+  anywhere inside a title.
+- **A page you deleted in Confluence is still in the tree**: a sync never deletes. Remove the copy
+  with **⋯ → Remove from this machine…**.
+- **"Work on branch" and "With sub-pages" are missing**: they need the space to be synced.
+
+### The AI does not answer
+
+- **"No AI provider is set up"**, **"no API key is set"** or **"no model is chosen"**: finish the
+  setup under **Settings → AI provider**. ChatGPT needs a model chosen.
+- **"The Gemini CLI was not found"**: install it, or enter its location in Settings, or choose an API
+  provider.
+- **"Not sent to the AI: this looks like it contains a secret"**: the leak guard found something on
+  the line it names. Remove it from the page, exclude the page, or, if it is not really a secret, add
+  an `allow:` rule; see [What leaves your computer](/guides/data-safety/).
+- **"This page is excluded from AI"**: the space's rules exclude the page. Ask about the whole space
+  instead, or change the rules.
+- **A file is refused**: files can be up to 10 MB, a PDF must contain text rather than scanned images,
+  and only text-like formats are accepted.
+
+### A push or dry run is refused
+
+- **"This page has parts that Markdown cannot carry"**: the page holds images, macros, page links,
+  mentions or task lists, which a push would replace with text. Make the change in Confluence itself;
+  see [Improving a page](/guides/improving-pages/).
+- **"This page changed in Confluence after the proposal was made"**: someone edited the page since.
+  Click **Propose again**.
+- **"Line N: … is not supported in Markdown input"**: the text has something the converter cannot
+  write, such as an image written as `![...]`, raw HTML, a footnote or a task list. Edit that line.
+- **"A page titled … already exists"**: page titles must be unique within a space. Choose another.
+
+## Still stuck
+
+Run the doctor with `--json` and include its output, with any tokens removed, when you
+[open an issue](https://github.com/SimplySF/simply-confluence-explorer/issues).
+
+## How this is checked
+
+`test/doctor.test.ts` checks every doctor check, and that every warning and failure carries a fix.
+`test/cli.test.ts` checks the port handling and that the doctor exits with an error when a check
+fails.
