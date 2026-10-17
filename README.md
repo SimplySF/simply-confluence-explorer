@@ -66,7 +66,7 @@ npx @simplysf/simply-confluence-explorer@beta doctor
 
 ## Documentation
 
-The [documentation site](https://simplysf.github.io/simply-cli/confluence-explorer/) has a
+The [documentation site](https://simplysf.github.io/simply-confluence-explorer/) has a
 getting-started guide and a guide to each part of the app. The same guides are in this repository:
 
 - [Get started](packages/simply-confluence-explorer/docs/getting-started.md)

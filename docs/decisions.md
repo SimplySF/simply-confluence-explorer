@@ -1247,3 +1247,49 @@ or page appears in them. They are WebP images, about 1 MB together, which the pa
 because the two kinds of document grow for different reasons: a guide grows when the app gains a
 feature, and the limit is set with room for that, while the project's documents should not grow at
 all without a reason.
+
+---
+
+## ADR-043 — The documentation is a site of this repository's own on GitHub Pages, instead of a section of the shared simply-cli site
+
+**Status:** accepted, 2026-10-16. Amends ADR-042.
+
+ADR-042 put the user guides in the package so that the combined SimplySF site at
+`simplysf.github.io/simply-cli` could build pages for the app from the published tarball. The owner of
+that site preferred a separate documentation site for each product, and Confluence Explorer is its own
+product rather than a plugin of the `simply` command. The pull request that would have added it to
+the shared site was closed, and the documentation is now a site of this repository's own, at
+`https://simplysf.github.io/simply-confluence-explorer/`.
+
+The site is a Starlight site in `site/`, built the way simply-atlassian's own site was before it
+moved to the shared one: the SimplySF logo, a landing page, and `.github/workflows/docs.yml`, which
+builds the site, checks every internal link, and deploys it to GitHub Pages from `main`. The guides
+stay where ADR-042 put them, in `packages/simply-confluence-explorer/docs/`, and the site copies that
+folder in on every build (`site/scripts/sync-docs.mjs`). They are written once, read on GitHub as they
+are, and checked by the package's tests.
+
+The site builds from `main` rather than from the published package. The reason the shared site
+used the package was that `main` can describe commands a reader does not have yet; here every merge
+to `main` publishes a beta (ADR-039), so `main` and the newest beta describe the same app.
+
+Two things change from ADR-042:
+
+- **The package no longer ships `/docs`.** The guides were in the tarball only so the shared site
+  could read them there. Leaving them out keeps about 1 MB of screenshots out of every install.
+- **The site's dependencies have a budget of their own**, `MAX_SITE_DEPS`, set at the four the site
+  needs: `astro`, `@astrojs/starlight`, `@astrojs/markdown-remark` and `sharp`, at the versions
+  simply-cli's site already uses. They are not counted under `MAX_RUNTIME_DEPS` or `MAX_DEV_DEPS`,
+  because the site is never published and none of its code reaches a person running the app. Before
+  this record the budget script did not read `site/package.json` at all.
+
+| budget                              | limit | measured when set |
+| ----------------------------------- | ----- | ----------------- |
+| site dependencies (`MAX_SITE_DEPS`) | 4     | 4                 |
+
+The link checker and the tool that waits for the preview server are run with `npx` at pinned
+versions in the workflow, so they add nothing to any manifest.
+
+**The argument against:** a second site means a second place for SimplySF's documentation to look
+different and a second workflow to maintain, which is what the shared site was built to avoid. That is
+accepted because the owner of the shared site asked for this, and because the site follows the same
+template, logo and theme as the other SimplySF sites.

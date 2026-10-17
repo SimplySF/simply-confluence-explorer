@@ -85,6 +85,14 @@ pnpm run budgets     # print the size and architecture budgets that pnpm test en
 pnpm run standard    # the development-standard conformance check, if it sits beside the checkout
 ```
 
+The documentation site in `site/` renders the guides from `packages/simply-confluence-explorer/docs/`
+(ADR-043). Edit the guides there, not the copies the site makes. To see the site while you write:
+
+```sh
+pnpm --filter site run dev     # copies the guides in, then serves the site with live reload
+pnpm --filter site run build   # the same build docs.yml runs
+```
+
 Run inside a single package directory to target just that package:
 
 ```sh
@@ -156,11 +164,12 @@ publishing, so no npm token is stored in the repository.
 
 ## CI
 
-| Workflow      | Trigger                    | What it does                                                                                |
-| ------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
-| `test.yml`    | Push to non-main branches  | Runs `pnpm run build` + `pnpm test` on Linux and Windows (lts/\*, lts/-1)                   |
-| `e2e.yml`     | Pull requests, or by hand  | Starts the Confluence test environment and runs `pnpm run test:e2e` against it (ADR-038)    |
-| `release.yml` | Push to `main`, or by hand | Publishes a beta on every merge; a stable release by hand, behind the review gate (ADR-039) |
+| Workflow      | Trigger                                   | What it does                                                                                        |
+| ------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `test.yml`    | Push to non-main branches                 | Runs `pnpm run build` + `pnpm test` on Linux and Windows (lts/\*, lts/-1)                           |
+| `e2e.yml`     | Pull requests, or by hand                 | Starts the Confluence test environment and runs `pnpm run test:e2e` against it (ADR-038)            |
+| `release.yml` | Push to `main`, or by hand                | Publishes a beta on every merge; a stable release by hand, behind the review gate (ADR-039)         |
+| `docs.yml`    | Changes to `site/` or the guides; by hand | Builds the documentation site, checks its links, and on `main` deploys it to GitHub Pages (ADR-043) |
 
 ## Git Hooks
 

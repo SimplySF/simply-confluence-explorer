@@ -132,8 +132,8 @@ title already used in the space is refused with the reason (`test/drafts.test.ts
 | [Writing a new page](docs/guides/new-pages.md)           | The check for existing pages, writing with an AI, creating the page         |
 | [Troubleshooting](docs/guides/troubleshooting.md)        | The doctor's checks, and the messages you are most likely to see            |
 
-The same guides are published on the
-[SimplySF documentation site](https://simplysf.github.io/simply-cli/confluence-explorer/).
+The same guides are published, with search, on the
+[documentation site](https://simplysf.github.io/simply-confluence-explorer/).
 
 ## Where data is kept
 

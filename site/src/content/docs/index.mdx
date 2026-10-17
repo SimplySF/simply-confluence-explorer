@@ -1,0 +1,66 @@
+---
+title: Confluence Explorer
+description: A local web app by SimplySF for Confluence Server and Data Center, for reading, keeping, questioning and improving your documentation.
+template: splash
+editUrl: false
+hero:
+  tagline: Browse a Confluence space, keep a copy of it on disk as Markdown, ask an AI about a page or a whole space, and improve pages and push them back. It runs on your own computer, and your Confluence token and AI keys never reach the browser.
+  image:
+    alt: Simply SF logo, a stylized cloud
+    light: ../../assets/logo-full.png
+    dark: ../../assets/logo-full-dark.png
+  # Hero actions are frontmatter, not markdown body content, so remark-base-links cannot rewrite
+  # them; the /simply-confluence-explorer prefix here is kept in sync with `base` in
+  # astro.config.mjs by hand.
+  actions:
+    - text: Get Started
+      link: /simply-confluence-explorer/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/SimplySF/simply-confluence-explorer
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+![Confluence Explorer showing a page from a Confluence space, with the page tree on the left](./images/overview-light.webp)
+
+## Start it
+
+Confluence Explorer needs Node.js 22 or later and a Confluence Server or Data Center instance. Run it
+with `npx`, then open the address it prints:
+
+```sh
+npx @simplysf/simply-confluence-explorer@beta
+```
+
+## What it does
+
+<CardGrid>
+  <Card title="Browse and read" icon="open-book">
+    A space's page tree, and any page rendered, as Markdown, or in Confluence's own storage format. [Get
+    started](/getting-started/)
+  </Card>
+  <Card title="A copy on disk" icon="document">
+    Sync a whole space as Markdown files with their attachments, with a table of contents and a ZIP export. [Keeping a
+    copy on disk](/guides/syncing-a-space/)
+  </Card>
+  <Card title="Ask an AI" icon="comment">
+    Ask about a page, a page and everything under it, or a whole space, with Claude, ChatGPT or Gemini. [Asking an
+    AI](/guides/asking-ai/)
+  </Card>
+  <Card title="Keep data in" icon="approve-check">
+    Excluded pages never leave your computer, and a leak guard stops secrets and replaces personal data. [What leaves
+    your computer](/guides/data-safety/)
+  </Card>
+  <Card title="Improve pages" icon="pencil">
+    Review a proposed revision line by line, check it with a dry run, and push it without overwriting anyone. [Improving
+    a page](/guides/improving-pages/)
+  </Card>
+  <Card title="Write new pages" icon="add-document">
+    Check whether a page already covers the topic, then write the new one with an AI. [Writing a new
+    page](/guides/new-pages/)
+  </Card>
+</CardGrid>

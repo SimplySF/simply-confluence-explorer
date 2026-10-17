@@ -1,0 +1,72 @@
+name: docs
+
+# Builds the documentation site from site/ and the guides in packages/simply-confluence-explorer/docs/,
+# checks every internal link, and on main deploys it to GitHub Pages (ADR-043). Every merge to main
+# also publishes a beta (ADR-039), so the site always describes the newest beta.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'site/**'
+      - 'packages/*/docs/**'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'packages/*/docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/setup@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # The site's prebuild copies the guides in from the package; no package build is needed.
+      - run: pnpm --filter site run build
+
+      - name: Check for broken internal links
+        run: |
+          pnpm --filter site run preview &
+          npx --yes wait-on@9.5.1 http://localhost:4321/simply-confluence-explorer/
+          npx --yes linkinator@8.1.0 http://localhost:4321/simply-confluence-explorer/ --recurse --skip "^https?://(?!localhost)"
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/dist
+
+  deploy:
+    # Deploys on a push to main, or a manual run against main; a manual run against any other ref
+    # can never publish it.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4
