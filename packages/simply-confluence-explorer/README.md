@@ -120,20 +120,20 @@ title already used in the space is refused with the reason (`test/drafts.test.ts
 
 ## Guides
 
-| Guide                                                   | What it covers                                                              |
-| ------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Get started](docs/getting-started.md)                  | Requirements, starting the app, connecting, and your first few minutes      |
-| [Connecting to Confluence](docs/guides/connecting.md)   | Personal access tokens, environment variables, company certificates         |
-| [Keeping a copy on disk](docs/guides/local-copy.md)     | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
-| [Asking an AI](docs/guides/asking-ai.md)                | Providers, questions about a page, a branch or a space, files, summaries    |
-| [What leaves your computer](docs/guides/data-safety.md) | Excluded pages, the leak guard and its rules, the audit log, network access |
-| [Improving a page](docs/guides/improving-pages.md)      | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
-| [Reviewing a branch](docs/guides/branch-review.md)      | Reviewing a page and everything under it, and the queue of proposals        |
-| [Writing a new page](docs/guides/new-pages.md)          | The check for existing pages, writing with an AI, creating the page         |
-| [Troubleshooting](docs/guides/troubleshooting.md)       | The doctor's checks, and the messages you are most likely to see            |
+| Guide                                                    | What it covers                                                              |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Get started](docs/getting-started.md)                   | Requirements, starting the app, connecting, and your first few minutes      |
+| [Connecting to Confluence](docs/guides/connecting.md)    | Personal access tokens, environment variables, company certificates         |
+| [Keeping a copy on disk](docs/guides/syncing-a-space.md) | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
+| [Asking an AI](docs/guides/asking-ai.md)                 | Providers, questions about a page, a branch or a space, files, summaries    |
+| [What leaves your computer](docs/guides/data-safety.md)  | Excluded pages, the leak guard and its rules, the audit log, network access |
+| [Improving a page](docs/guides/improving-pages.md)       | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
+| [Reviewing a branch](docs/guides/branch-review.md)       | Reviewing a page and everything under it, and the queue of proposals        |
+| [Writing a new page](docs/guides/new-pages.md)           | The check for existing pages, writing with an AI, creating the page         |
+| [Troubleshooting](docs/guides/troubleshooting.md)        | The doctor's checks, and the messages you are most likely to see            |
 
-The same guides are published on the
-[SimplySF documentation site](https://simplysf.github.io/simply-cli/confluence-explorer/).
+The same guides are published, with search, on the
+[documentation site](https://simplysf.github.io/simply-confluence-explorer/).
 
 ## Where data is kept
 

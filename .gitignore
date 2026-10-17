@@ -162,3 +162,11 @@ lib
 # source, not the build output the `lib` rule above is for.
 test-env/.state
 !test-env/lib/
+
+# The documentation site's build output, and the guides site/scripts/sync-docs.mjs copies in from
+# packages/simply-confluence-explorer/docs/ on every build.
+site/dist/
+site/.astro/
+site/src/content/docs/getting-started.md
+site/src/content/docs/guides/
+site/src/content/docs/images/

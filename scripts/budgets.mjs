@@ -19,6 +19,7 @@ const MAX_DOC_LINES = 1700; // ADR-034: every tracked .md except the decision lo
 const MAX_GUIDE_LINES = 1100; // ADR-042: the user guides in packages/*/docs/, which ship in the package
 const MAX_RUNTIME_DEPS = 7; // ADR-031: direct dependencies across every package.json
 const MAX_DEV_DEPS = 29; // ADR-031: direct devDependencies across every package.json
+const MAX_SITE_DEPS = 4; // ADR-043: the documentation site's dependencies, which never ship in the package
 const MAX_BUNDLE_BYTES = 409600; // ADR-014: dist/web/assets, 400 KiB
 const MIN_TEST_RATIO = 5; // ADR-021: at least one line of tests for every five lines of code
 const MAX_CONFLUENCE_HTTP_MODULES = 1; // ADR-031: confluence/client.ts, and nothing else
@@ -95,8 +96,10 @@ const testLines = tests.reduce((n, file) => n + read(file).replace(LICENSE_HEADE
 const docs = walk(root, (name) => name.endsWith('.md'))
   .map(rel)
   // test-env/.state holds what the end-to-end suite synced from Confluence, which is test data and
-  // not the project's prose.
+  // not the project's prose. The site's copies of the guides are generated from the package's docs/
+  // on every build, so the guides are counted once, where they are written.
   .filter((file) => !/^(docs\/(history|review)\/|\.git\/|test-env\/\.state\/)/.test(file))
+  .filter((file) => !/^site\/(dist\/|src\/content\/docs\/(getting-started\.md|guides\/))/.test(file))
   .filter((file) => file !== 'CODE_OF_CONDUCT.md' && file !== 'docs/decisions.md')
   .filter((file) => !file.includes('/node_modules/') && !file.includes('CHANGELOG.md'));
 // The user guides ship inside each package and are read by people using the app, not by people
@@ -119,6 +122,13 @@ for (const file of manifests) {
   runtimeDeps += Object.keys(manifest.dependencies ?? {}).filter((name) => !own.has(name)).length;
   devDeps += Object.keys(manifest.devDependencies ?? {}).filter((name) => !own.has(name)).length;
 }
+// The documentation site is a workspace of its own and is never published, so its dependencies are
+// counted apart from the app's.
+const siteManifest = JSON.parse(read(join(root, 'site/package.json')));
+const siteDeps = ['dependencies', 'devDependencies'].reduce(
+  (n, field) => n + Object.keys(siteManifest[field] ?? {}).length,
+  0,
+);
 
 // --- who talks to Confluence, who runs programs, where pages go ----------------
 // The question "what does this program send to Confluence?" should be answered by reading one file.
@@ -182,6 +192,13 @@ const rows = [
     limit: MAX_GUIDE_LINES,
     unit: 'lines',
     advice: 'shorten a guide, or split what is reference into the package README, instead of raising the limit',
+  },
+  {
+    name: 'MAX_SITE_DEPS',
+    label: 'site deps',
+    value: siteDeps,
+    limit: MAX_SITE_DEPS,
+    advice: 'write a decision record that argues for the dependency first',
   },
   {
     name: 'MAX_RUNTIME_DEPS',

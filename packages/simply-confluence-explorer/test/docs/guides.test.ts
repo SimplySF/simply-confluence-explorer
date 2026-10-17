@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-// The user guides ship in the package's docs/ folder, and the SimplySF documentation site builds its
-// pages from them as published (ADR-042). The site needs a title and description on every page, and
-// copies the folder as it is, so a broken image or a link to a guide that does not exist reaches
-// readers unless it is caught here.
+// The user guides live in the package's docs/ folder, and the documentation site in site/ renders that
+// folder as it is (ADR-043). The site needs a title and description on every page, and the site's
+// link check runs only in its own workflow, so a broken image or a link to a guide that does not
+// exist is caught here first, by the fast suite.
 
 import fs from 'node:fs';
 import path from 'node:path';

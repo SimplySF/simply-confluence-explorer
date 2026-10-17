@@ -78,7 +78,7 @@ picker on the left.
 
 - [Connecting to Confluence](/guides/connecting/): tokens, company certificates, and where the
   connection is stored.
-- [Keeping a copy on disk](/guides/local-copy/): syncing, the table of contents, the ZIP export, and
+- [Keeping a copy on disk](/guides/syncing-a-space/): syncing, the table of contents, the ZIP export, and
   removing pages.
 - [Asking an AI](/guides/asking-ai/): choosing a provider, asking about a page or a whole space, and
   adding files.

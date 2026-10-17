@@ -60,7 +60,7 @@ made before it. Click **Propose again** to start from the page as it is now.
 Some parts of a Confluence page have no form in Markdown: images, macros such as status labels,
 panels, Jira issues, expand sections and tables of contents, links to other pages, mentions, task
 lists and page layouts. The app shows each as text in brackets, such as `[image: chart.png]` or
-`[status: LIVE]` (see [Keeping a copy on disk](/guides/local-copy/)).
+`[status: LIVE]` (see [Keeping a copy on disk](/guides/syncing-a-space/)).
 
 A push replaces the whole page, so pushing that text would replace each of those parts with its
 bracketed placeholder. To prevent that, **the dry run and the push refuse any page that holds one of
