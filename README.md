@@ -71,7 +71,7 @@ getting-started guide and a guide to each part of the app. The same guides are i
 
 - [Get started](packages/simply-confluence-explorer/docs/getting-started.md)
 - [Connecting to Confluence](packages/simply-confluence-explorer/docs/guides/connecting.md)
-- [Keeping a copy on disk](packages/simply-confluence-explorer/docs/guides/local-copy.md)
+- [Keeping a copy on disk](packages/simply-confluence-explorer/docs/guides/syncing-a-space.md)
 - [Asking an AI](packages/simply-confluence-explorer/docs/guides/asking-ai.md)
 - [What leaves your computer](packages/simply-confluence-explorer/docs/guides/data-safety.md)
 - [Improving a page](packages/simply-confluence-explorer/docs/guides/improving-pages.md)
