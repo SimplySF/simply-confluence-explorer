@@ -1,0 +1,136 @@
+---
+title: Keeping a copy on disk
+description: Sync a space to your computer as Markdown, browse it, build its table of contents, download it as a ZIP, and remove pages you no longer want.
+sidebar:
+  order: 3
+---
+
+Syncing a space downloads every page you are allowed to see, as Markdown files in folders that follow
+the page tree, together with each page's attachments. Once a space is synced, the app reads it from
+your disk instead of from Confluence, and the AI features that work across many pages use that copy.
+
+## Sync a space
+
+Choose a space in the sidebar, open the **Space** menu, and choose **Sync space**.
+
+![The Space menu, with Sync space at the top](../images/space-menu.webp)
+
+The menu shows progress as the pages arrive, with a **Stop** button. When the sync finishes, a
+message says how many pages were downloaded and how many were already current or excluded, and the
+badge under the space picker changes from **Not synced** to the number of pages synced.
+
+Run it again at any time with **Update space**. Only pages that changed in Confluence since the last
+sync are downloaded again.
+
+Some things to know about a sync:
+
+- **It covers the whole space**: every page under the space's home page, or every page in the space
+  if it has no home page.
+- **Excluded pages are never downloaded**, nor is anything under them. See
+  [What leaves your computer](/guides/data-safety/).
+- **It adds and updates; it never deletes.** A page that was deleted, renamed or moved in Confluence
+  keeps its old file on your disk until you remove it, as described below.
+- **Stopping a sync keeps what was already written**, but the table of contents is not rebuilt until
+  a sync finishes.
+
+## Browse the copy
+
+A synced space behaves the same as a live one, but faster and without asking Confluence for each
+page. The tree on the left is read from your disk, and the page view shows the copy. To see a
+page's latest version, sync the space again.
+
+- **Filter pages**: type in the box above the tree, or press `/` to jump to it. A page stays visible
+  if it, or any page under it, matches.
+- **Jump to a page**: paste a Confluence page address or a page id into **Jump to a page URL or id**.
+  The app finds the page and switches to its space.
+- **Read it three ways**: the **Read** tab shows the page **Rendered**, as **Markdown**, or as
+  **Storage XML**, Confluence's own format. **Copy Markdown** copies the text.
+
+![A page shown as Markdown, with its frontmatter at the top](../images/read-markdown.webp)
+
+### Convert a snippet
+
+**Snippet parser** in the header converts a piece of Confluence storage format that you paste in, such
+as a macro copied from another page's source, and shows its Markdown beside a rendered preview. It
+reads nothing from Confluence and saves nothing.
+
+![The snippet parser, with storage format above and its Markdown and rendered view below](../images/snippet.webp)
+
+### What the Markdown looks like
+
+Each page's Markdown starts with a short block of details between `---` lines, called frontmatter:
+the page id, title, space, version, author, last update, labels, address and the titles of the pages
+above it. The rest is the page itself.
+
+Markdown has no form for some parts of a Confluence page, so the app shows them as text in brackets
+rather than dropping them:
+
+| In Confluence                       | In the Markdown                               |
+| ----------------------------------- | --------------------------------------------- |
+| A status label                      | `[status: ACCEPTED]`                          |
+| An info, note, warning or tip panel | `> **warning: Paging policy**` and its text   |
+| Any other macro                     | `> [macro: jira]`, `> [macro: toc]` and so on |
+| An image                            | `[image: capacity-chart.png]`                 |
+| A link to another page              | The page's title, in brackets                 |
+| A mention of a person               | `[@...]`, with the person's user name or key  |
+| A code block                        | A fenced code block, with its language        |
+| A task list                         | `- [x]` and `- [ ]`                           |
+
+This is also why some pages cannot be pushed back from Markdown; see
+[Improving a page](/guides/improving-pages/).
+
+## The table of contents
+
+**Table of contents** in the Space menu shows every synced page as a tree, with its AI summary and
+topics once those exist. Click a title to open the page. The same table is saved as `TOC.md` and
+`toc.json` in the space's folder, so other tools can use it.
+
+**Generate AI summaries** in the same menu asks your AI to summarise each synced page, one at a time,
+and add topic tags. You can pause it and come back later. It only summarises pages that do not have a
+summary yet; to redo the summary of one page, use **Regenerate** on that page's **Details** tab. A
+page's summary is removed when a sync downloads a newer version of it, so it is never out of date.
+
+![The Details tab, with a page's AI summary and its frontmatter](../images/details.webp)
+
+## Download a ZIP
+
+**Download ZIP** gives you the whole synced space as one file: the Markdown of every page, their
+attachments, and the table of contents. Pages excluded by the space's rules are left out, even if a
+copy of them is still on your disk.
+
+## Remove pages from your computer
+
+Removing a page here deletes only your copy. Nothing changes in Confluence.
+
+- **One page**: open it, choose **⋯ → Remove from this machine…**, and decide whether to remove the
+  pages under it as well. By default the app also adds a rule to the space's exclusions, so the next
+  sync does not download the page again.
+- **Stale copies**: **Remove stale cached pages…** in the Space menu removes copies that the space's
+  rules now exclude, and copies whose Markdown file you deleted yourself.
+
+## Where the files are
+
+Each synced space has its own folder inside the app's data folder (`~/.confluence-explorer` unless
+you chose another with `--data-dir`):
+
+```
+spaces/PLAT/
+  pages/                 one Markdown file per page, in folders that follow the tree
+  pages/.../Title_attachments/   each page's attachments
+  pages_cache/           each page as Confluence sent it
+  metadata/              AI summaries
+  TOC.md, toc.json       the table of contents
+  manifest.json          when the space was last synced
+  .confluenceignore      the space's exclusion rules
+  .confluenceguard       the space's leak guard rules
+```
+
+You can open the Markdown files in any editor. If you delete one, **Remove stale cached pages…**
+tidies up what the app still remembers about it.
+
+## How this is checked
+
+`test/localCopy.test.ts` checks that a sync writes every visible page and no excluded one, downloads
+only what changed the second time, serves the tree and pages from disk, and builds the table of
+contents and the ZIP. `test/converter.test.ts` holds the expected Markdown for every page in the test
+dataset. `test/e2e/localCopy.e2e.ts` syncs a real Confluence Data Center space.
