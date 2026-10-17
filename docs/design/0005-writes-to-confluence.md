@@ -37,6 +37,11 @@ The app has three ways to write to Confluence, and all of them go through a sing
 - **A push states the version it was made from.** If the page has changed in Confluence since the
   proposal was made, the push is refused with a "changed since" message. The app never tries to
   merge the two versions, because a merge could quietly drop someone else's edit.
+- **A page is never written from Markdown if Markdown cannot carry all of it** (ADR-041). Markdown
+  has no form for an image, a macro such as a status label or a panel, a link to another page, a
+  mention or a task list, so the converted page shows each as placeholder text. Writing that text
+  back would replace the real thing, so the dry run and the push refuse such a page and name what it
+  would lose.
 - **The page on disk is kept accurate.** Frontmatter, the block of metadata at the top of each saved
   page, is removed before the page is converted, so it never ends up in Confluence. After a push,
   the local copy's body and version are refreshed from what Confluence now holds.

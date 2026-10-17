@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { spaces, type DatasetPage } from '../../../test-env/fixtures/dataset.mjs';
 import type { PageDetail } from '../src/api/types.js';
-import { parsePage, storageToBody, stripFrontmatter } from '../src/parser/convert.js';
+import { lostInRewrite, parsePage, storageToBody, stripFrontmatter } from '../src/parser/convert.js';
 
 const ctx = { userKey: 'admin-user-key' };
 
@@ -110,6 +110,30 @@ describe('what the converter keeps from macros', () => {
 
   it("keeps a nested table's cells apart", () => {
     expect(md('OPS/Service Level Objectives')).not.toContain('ZoneUptime');
+  });
+});
+
+// A push replaces a page's body with Markdown, and Markdown has no form for some parts of a page, so
+// the write path refuses a page that holds any of them rather than turn each into placeholder text.
+describe('what writing a page back from Markdown would lose', () => {
+  it('is nothing for a page of headings, tables and code', () => {
+    expect(lostInRewrite(bodies.get('PLAT/Gateway API Reference')!)).toEqual([]);
+  });
+
+  it('names each image, macro, page link and mention a page holds, keeping the code blocks off the list', () => {
+    const lost = lostInRewrite(bodies.get('PLAT/Architecture Overview')!);
+    expect(lost).toEqual(
+      expect.arrayContaining(['1 image', '2 links to other pages', '1 mention of a person', '3 "status" macros']),
+    );
+    expect(lost.join()).not.toContain('"code"');
+  });
+
+  it('names a task list, which cannot be written from Markdown at all', () => {
+    expect(lostInRewrite(bodies.get('PLAT/INC-1001: Gateway latency spike')!)).toEqual([
+      '1 task list',
+      '1 "toc" macro',
+      '1 "status" macro',
+    ]);
   });
 });
 

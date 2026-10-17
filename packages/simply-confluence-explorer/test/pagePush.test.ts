@@ -94,6 +94,32 @@ describe('a push', () => {
     expect((await post(`/pages/${page.id}/push`, { markdown: '# x' })).status).toBe(400);
   });
 
+  it('is refused for a page whose image would become placeholder text, and writes nothing', async () => {
+    const page = fake.page('OPS', 'Capacity Planning');
+    const before = fake.writes.length;
+    const original = page.storage;
+    const markdown = 'See attached CSV.\n\n[image: capacity-chart.png]\n\n## Who to ask\n\nThe owning team.';
+    const dry = await post<{ error: string }>(`/pages/${page.id}/dry-run`, { markdown, baseVersion: page.version });
+    expect(dry.status).toBe(400);
+    expect(dry.body.error).toMatch(/^The dry run found a problem: this page has parts that Markdown cannot carry/);
+    expect(dry.body.error).toContain('1 image');
+    const push = await post<{ error: string }>(`/pages/${page.id}/push`, { markdown, baseVersion: page.version });
+    expect(push.status).toBe(400);
+    expect(push.body.error).toContain('Nothing was written');
+    expect(fake.writes.length).toBe(before);
+    expect(page.storage).toBe(original);
+  });
+
+  it('is refused for a page whose link to another page would become plain text', async () => {
+    const page = fake.page('OPS', 'On-Call Handbook');
+    const res = await post<{ error: string }>(`/pages/${page.id}/push`, {
+      markdown: 'Start here. See [Database Failover].',
+      baseVersion: page.version,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('1 link to another page');
+  });
+
   it('is refused when the page changed after the proposal, and writes nothing', async () => {
     const page = fake.page('OPS', 'EMEA Rotation');
     const before = fake.writes.length;

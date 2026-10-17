@@ -16,7 +16,7 @@
 
 import type { WriteResult } from '../api/types.js';
 import { HttpError } from '../http/router.js';
-import { stripFrontmatter } from '../parser/convert.js';
+import { lostInRewrite, stripFrontmatter } from '../parser/convert.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
 import { errorMessage } from '../util/errors.js';
 import type { ConfluenceClient } from './client.js';
@@ -40,7 +40,9 @@ export type PageWrite = {
  * made from, and the write is refused if the page has moved on since, because writing anyway would
  * replace a colleague's edit nobody has seen. The frontmatter block the app adds to a page's
  * Markdown is removed first, so it never lands in Confluence. A dry run converts the change exactly
- * as a write would and stops there, so it reports any content Confluence would refuse. After a
+ * as a write would and stops there, so it reports any content Confluence would refuse. A page holding
+ * an image, a macro, a page link, a mention or a task list is refused outright, because replacing its
+ * body from Markdown would turn each of them into placeholder text (see `lostInRewrite`). After a
  * write, the synced copy is replaced with what Confluence now holds, so the next read and the next
  * proposal start from the page as it is.
  *
@@ -77,6 +79,17 @@ export async function writePage(
       `This page changed in Confluence after the proposal was made (it is now version ${plan.version}; ` +
         `the proposal was based on version ${w.baseVersion}). Reload the page and make the proposal again.`,
     );
+  }
+  if (!w.append) {
+    const lost = lostInRewrite((await client.getPageDetail(w.pageId)).storageXml);
+    if (lost.length > 0) {
+      throw new HttpError(
+        400,
+        `${w.dryRun ? 'The dry run found a problem: this' : 'This'} page has parts that Markdown cannot carry, so ` +
+          `writing it from Markdown would replace them with plain text: ${lost.join(', ')}. Nothing was written. ` +
+          'Make this change in Confluence itself.',
+      );
+    }
   }
   if (w.dryRun) return { pageId: w.pageId, version: plan.version, dryRun: true };
 
