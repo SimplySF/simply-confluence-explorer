@@ -67,17 +67,20 @@ npx @simplysf/simply-confluence-explorer@beta doctor
 ## Documentation
 
 The [documentation site](https://simplysf.github.io/simply-confluence-explorer/) has a
-getting-started guide and a guide to each part of the app. The same guides are in this repository:
+getting-started guide and a guide to each part of the app:
 
-- [Get started](packages/simply-confluence-explorer/docs/getting-started.md)
-- [Connecting to Confluence](packages/simply-confluence-explorer/docs/guides/connecting.md)
-- [Keeping a copy on disk](packages/simply-confluence-explorer/docs/guides/syncing-a-space.md)
-- [Asking an AI](packages/simply-confluence-explorer/docs/guides/asking-ai.md)
-- [What leaves your computer](packages/simply-confluence-explorer/docs/guides/data-safety.md)
-- [Improving a page](packages/simply-confluence-explorer/docs/guides/improving-pages.md)
-- [Reviewing a branch](packages/simply-confluence-explorer/docs/guides/branch-review.md)
-- [Writing a new page](packages/simply-confluence-explorer/docs/guides/new-pages.md)
-- [Troubleshooting](packages/simply-confluence-explorer/docs/guides/troubleshooting.md)
+- [Get started](https://simplysf.github.io/simply-confluence-explorer/getting-started/)
+- [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/)
+- [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/)
+- [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)
+- [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)
+- [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)
+- [Reviewing a branch](https://simplysf.github.io/simply-confluence-explorer/guides/branch-review/)
+- [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)
+- [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)
+
+The guides are written in [`packages/simply-confluence-explorer/docs/`](packages/simply-confluence-explorer/docs),
+which is where to change them.
 
 The [package README](packages/simply-confluence-explorer/README.md) lists every option, the HTTP
 routes and the embedding API.

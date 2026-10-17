@@ -75,13 +75,22 @@ describe('the user guides', () => {
     }
   });
 
-  it('are linked from both READMEs by paths that exist', () => {
+  it('are linked from both READMEs at pages the site builds, and the READMEs show images that exist', () => {
+    const site = 'https://simplysf.github.io/simply-confluence-explorer/';
     const readmes = [path.join(pkg, 'README.md'), path.join(pkg, '../../README.md')];
     for (const readme of readmes) {
-      const links = [...read(readme).matchAll(/\]\(([^)]*docs\/[^)]+\.(?:md|webp))\)/g)].map((m) => m[1]);
-      expect(links.length, `${readme} links to no guide`).toBeGreaterThanOrEqual(9);
-      for (const link of links) {
-        expect(fs.existsSync(path.resolve(path.dirname(readme), link)), `${readme} links to ${link}`).toBe(true);
+      const text = read(readme);
+      const pagesLinked = [...text.matchAll(new RegExp(`\\]\\(${site.replace(/[./]/g, '\\$&')}([\\w/-]*)\\)`, 'g'))]
+        .map((m) => m[1].replace(/\/$/, ''))
+        .filter((slug) => slug !== '');
+      expect(pagesLinked.length, `${readme} links to no guide on the site`).toBeGreaterThanOrEqual(9);
+      for (const slug of pagesLinked) {
+        expect(fs.existsSync(path.join(docs, `${slug}.md`)), `${readme} links to ${site}${slug}/`).toBe(true);
+      }
+      const shown = [...text.matchAll(/(?:\]\(|src(?:set)?=")([^)"]*docs\/images\/[^)"]+)/g)].map((m) => m[1]);
+      expect(shown.length, `${readme} shows no screenshot`).toBeGreaterThanOrEqual(1);
+      for (const image of shown) {
+        expect(fs.existsSync(path.resolve(path.dirname(readme), image)), `${readme} shows ${image}`).toBe(true);
       }
     }
   });
