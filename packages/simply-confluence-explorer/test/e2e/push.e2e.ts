@@ -94,6 +94,22 @@ describe.skipIf(!env)(`writing a page to the test environment${env ? '' : ` (ski
     expect(after.body.storage.value).toContain('<strong>notes</strong>');
   });
 
+  it('refuses to write a page whose macro Markdown cannot carry, and leaves the macro in place', async () => {
+    const runbook = env!.spaces.PLAT.pages['Gateway Runbook'].id;
+    const before = await rest<RestPage>('GET', `/rest/api/content/${runbook}?expand=version,body.storage`);
+    expect(before.body.storage.value).toContain('ac:name="warning"');
+
+    const pushed = await post<{ error: string }>(`/pages/${runbook}/push`, {
+      markdown: '> **warning: Paging policy**\n> Page the owning team before restarting.\n\n1. Check dashboards',
+      baseVersion: before.version.number,
+    });
+    expect(pushed.status).toBe(400);
+    expect(pushed.body.error).toContain('1 "warning" macro');
+    const after = await rest<RestPage>('GET', `/rest/api/content/${runbook}?expand=version,body.storage`);
+    expect(after.version.number).toBe(before.version.number);
+    expect(after.body.storage.value).toBe(before.body.storage.value);
+  });
+
   it("refuses a push made from a version a colleague has since changed, and keeps the colleague's edit", async () => {
     const proposal = await post<RecommendationResponse>(`/pages/${pageId()}/recommend`, { spaceKey: 'PEOPLE' });
     const current = await read();

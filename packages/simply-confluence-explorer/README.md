@@ -73,6 +73,13 @@ block the app adds to a page's Markdown is removed before the page is written. A
 only the pages a person accepted, through the same path (`test/branchRuns.test.ts`,
 `test/e2e/branches.e2e.ts`).
 
+A page that holds an image, a macro such as a status label or a panel, a link to another page, a
+mention or a task list is never written from Markdown. Markdown has no form for those parts, so
+writing the page back would replace each of them with placeholder text. The dry run and the push
+refuse such a page, name what it would lose, and write nothing; that change has to be made in
+Confluence itself (`test/pagePush.test.ts`, `test/converter.test.ts`, and against a real Confluence,
+`test/e2e/push.e2e.ts`).
+
 Before a new page is drafted, the app searches the space for pages that already say what it will
 say, and nothing is written or created until the author has answered that check: improve an existing
 page instead, link to the pages found, or go ahead. Excluded pages are never offered as a match. A

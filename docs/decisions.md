@@ -1177,3 +1177,41 @@ the library's output changed only in the five places the fix intended, but that 
 the test dataset; it does not show the package holds nothing else. The risk is accepted for one
 version, released by a team the maintainer knows, and is not a precedent: a later exception needs
 its own record.
+
+---
+
+## ADR-041 — A page that holds parts Markdown cannot carry is never written from Markdown; the write is refused instead of losing them
+
+**Status:** accepted, 2026-10-16. Amends ADR-024.
+
+The app edits pages as Markdown. Converting a page to Markdown turns the parts Markdown has no form
+for into placeholder text: an image becomes `[image: chart.png]`, a macro becomes `[macro: jira]` or
+`[status: LIVE]`, a link to another page becomes its bare title, and a panel becomes a quoted
+paragraph. A push replaces the whole body of the page with the proposal converted back from
+Markdown, so every one of those parts was replaced by its placeholder text in Confluence. The dry run
+passed and the confirmation dialog gave no warning. This was found while capturing screenshots for
+the documentation, when pushing a proposal for a test page replaced its embedded image with the text
+`[image: capacity-chart.png]`.
+
+The write path now refuses such a page. Before a dry run or a push, it converts the page as
+Confluence holds it to Markdown and back, and compares the two: each image, macro, link to another
+page, mention, task list and layout present before and missing after is counted and named in the
+refusal, and nothing is written. The comparison is done on the converter's real output rather than
+on a fixed list of forbidden parts, so a part the converter learns to carry stops being refused
+without a change here. Code blocks, which the converter does carry, are not refused.
+
+The check sits in `writePage`, the one function that changes an existing page (ADR-024), so the
+single-page push, the branch queue and both of their dry runs are covered by it. A new page has no
+existing body to lose and is not affected. An append, which the app's interface does not offer, adds
+to the body without replacing it and is not checked.
+
+**Declined: keeping the original parts and writing only the text around them.** That would let such
+pages be improved, but it needs a way to match each placeholder in the proposal back to the part it
+came from after an AI has rewritten the page, and to decide what to do when the AI moved, changed or
+removed a placeholder. It is a larger piece of work, belongs partly in the converter library, and is
+not attempted here.
+
+**The argument against:** most real pages hold at least one macro or link, so Improve now refuses
+most of them, and the feature is far less useful than it looked. That is accepted, because the
+alternative is a feature that quietly damages the pages it touches, and the refusal says exactly why
+so the person can make the change in Confluence instead.

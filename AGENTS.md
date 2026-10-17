@@ -155,6 +155,10 @@ decision record that explains it in full.
   wider default (ADR-018).
 - **A push names the page version it was made from.** If the page in Confluence has changed since
   then, the push is refused, so nobody's newer edit is overwritten.
+- **A page is never written from Markdown if it would lose parts of itself.** Markdown has no form for
+  images, macros, page links, mentions or task lists, so a page holding any of them is refused by
+  the dry run and the push, which name what would be lost, rather than having them replaced with
+  placeholder text (ADR-041).
 - **The test dataset is the source of truth** for the test environment's spaces and their
   `.confluenceignore` files. Any generated copy is overwritten every time the environment is seeded
   (ADR-007).
