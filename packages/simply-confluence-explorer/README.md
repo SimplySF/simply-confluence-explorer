@@ -1,14 +1,26 @@
 # @simplysf/simply-confluence-explorer
 
-A local web app for browsing and exploring Confluence, packaged as a Node.js CLI. Part of the
-[`simply-confluence-explorer`](https://github.com/SimplySF/simply-confluence-explorer) monorepo.
+A local web app for working with Confluence Server and Data Center, packaged as a Node.js command.
+You run it on your own computer and use it in your browser: browse a space, keep a copy of it on
+disk as Markdown, ask an AI about a page or a whole space, and improve pages and push them back. Part
+of the [`simply-confluence-explorer`](https://github.com/SimplySF/simply-confluence-explorer)
+monorepo.
 
-> **Status:** the server reads Confluence, keeps a copy of a space on this machine, asks an AI about
-> pages and spaces, improves a page and pushes it, and reviews or improves a page and everything under
-> it through a queue where each page is accepted on its own. It also writes new pages with an AI,
-> after first checking whether existing pages already cover the topic. The browser interface does all
-> of this. The AI features have so far run only against a stand-in for the provider, not with real
-> provider keys.
+![Confluence Explorer showing a page, with the space's page tree on the left](docs/images/overview-light.webp)
+
+> **Status:** every feature below is built, in the server and in the browser. Versions are published
+> as betas under npm's `beta` tag; there is no stable release yet. The AI features have so far run
+> only against a stand-in for each provider, not with real provider keys.
+
+The [guides](#guides) explain each feature in full, with screenshots. This README is the reference:
+options, environment variables, where data is kept, the HTTP routes and the embedding API.
+
+## Requirements
+
+- Node.js 22 or later.
+- A Confluence Server or Data Center instance, and a personal access token for your account.
+  Atlassian Cloud is not supported.
+- Optionally, an API key for Claude, ChatGPT or Gemini, or the Gemini CLI, for the AI features.
 
 ## Usage
 
@@ -16,6 +28,8 @@ A local web app for browsing and exploring Confluence, packaged as a Node.js CLI
 npx @simplysf/simply-confluence-explorer@beta
 # Confluence Explorer is running at http://127.0.0.1:4280/
 ```
+
+Open the address it prints. The app runs until you press Ctrl+C.
 
 | Option              | Environment                | Default                  | Description                                    |
 | ------------------- | -------------------------- | ------------------------ | ---------------------------------------------- |
@@ -25,9 +39,10 @@ npx @simplysf/simply-confluence-explorer@beta
 | `-h`, `--help`      |                            |                          | Show usage                                     |
 
 A flag wins over its environment variable. The server listens on localhost only unless you pass
-`--host`. It holds your Confluence token, so think twice before exposing it on a network. When it is
-reached by another name, list that name in `ALLOWED_HOSTS`; every other host name, and every request
-another website sends from your browser, is refused (`test/security.test.ts`).
+`--host`. It holds your Confluence token and has no login of its own, so think twice before exposing
+it on a network. When it is reached by another name, list that name in `ALLOWED_HOSTS`; every other
+host name, and every request another website sends from your browser, is refused
+(`test/security.test.ts`).
 
 ### Checking your setup
 
@@ -35,21 +50,36 @@ another website sends from your browser, is refused (`test/security.test.ts`).
 npx @simplysf/simply-confluence-explorer@beta doctor
 ```
 
-The doctor checks the Node version, the Confluence connection, certificate checking and the data
-directory. It prints what to do about each problem it finds, and exits with a non-zero status only
-when something is broken. `--json` prints the report as JSON (`test/doctor.test.ts`).
+The doctor checks the Node version, the Confluence connection, certificate checking, the data
+directory, each space's exclusion and leak guard rules, and the AI setup. It prints what to do about
+each problem it finds, and exits with a non-zero status only when something is broken. `--json`
+prints the report as JSON (`test/doctor.test.ts`). [Troubleshooting](docs/guides/troubleshooting.md)
+explains every check.
 
 ### Connecting to Confluence
 
 Save the URL and a personal access token in the app's Settings. The token stays on the server and is
 never sent back to the browser (`test/connection.test.ts`). To set the connection outside the app
-instead, use the same variables as the `simply` command, either in the environment or in a `.env`
-file in the data directory:
+instead, use these variables, either in the environment or in a `.env` file in the data directory:
 
 ```sh
 CONFLUENCE_URL=https://confluence.example.com
 CONFLUENCE_PERSONAL_TOKEN=<your personal access token>
 ```
+
+When `CONFLUENCE_URL` is set, it is the connection, and Settings shows it without letting it be
+changed. A variable in the real environment wins over the same one in the `.env` file.
+
+Certificates are always verified. If your Confluence uses a certificate from your company's own
+certificate authority, ask your IT team for that authority's certificate file and start the app with
+`NODE_EXTRA_CA_CERTS` pointing at it:
+
+```sh
+NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer@beta
+```
+
+[Connecting to Confluence](docs/guides/connecting.md) covers creating a token and the connection in
+detail.
 
 ### Choosing an AI
 
@@ -63,6 +93,8 @@ Before anything is sent, the page is checked against the space's `.confluenceign
 request passes the outbound guard: a secret stops it, and personal data is replaced with
 placeholders that are put back in the answer here (`test/aiRoutes.test.ts`, `test/guard.test.ts`).
 Each request is recorded in `data/ai-audit.jsonl` in the data directory, without its content.
+[What leaves your computer](docs/guides/data-safety.md) explains the exclusion rules and the leak
+guard, including how to write your own rules.
 
 ### Writing to Confluence
 
@@ -86,13 +118,49 @@ page instead, link to the pages found, or go ahead. Excluded pages are never off
 title already used in the space is refused with the reason (`test/drafts.test.ts`,
 `test/e2e/drafts.e2e.ts`).
 
-Certificates are always verified. If your Confluence uses a certificate from your company's own
-certificate authority, ask your IT team for that authority's certificate file and start the app with
-`NODE_EXTRA_CA_CERTS` pointing at it:
+## Guides
 
-```sh
-NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer@beta
-```
+| Guide                                                   | What it covers                                                              |
+| ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Get started](docs/getting-started.md)                  | Requirements, starting the app, connecting, and your first few minutes      |
+| [Connecting to Confluence](docs/guides/connecting.md)   | Personal access tokens, environment variables, company certificates         |
+| [Keeping a copy on disk](docs/guides/local-copy.md)     | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
+| [Asking an AI](docs/guides/asking-ai.md)                | Providers, questions about a page, a branch or a space, files, summaries    |
+| [What leaves your computer](docs/guides/data-safety.md) | Excluded pages, the leak guard and its rules, the audit log, network access |
+| [Improving a page](docs/guides/improving-pages.md)      | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
+| [Reviewing a branch](docs/guides/branch-review.md)      | Reviewing a page and everything under it, and the queue of proposals        |
+| [Writing a new page](docs/guides/new-pages.md)          | The check for existing pages, writing with an AI, creating the page         |
+| [Troubleshooting](docs/guides/troubleshooting.md)       | The doctor's checks, and the messages you are most likely to see            |
+
+The same guides are published on the
+[SimplySF documentation site](https://simplysf.github.io/simply-cli/confluence-explorer/).
+
+## Where data is kept
+
+Everything the app writes is in its data directory, `~/.confluence-explorer` unless `--data-dir` or
+`CONFLUENCE_EXPLORER_DATA` names another. Files holding a token, a key or a conversation are created
+readable only by your user account where the operating system allows it (`test/util.test.ts`).
+
+| Path                      | What it holds                                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `.env`                    | Optional Confluence connection variables, read at start and never written                                                    |
+| `config/connection.json`  | The Confluence URL and personal access token                                                                                 |
+| `config/ai-settings.json` | The AI provider, models, endpoints and keys                                                                                  |
+| `spaces/<KEY>/`           | A synced space: its Markdown pages and attachments, summaries, table of contents, `.confluenceignore` and `.confluenceguard` |
+| `data/sessions/`          | AI conversations, drafts of new pages, and the text of files added to them                                                   |
+| `data/branch-runs/`       | Branch reviews and their queues                                                                                              |
+| `data/ai-audit.jsonl`     | One line per AI request, without its content                                                                                 |
+
+## Keyboard shortcuts
+
+| Keys                    | What they do                                                          |
+| ----------------------- | --------------------------------------------------------------------- |
+| Ctrl+, (Cmd+, on a Mac) | Open or close Settings                                                |
+| `/`                     | Jump to the page filter                                               |
+| ↑ ↓, Home, End          | Move through the page tree                                            |
+| → and ←                 | Expand or collapse a page in the tree, or move to its child or parent |
+| Enter or Space          | Open the page selected in the tree                                    |
+| Escape                  | Close the topmost dialog or menu                                      |
 
 ## HTTP routes
 
@@ -161,3 +229,18 @@ The package can also be embedded. Everything below is exported from the package 
 
 Types: `MainOptions`, `ServerOptions`, `HealthResponse`, and the API's JSON shapes: `ConnectionView`,
 `ConnectionUpdate`, `DoctorReport`, `DoctorResult`, `ErrorResponse`.
+
+## Issues
+
+Please report bugs or request features by
+[opening an issue](https://github.com/SimplySF/simply-confluence-explorer/issues).
+
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/SimplySF/simply-confluence-explorer/blob/main/CONTRIBUTING.md)
+in the repository, and this package's own [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+Licensed under the [Apache-2.0](https://github.com/SimplySF/simply-confluence-explorer/blob/main/LICENSE.txt)
+license.
