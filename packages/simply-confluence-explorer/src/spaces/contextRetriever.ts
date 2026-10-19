@@ -15,106 +15,100 @@
  */
 
 import type { SpaceTocNode } from '../api/types.js';
-import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
-import { parsePage } from '../parser/convert.js';
+import { CONTEXT_CHAR_LIMIT, contextCollector } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
+import type { SearchIndex } from './searchIndex.js';
 import type { SpaceStore } from './spaceStore.js';
-
-const STOP_WORDS = new Set(
-  (
-    'a about above after again against all am an and any are as at be because been before being below between both ' +
-    'but by can cannot could did do does doing down during each few for from further had has have having he her here ' +
-    'hers herself him himself his how i if in into is it its itself let me more most my myself no nor not of off on once ' +
-    'only or other ought our ours ourselves out over own same she should so some such than that the their theirs them ' +
-    'themselves then there these they this those through to too under until up very was we were what when where which ' +
-    'while who whom why with would you your yours yourself yourselves'
-  ).split(' '),
-);
 
 export type SpaceContext = {
   contextMarkdown: string;
+  /** The pages sent in full, which an answer names as its sources. */
   selectedPages: Array<{ id: string; title: string; score: number }>;
   /** Pages that matched but were left out because they hold a secret (ADR-022). */
   withheld: string[];
+  /** Pages that matched but did not fit within the size limit. */
+  overflow: string[];
 };
 
+export type SpaceQuery = {
+  question: string;
+  /** The question before it, so a follow-up such as "and how do we roll that back?" finds its pages. */
+  previous?: string;
+  /** Pages earlier turns used, kept so a conversation does not lose what it was reading. */
+  keep?: string[];
+  /** Pages the person pinned to the conversation, sent on every turn. */
+  pinned?: string[];
+  /** Answer from the pinned pages alone, without searching the space. */
+  pinnedOnly?: boolean;
+};
+
+/** How many pages a search adds, before the size limit decides how many of them fit. */
+const SEARCH_LIMIT = 12;
+
 /**
- * Chooses the synced pages of a space that best match a question, and builds the context an AI
- * receives for it: an outline of the space, then the full text of the best-matching pages. Pages are
- * scored on their titles, labels and AI summaries, so a large space is answered from a handful of
- * pages instead of all of them. Excluded pages are never considered, and the outline is checked
- * against the current rules rather than trusted as written, because the table of contents on disk
- * may predate a rule.
+ * Builds the context an AI receives for a question about a whole space: an outline of the space, then
+ * the full text of the pages that matter, in this order: the pages the person pinned, the pages
+ * earlier turns used, and the pages the search index ranks highest for the question (BM25 over titles,
+ * tags, summaries and text). Each page is checked against the exclusion rules and the secrets check,
+ * and pages are added until the size limit is reached. The outline is checked against the current
+ * rules rather than trusted as written, because the table of contents on disk may predate a rule.
  *
- * @param spaceKey The space to search.
- * @param prompt The question.
- * @param deps The synced copy, the exclusion rules, and the data directory for the guard rules.
- * @param maxPages How many pages to include in full.
+ * @param spaceKey The space.
+ * @param query The question and what the conversation carries.
+ * @param deps The synced copy, the exclusion rules, the search index, and the data directory for the guard rules.
+ * @param budget How many characters the context may take.
  */
 export function retrieveSpaceContext(
   spaceKey: string,
-  prompt: string,
-  deps: { store: SpaceStore; exclusions: ExclusionManager; dataDir: string },
-  maxPages = 4,
+  query: SpaceQuery,
+  deps: { store: SpaceStore; exclusions: ExclusionManager; index: SearchIndex; dataDir: string },
+  budget = CONTEXT_CHAR_LIMIT,
 ): SpaceContext {
   const key = spaceKey.toUpperCase();
-  const pages = deps.store.visiblePages(key);
-  if (pages.length === 0)
-    return { contextMarkdown: 'No synced pages are available in this space.', selectedPages: [], withheld: [] };
+  if (!deps.store.isSynced(key))
+    return {
+      contextMarkdown: 'No synced pages are available in this space.',
+      selectedPages: [],
+      withheld: [],
+      overflow: [],
+    };
 
-  const tokens = prompt
-    .toLowerCase()
-    .replace(/[^a-z0-9_\s-]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
-
-  const scored = pages
-    .map((page) => {
-      const meta = deps.store.readMetadata(key, page.id);
-      const title = page.title.toLowerCase();
-      const summary = (meta?.summary ?? '').toLowerCase();
-      const tags = (meta?.tags ?? page.labels).map((t) => t.toLowerCase());
-      const systems = (meta?.systemsMentioned ?? []).map((t) => t.toLowerCase());
-      const score = tokens.reduce(
-        (sum, token) =>
-          sum +
-          (title === token ? 15 : title.includes(token) ? 6 : 0) +
-          (tags.includes(token) ? 8 : tags.some((t) => t.includes(token)) ? 4 : 0) +
-          (systems.some((s) => s.includes(token)) ? 7 : 0) +
-          (summary.includes(token) ? 3 : 0),
-        0,
-      );
-      return { page, score };
-    })
-    .filter((p) => p.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxPages);
-  // A question that matches nothing still gets an answer from a few pages, rather than none.
-  const chosen = scored.length > 0 ? scored : pages.slice(0, 3).map((page) => ({ page, score: 1 }));
-
-  let context = `# Relevant Confluence pages (${chosen.length} matched)\n\n## Outline of the space\n`;
-  const outline = (nodes: SpaceTocNode[], depth: number, ancestors: Array<{ id: string; title: string }>): void => {
+  let outline = '## Outline of the space\n';
+  const walk = (nodes: SpaceTocNode[], depth: number, ancestors: Array<{ id: string; title: string }>): void => {
     const allowed = nodes.filter((n) => !deps.exclusions.isPageExcluded({ id: n.id, title: n.title, ancestors }, key));
     for (const n of allowed.slice(0, 8)) {
-      context += `${'  '.repeat(depth)}- **${n.title}**${n.summary ? `: ${n.summary}` : ''}\n`;
-      outline(n.children, depth + 1, [...ancestors, { id: n.id, title: n.title }]);
+      outline += `${'  '.repeat(depth)}- **${n.title}**${n.summary ? `: ${n.summary}` : ''}\n`;
+      walk(n.children, depth + 1, [...ancestors, { id: n.id, title: n.title }]);
     }
   };
-  outline(deps.store.buildToc(key), 0, []);
-  context += '\n---\n\n';
+  walk(deps.store.buildToc(key), 0, []);
 
-  // A page holding a secret is left out and named, so one page cannot block every question.
-  const screen = new OutboundGuard(loadGuardRules(deps.dataDir, key));
-  const withheld: string[] = [];
-  const sent: Array<{ id: string; title: string; score: number }> = [];
-  for (const { page, score } of chosen) {
-    const { markdown } = parsePage(page);
-    if (screen.secretsIn(markdown).length > 0) {
-      withheld.push(page.title);
-      continue;
-    }
-    context += `## [Document: ${page.title}]\n${markdown}\n\n---\n\n`;
-    sent.push({ id: page.id, title: page.title, score });
+  const scores = new Map<string, number>();
+  const order: string[] = [];
+  const add = (id: string, score: number): void => {
+    if (scores.has(id)) return;
+    scores.set(id, score);
+    order.push(id);
+  };
+  for (const id of query.pinned ?? []) add(id, 1);
+  if (!query.pinnedOnly) {
+    for (const id of query.keep ?? []) add(id, 1);
+    const text = [query.question, query.previous].filter(Boolean).join(' ');
+    for (const hit of deps.index.search(key, text, SEARCH_LIMIT)) add(hit.pageId, Math.round(hit.score * 100) / 100);
+    // A question that matches nothing still gets an answer from a few pages, rather than none.
+    if (order.length === 0) for (const page of deps.store.visiblePages(key).slice(0, 3)) add(page.id, 0);
   }
-  return { contextMarkdown: context, selectedPages: sent, withheld };
+
+  const { consider, result } = contextCollector(key, deps, deps.dataDir, budget - outline.length);
+  for (const id of order) {
+    const page = deps.store.readPage(key, id);
+    if (page) consider(page);
+  }
+  const body = result.pages.map((p) => `## [Document: ${p.page.title}]\n${p.markdown}\n\n---\n\n`).join('');
+  return {
+    contextMarkdown: `# Relevant Confluence pages (${result.pages.length} matched)\n\n${outline}\n---\n\n${body}`,
+    selectedPages: result.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: scores.get(p.page.id) ?? 0 })),
+    withheld: result.withheld,
+    overflow: result.overflow,
+  };
 }

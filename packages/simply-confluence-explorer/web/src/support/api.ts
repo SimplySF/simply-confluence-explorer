@@ -151,6 +151,14 @@ export const sessions = {
   },
   get: (id: string) => call<AiSessionView>(`${SESSIONS}/${key(id)}`),
   create: (scope: SessionScope) => call<AiSessionView>(SESSIONS, 'POST', { scope }),
+  /** A space's conversations, newest first, without their turns. */
+  inSpace: (spaceKey: string) =>
+    call<{ sessions: DraftSummary[] }>(`${SESSIONS}?${new URLSearchParams({ kind: 'space', spaceKey })}`).then(
+      (r) => r.sessions,
+    ),
+  update: (id: string, patch: { title?: string; pinned?: string[]; pinnedOnly?: boolean }) =>
+    call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
+  remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
   send: (id: string, prompt: string, signal?: AbortSignal) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}/messages`, 'POST', { prompt }, signal),
   addFile: async (id: string, file: File): Promise<AiSessionView> => {

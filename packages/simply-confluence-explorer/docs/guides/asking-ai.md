@@ -90,16 +90,28 @@ document or a log to compare with the page. The app accepts:
 Each file can be up to 10 MB, and very long text is cut to fit. The leak guard checks files like
 everything else, but exclusion rules do not apply to them, because they are not Confluence pages.
 
-## Ask about a whole space
+## Ask about a whole space: Space chat
 
-**Whole space** answers from the synced copy of the space, so sync it first. The app picks the pages
-that best match the words in your question, scoring each page's title, AI summary, topic tags and the
-systems it mentions, and sends the best four along with an outline of the space. The answer lists the
-pages it used, and you can click each to open it.
+**Space chat**, at the top of the sidebar, is for questions about the whole space rather than one
+page. It answers from the synced copy, so sync the space first. Its conversations are listed on the
+left, newest first, and kept on your computer, so you can come back to any of them. **New chat**
+starts another; the pencil renames one, and the bin deletes it after you confirm.
 
-The better your pages' summaries, the better this works: **Space → Generate AI summaries** gives every
-page one. If no page matches your words, the first few synced pages are sent instead, so a question
-with no matching words still gets an answer, but probably not a useful one.
+![Space chat, with a conversation, the pages each answer used, and a pinned page](../images/space-chat.webp)
+
+For each question the app searches the space's titles, tags, AI summaries and page text, and sends
+the pages that match best, together with the pages the last answers used and an outline of the
+space, up to the size limit. It also searches on your previous question, so a follow-up such as
+"and how do we roll that back?" still finds the right pages. Each answer lists the pages it used;
+click one to open it.
+
+To make sure a page is always read, pin it: type its title in **Pin a page to every answer**. With
+**Only these pages** ticked, answers come from the pinned pages alone. **Ask** on a tag (see
+[Reviewing a section](/guides/reviewing-a-section/)) starts a chat with the tag's pages pinned this
+way. Excluded pages can never be pinned or found, and a page holding a secret is left out and named.
+
+The better your pages' summaries, the better the search works: **Space → Generate AI summaries**
+gives every page one.
 
 ## Summaries and topics
 

@@ -34,7 +34,7 @@ lost its progress as soon as the person opened another page.
 | `POST /api/branches/runs/:runId/apply`       | Stages an edit of each page that the chosen suggestions name, with only those suggestions.    |
 | `GET /api/space-cache/:spaceKey/tags`        | Lists each tag with the pages that carry it, leaving out excluded pages.                      |
 | `GET /api/space-cache/:spaceKey/sync/active` | Reports a sync that is running, so a reloaded browser picks its progress up again.            |
-| `PATCH /api/ai/sessions/:id`                 | Renames a conversation.                                                                       |
+| `PATCH /api/ai/sessions/:id`                 | Renames a conversation, or pins pages to a Space chat.                                        |
 
 - **A review** checks each page as a section's pages are checked: the exclusion rules, then the
   secrets check, then the size limit (`src/spaces/branchContext.ts`). It accepts at most 50 pages,
@@ -44,8 +44,8 @@ lost its progress as soon as the person opened another page.
 - **Applying** reads the suggestions from the saved run, never from the browser, checks each page
   again, and makes one edit per page from its current version. The edits are a new run linked to
   the review, decided page by page and pushed through `pagePush.ts` as before (ADR-024, ADR-041).
-- **Tagged pages** can be reviewed, or asked about together in a conversation whose scope is that
-  list of pages; every page is checked again on every turn.
+- **Tagged pages** can be reviewed, or asked about in a Space chat with those pages pinned, answering
+  from them alone; a pinned page is checked again on every turn.
 - **Space chat** finds pages with the BM25 index (`src/spaces/searchIndex.ts`) over titles, tags,
   summaries and text, searching on the question and the one before it, keeps the pages earlier
   turns used, and fills the context up to its limit. Each answer names its sources. Pages can be

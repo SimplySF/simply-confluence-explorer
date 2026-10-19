@@ -99,7 +99,24 @@ export class AiChat {
     this.error = null;
   }
 
-  private async ensure(): Promise<AiSessionView> {
+  /** Starts on a scope with no conversation shown, without resuming the latest one. */
+  public begin(scope: SessionScope): void {
+    this.generation++;
+    this.scope = scope;
+    this.session = null;
+    this.error = null;
+  }
+
+  /** Shows a conversation chosen from a list, such as Space chat's. */
+  public show(session: AiSessionView, scope: SessionScope): void {
+    this.generation++;
+    this.scope = scope;
+    this.session = session;
+    this.error = null;
+  }
+
+  /** The conversation, created now if no question has been asked yet, so it can be named or given pages first. */
+  public async ensure(): Promise<AiSessionView> {
     if (!this.session) this.session = await sessions.create(this.scope!);
     return this.session;
   }

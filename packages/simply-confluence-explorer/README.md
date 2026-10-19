@@ -191,7 +191,7 @@ readable only by your user account where the operating system allows it (`test/u
 | `GET /api/ai/status`, `POST /api/ai/test`                 | Whether an AI is set up; a test call that sends no page                                                                                         |
 | `POST /api/ai/analyze`                                    | One question about a page, optionally with its sub-pages; the server sends its own copy of the page it checked, never text the request supplies |
 | `POST /api/space-cache/:spaceKey/ai/ask`                  | One question about a synced space, answered from its best-matching pages                                                                        |
-| `/api/ai/sessions/...`                                    | Conversations: create, list, read, delete, upload a file, send a message                                                                        |
+| `/api/ai/sessions/...`                                    | Conversations: create, list, read, rename or pin pages (`PATCH`), delete, upload a file, send a message                                         |
 | `POST /api/space-cache/:spaceKey/metadata/generate`       | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                                      |
 | `POST /api/pages/:pageId/dry-run`                         | Converts a change as a push would, and reports anything Confluence would refuse, without writing                                                |
 | `POST /api/pages/:pageId/push`                            | Writes `{ markdown, baseVersion }`; refused with a `409` if the page has changed since `baseVersion`                                            |

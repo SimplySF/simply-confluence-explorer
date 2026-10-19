@@ -281,6 +281,10 @@ export type AiSessionView = {
   files: SessionFileInfo[];
   /** On a draft conversation: the page being written. */
   draft?: DraftState;
+  /** In Space chat: pages sent on every turn, chosen by the person. */
+  pinned?: string[];
+  /** In Space chat: answer from the pinned pages alone, without searching the space. */
+  pinnedOnly?: boolean;
 };
 
 /** An existing page that may already say what a new page is meant to. */

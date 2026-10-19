@@ -39,6 +39,8 @@ const HTML_TYPES = new Set(['.html', '.htm']);
 
 type Stored = AiSessionView & {
   guardState: Array<[string, string]>;
+  /** The person named the conversation, so its first question no longer names it. */
+  named?: boolean;
 };
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -188,6 +190,20 @@ export class SessionStore {
     return viewOf(s);
   }
 
+  /** Renames a conversation, or changes the pages pinned to it. */
+  public update(id: string, patch: { title?: string; pinned?: string[]; pinnedOnly?: boolean }): AiSessionView {
+    const s = this.load(id);
+    if (!s) throw new Error('no such session');
+    if (patch.title !== undefined) {
+      s.title = patch.title;
+      s.named = true;
+    }
+    if (patch.pinned !== undefined) s.pinned = patch.pinned;
+    if (patch.pinnedOnly !== undefined) s.pinnedOnly = patch.pinnedOnly;
+    this.save(s);
+    return viewOf(s);
+  }
+
   public guardState(id: string): Array<[string, string]> {
     return this.load(id)?.guardState ?? [];
   }
@@ -198,7 +214,8 @@ export class SessionStore {
     if (!s) throw new Error('no such session');
     s.turns.push(...turns);
     s.guardState = guardState;
-    if (!s.draft && s.turns.length === turns.length && turns[0]?.role === 'user') s.title = turns[0].text.slice(0, 80);
+    if (!s.draft && !s.named && s.turns.length === turns.length && turns[0]?.role === 'user')
+      s.title = turns[0].text.slice(0, 80);
     this.save(s);
     return viewOf(s);
   }
@@ -224,6 +241,16 @@ export class SessionStore {
 }
 
 function viewOf(s: Stored): AiSessionView {
-  const { id, scope, title, createdAt, updatedAt, turns, files, draft } = s;
-  return { id, scope, title, createdAt, updatedAt, turns, files, ...(draft ? { draft } : {}) };
+  const { id, scope, title, createdAt, updatedAt, turns, files, draft, pinned, pinnedOnly } = s;
+  return {
+    id,
+    scope,
+    title,
+    createdAt,
+    updatedAt,
+    turns,
+    files,
+    ...(draft ? { draft } : {}),
+    ...(pinned?.length ? { pinned, pinnedOnly: pinnedOnly === true } : {}),
+  };
 }

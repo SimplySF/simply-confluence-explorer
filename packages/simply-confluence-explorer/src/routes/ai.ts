@@ -70,7 +70,7 @@ const requiredPrompt = (body: unknown): string => {
  * @param services What the routes share.
  */
 export function addAiRoutes(router: Router, services: Services): Router {
-  const { ai, store, exclusions, metadata, dataDir } = services;
+  const { ai, store, exclusions, metadata, dataDir, index } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
   const settingsView = (): AiSettingsView => ({ ...ai.settings.publicView(), geminiCliFound: ai.cliPath() });
   const gate = async (
@@ -158,7 +158,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body }): Promise<AnalyzeResponse> => {
         const prompt = requiredPrompt(body);
         const key = params.spaceKey.toUpperCase();
-        const context = retrieveSpaceContext(key, prompt, { store, exclusions, dataDir });
+        const context = retrieveSpaceContext(key, { question: prompt }, { store, exclusions, dataDir, index });
         const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, { spaceKey: key });
         return {
           answer: answer.text,

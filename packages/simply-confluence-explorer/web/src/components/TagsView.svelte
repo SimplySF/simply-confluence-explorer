@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, FileText, Search, Tag } from '@lucide/svelte';
+  import { ArrowLeft, FileText, MessagesSquare, Search, Tag } from '@lucide/svelte';
   import type { TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
@@ -13,9 +13,10 @@
     selectedPageId: string | null;
     onSelectPage: (pageId: string) => void;
     onReview: (tag: TaggedPages) => void;
+    onAsk: (tag: TaggedPages) => void;
   };
 
-  let { spaceKey, synced, selectedPageId, onSelectPage, onReview }: Props = $props();
+  let { spaceKey, synced, selectedPageId, onSelectPage, onReview, onAsk }: Props = $props();
   let tags = $state<TaggedPages[]>([]);
   let filter = $state('');
   let chosen = $state<string | null>(null);
@@ -60,6 +61,14 @@
         <ArrowLeft size={13} />
       </button>
       <strong class="tags-title"><Tag size={13} /> {current.tag}</strong>
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm"
+        onclick={() => onAsk(current)}
+        title="Ask about these pages in Space chat"
+      >
+        <MessagesSquare size={13} /> Ask
+      </button>
       <button type="button" class="btn btn-primary btn-sm" onclick={() => onReview(current)}>
         <Search size={13} /> Review {current.pages.length}
       </button>

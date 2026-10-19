@@ -7,6 +7,7 @@
     ChevronRight,
     ChevronsDown,
     ChevronsUp,
+    MessagesSquare,
     FileText,
     Folder,
     HardDrive,
@@ -37,6 +38,10 @@
     onTreeChanged: () => void;
     /** Review the pages that carry a tag. */
     onReviewTag: (tag: TaggedPages) => void;
+    /** Ask about the pages that carry a tag, in Space chat. */
+    onAskTag: (tag: TaggedPages) => void;
+    chatOpen: boolean;
+    onOpenChat: () => void;
   };
 
   let {
@@ -51,6 +56,9 @@
     error,
     onTreeChanged,
     onReviewTag,
+    onAskTag,
+    chatOpen,
+    onOpenChat,
   }: Props = $props();
 
   type Row = { node: PageTreeNode; depth: number; parentId: string | null; hasChildren: boolean; expanded: boolean };
@@ -325,6 +333,16 @@
       />
     {/if}
 
+    <button
+      type="button"
+      class={['btn btn-secondary btn-sm space-chat-open', chatOpen && 'active']}
+      disabled={!selectedSpace}
+      onclick={onOpenChat}
+      title="Ask about the whole space, in conversations kept on this machine"
+    >
+      <MessagesSquare size={13} /> Space chat
+    </button>
+
     <div class="sidebar-view-switch">
       <Segmented
         label="Show"
@@ -363,7 +381,14 @@
   </div>
 
   {#if view === 'tags'}
-    <TagsView spaceKey={selectedSpace} synced={!!manifest} {selectedPageId} {onSelectPage} onReview={onReviewTag} />
+    <TagsView
+      spaceKey={selectedSpace}
+      synced={!!manifest}
+      {selectedPageId}
+      {onSelectPage}
+      onReview={onReviewTag}
+      onAsk={onAskTag}
+    />
   {/if}
   <div
     hidden={view !== 'pages'}

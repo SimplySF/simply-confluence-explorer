@@ -18,6 +18,7 @@ import type { AiSessionView, SessionScope, SessionTurn } from '../api/types.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
+import { MAX_REVIEW_PAGES } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
@@ -56,7 +57,7 @@ type TurnContext = { context: string; withheld: string[]; note: string; matchedP
  * @param services What the routes share.
  */
 export function addSessionRoutes(router: Router, services: Services): Router {
-  const { ai, sessions, store, exclusions, dataDir } = services;
+  const { ai, sessions, store, exclusions, dataDir, index } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
   const found = (id: string): AiSessionView => {
     const session = sessions.get(id);
@@ -68,8 +69,24 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const { scope } = session;
     let ctx: TurnContext;
     if (scope.kind === 'space') {
-      const r = retrieveSpaceContext(scope.spaceKey, prompt, { store, exclusions, dataDir });
-      ctx = { context: r.contextMarkdown, withheld: r.withheld, note: '', matchedPages: r.selectedPages };
+      // The question before this one, and the pages the last two answers used, carry the conversation.
+      const earlier = session.turns;
+      const previous = earlier.filter((t) => t.role === 'user').at(-1)?.text;
+      const keep = earlier
+        .filter((t) => t.role === 'assistant')
+        .slice(-2)
+        .flatMap((t) => (t.matchedPages ?? []).map((p) => p.id));
+      const r = retrieveSpaceContext(
+        scope.spaceKey,
+        { question: prompt, previous, keep, pinned: session.pinned, pinnedOnly: session.pinnedOnly },
+        { store, exclusions, dataDir, index },
+      );
+      ctx = {
+        context: r.contextMarkdown,
+        withheld: r.withheld,
+        note: leftOutNote(r),
+        matchedPages: r.selectedPages,
+      };
     } else {
       const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
       if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
@@ -107,6 +124,37 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       })
       .add('GET', '/api/ai/sessions/:sessionId', ({ params }) => found(params.sessionId))
       .add('DELETE', '/api/ai/sessions/:sessionId', ({ params }) => ({ deleted: sessions.delete(params.sessionId) }))
+      // Renames a conversation, or pins pages to a Space chat. A pinned page must be in the
+      // conversation's space and allowed by its exclusion rules, as it is checked again on every turn.
+      .add('PATCH', '/api/ai/sessions/:sessionId', async ({ params, body }) => {
+        const session = found(params.sessionId);
+        const fields = fieldsOf(body);
+        const patch: { title?: string; pinned?: string[]; pinnedOnly?: boolean } = {};
+        if (fields.title !== undefined) {
+          const title = typeof fields.title === 'string' ? fields.title.trim() : '';
+          if (!title || title.length > 80) throw new HttpError(400, 'a title is 1 to 80 characters');
+          patch.title = title;
+        }
+        if (fields.pinned !== undefined || fields.pinnedOnly !== undefined) {
+          if (session.scope.kind !== 'space') throw new HttpError(400, 'only a Space chat can pin pages');
+          if (fields.pinnedOnly !== undefined) patch.pinnedOnly = fields.pinnedOnly === true;
+        }
+        if (fields.pinned !== undefined) {
+          const raw: unknown[] = Array.isArray(fields.pinned) ? fields.pinned : [];
+          const ids = raw.map((v) => (typeof v === 'number' ? String(v) : v));
+          if (!Array.isArray(fields.pinned) || ids.length > MAX_REVIEW_PAGES || !ids.every(isValidPageId))
+            throw new HttpError(400, `pinned is a list of up to ${MAX_REVIEW_PAGES} page ids`);
+          for (const id of ids) {
+            // eslint-disable-next-line no-await-in-loop -- each page is checked in turn, and the first refusal stops it
+            const gate = await gatePageForAi(id, session.scope.spaceKey, deps);
+            if (gate.page && gate.page.spaceKey.toUpperCase() !== session.scope.spaceKey)
+              throw new HttpError(400, `a pinned page is not in ${session.scope.spaceKey}`);
+            if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'A pinned page cannot be sent to an AI.');
+          }
+          patch.pinned = [...new Set(ids)];
+        }
+        return sessions.update(session.id, patch);
+      })
       // Files arrive as base64 inside JSON: they are small enough, and it needs no upload library.
       .add('POST', '/api/ai/sessions/:sessionId/files', async ({ params, body }) => {
         found(params.sessionId);

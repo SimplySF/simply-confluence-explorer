@@ -13,6 +13,7 @@
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import ReviewDialog from './components/ReviewDialog.svelte';
+  import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import SnippetDialog from './components/SnippetDialog.svelte';
@@ -77,6 +78,18 @@
     openRunId?: string;
     candidates?: Array<{ id: string; title: string; path?: string }>;
   } | null>(null);
+  // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
+  let view = $state<'page' | 'chat'>('page');
+  let chatSeed = $state<ChatSeed | null>(null);
+  const flatten = (nodes: PageTreeNode[]): Array<{ id: string; title: string }> =>
+    nodes.flatMap((n) => [{ id: n.id, title: n.title }, ...flatten(n.children)]);
+  const allPages = $derived(flatten(tree));
+
+  function openPage(id: string): void {
+    selectedPageId = id;
+    view = 'page';
+  }
+
   // What a review said a new page should cover, to start the new-page dialog with.
   let newPageNotes = $state('');
 
@@ -210,7 +223,7 @@
 
   function openJob(job: Job): void {
     chooseSpace(job.spaceKey);
-    if (job.rootPageId) selectedPageId = job.rootPageId;
+    if (job.rootPageId) openPage(job.rootPageId);
     if (job.kind !== 'review' || !job.source) return;
     if (job.source.kind === 'page') jobs.requested = job;
     else
@@ -307,10 +320,16 @@
         onSelectSpace={chooseSpace}
         {tree}
         {selectedPageId}
-        onSelectPage={(id) => (selectedPageId = id)}
+        onSelectPage={openPage}
         onJump={(target) => {
           chooseSpace(target.spaceKey);
-          if (target.pageId) selectedPageId = target.pageId;
+          if (target.pageId) openPage(target.pageId);
+        }}
+        chatOpen={view === 'chat'}
+        onOpenChat={() => (view = 'chat')}
+        onAskTag={(t) => {
+          chatSeed = { title: `#${t.tag}`, pinned: t.pages.slice(0, 50).map((p) => p.id) };
+          view = 'chat';
         }}
         loading={treeLoading}
         error={treeError}
@@ -337,25 +356,39 @@
       title="Drag to resize"
     ></div>
     <!-- A page read again after a write stays on screen, so an open workspace and its results survive. -->
-    <PageView
-      {activeSpace}
-      {page}
-      loading={pageLoading && page?.detail.id !== selectedPageId}
-      error={pageError}
-      onSelectPage={(id) => (selectedPageId = id)}
-      onPagesChanged={() => {
-        reloadTree();
-        pageRev++;
-      }}
-      onPagePurged={() => {
-        reloadTree();
-        selectedPageId = null;
-        page = null;
-      }}
-      onReviewSection={(rootPageId, title) =>
-        (reviewing = { spaceKey: activeSpace, source: { kind: 'section', rootPageId }, title })}
-      onWriteNewPage={writeNewPage}
-    />
+    <div class="main-slot" hidden={view !== 'page'}>
+      <PageView
+        {activeSpace}
+        {page}
+        loading={pageLoading && page?.detail.id !== selectedPageId}
+        error={pageError}
+        onSelectPage={(id) => (selectedPageId = id)}
+        onPagesChanged={() => {
+          reloadTree();
+          pageRev++;
+        }}
+        onPagePurged={() => {
+          reloadTree();
+          selectedPageId = null;
+          page = null;
+        }}
+        onReviewSection={(rootPageId, title) =>
+          (reviewing = { spaceKey: activeSpace, source: { kind: 'section', rootPageId }, title })}
+        onWriteNewPage={writeNewPage}
+      />
+    </div>
+    {#if activeSpace}
+      <div class="main-slot" hidden={view !== 'chat'}>
+        <SpaceChat
+          spaceKey={activeSpace}
+          pages={allPages}
+          seed={chatSeed}
+          onSeeded={() => (chatSeed = null)}
+          active={view === 'chat'}
+          onSelectPage={openPage}
+        />
+      </div>
+    {/if}
   </div>
 
   {#if dialog === 'settings'}
@@ -385,7 +418,7 @@
       onClose={() => (reviewing = null)}
       onOpenPage={(id) => {
         reviewing = null;
-        selectedPageId = id;
+        openPage(id);
       }}
       onPushed={() => {
         reloadTree();
