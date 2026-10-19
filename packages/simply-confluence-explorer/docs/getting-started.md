@@ -65,7 +65,8 @@ picker on the left.
 
 ## Your first few minutes
 
-1. **Pick a space** from the picker at the top of the sidebar. Its pages appear as a tree.
+1. **Pick a space** from the picker at the top of the sidebar. Its pages appear as a tree, folded
+   to its top-level pages; click the arrow beside a page, or **Expand all**, to open it.
 2. **Open a page.** The **Read** tab shows it rendered, as Markdown, or in Confluence's own storage
    format.
 3. **Sync the space** from the **Space** menu. The app downloads every page you are allowed to see,

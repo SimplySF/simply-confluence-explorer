@@ -17,6 +17,8 @@
   import type { ConfluenceSpace, PageTreeNode, SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
+  import { ancestorsOf, collapsedFor } from '../support/tree.js';
+  import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
 
   type Props = {
@@ -108,6 +110,28 @@
     };
     document.addEventListener('mousedown', outside);
     return () => document.removeEventListener('mousedown', outside);
+  });
+
+  // A space's tree starts collapsed when it first loads; a reload of the same space, after a sync,
+  // keeps what the person opened.
+  let foldedFor = '';
+  $effect(() => {
+    const t = tree;
+    // The tree names its own space, so the old space's tree, still shown while the new one loads, is not the one folded.
+    const space = (t[0]?.spaceKey ?? '').toUpperCase();
+    if (!space || foldedFor === space) return;
+    foldedFor = space;
+    collapsed = collapsedFor(
+      t,
+      untrack(() => selectedPageId),
+    );
+  });
+
+  // A page opened from elsewhere, such as the header or a finding, is shown by opening the way to it.
+  $effect(() => {
+    const above = ancestorsOf(tree, selectedPageId);
+    const shut = untrack(() => collapsed);
+    if (above.some((id) => shut.has(id))) collapsed = new Set([...shut].filter((id) => !above.includes(id)));
   });
 
   const rows = $derived(visibleRows(tree, collapsed, pageFilter));
