@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.1.0-beta.5](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.4...%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.5) (2026-10-19)
+
+**Note:** Version bump only for package @simplysf/simply-confluence-explorer
+
 # [0.1.0-beta.4](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.3...%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.4) (2026-10-17)
 
 **Note:** Version bump only for package @simplysf/simply-confluence-explorer
