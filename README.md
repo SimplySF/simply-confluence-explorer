@@ -32,9 +32,9 @@ are never sent to an AI, and everything that is sent passes a leak guard that st
 replaces personal data first.
 
 > **Status:** every feature in the [design docs](docs/design/README.md) is built. Every merge to
-> `main` publishes a beta to npm under the `beta` tag (`.github/workflows/release.yml`). There is no
-> stable release yet: one is published only after a second person has answered its review packet
-> (ADR-039). The AI features have so far run only against a stand-in for each provider, not with real
+> `main` publishes a beta to npm under the `beta` tag (`.github/workflows/release.yml`). A stable
+> release is published under `latest` once a second person approves the pull request that releases
+> it (ADR-044). The AI features have so far run only against a stand-in for each provider, not with real
 > provider keys.
 
 **Maintenance:** maintained by the team that uses it against its Confluence, for as long as it does.

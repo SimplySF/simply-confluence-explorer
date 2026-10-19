@@ -14,107 +14,125 @@
  * limitations under the License.
  */
 
-// The gate a stable release must pass: a second person has answered the review packet for every
-// load-bearing surface (ADR-001, ADR-039).
+// The gate a stable release must pass: a second person has approved the pull request that releases
+// it (ADR-044).
+
+/* eslint-disable camelcase -- the stand-ins carry GitHub's REST API field names, which are snake case. */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
-import { packetProblems, releaseProblems, surfacesOf } from '../../../scripts/release-gate.mjs';
+import { describe, expect, it } from 'vitest';
+import { approvalProblems, pullRequestBody, releaseProblems, surfacesOf } from '../../../scripts/release-gate.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const agents = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
-const template = fs.readFileSync(path.join(repoRoot, 'docs/review/TEMPLATE.md'), 'utf8');
-const surfaces = surfacesOf(agents);
 
-/** A packet that passes, with every surface answered. */
-function answered(): string {
-  return [
-    '# Review packet for 1.0.0',
-    '**Status:** answered',
-    '**Second reviewer:** a reviewer',
-    ...surfaces.flatMap((s) => [`### ${s}`, '', `**Answer:** read ${s}; it holds.`, '']),
-  ].join('\n');
-}
+const pull = {
+  number: 7,
+  merged_at: '2026-10-19T00:00:00Z',
+  user: { login: 'author' },
+  head: { ref: 'release/1.0.0', sha: 'last' },
+  base: { ref: 'main' },
+};
+const review = (login: string, state: string, commit_id = 'last') => ({ user: { login }, state, commit_id });
 
-describe('the surfaces the gate asks about', () => {
-  it('are the rows of the load-bearing surfaces table in AGENTS.md', () => {
+describe('the release pull request', () => {
+  it('lists every load-bearing surface in AGENTS.md for its reviewer', () => {
+    const surfaces = surfacesOf(agents);
     expect(surfaces).toContain('Writes to Confluence');
     expect(surfaces).toContain('The enforcement itself');
     expect(surfaces).not.toContain('surface');
-  });
-
-  it("are the template's headings, so a copied template asks every question the gate checks", () => {
-    const headings = [...template.matchAll(/^### (.+)$/gm)].map((m) => m[1]);
-    expect(headings).toEqual(surfaces);
+    const body = pullRequestBody('1.0.0', agents);
+    for (const surface of surfaces) expect(body).toContain(`| ${surface} `);
   });
 });
 
-describe('a review packet', () => {
-  it('allows the release when it is answered for every surface', () => {
-    expect(packetProblems(answered(), surfaces)).toEqual([]);
+describe('an approval', () => {
+  it('allows the release when someone other than the author approved the last commit', () => {
+    expect(approvalProblems('1.0.0', pull, [review('reviewer', 'APPROVED')])).toEqual([]);
   });
 
-  it('allows the release when the packet was checked out with Windows line endings', () => {
-    expect(packetProblems(answered().replace(/\n/g, '\r\n'), surfaces)).toEqual([]);
+  it('stops the release when nobody approved it', () => {
+    expect(approvalProblems('1.0.0', pull, [review('reviewer', 'COMMENTED')])).toEqual([
+      'pull request #7 has no approval of its last commit from anyone but its author',
+    ]);
   });
 
-  it('stops the release while its status is still draft', () => {
-    const packet = answered().replace('**Status:** answered', '**Status:** draft');
-    expect(packetProblems(packet, surfaces)).toEqual(['the packet\'s status is not "answered"']);
+  it('stops the release when the only approval is from its author', () => {
+    expect(approvalProblems('1.0.0', pull, [review('author', 'APPROVED')])).toHaveLength(1);
   });
 
-  it('stops the release when it names no second reviewer', () => {
-    const packet = answered().replace('**Second reviewer:** a reviewer', '**Second reviewer:** <name>');
-    expect(packetProblems(packet, surfaces)).toEqual(['the packet does not name its second reviewer']);
+  it('stops the release when the approval was for an earlier commit than the one merged', () => {
+    expect(approvalProblems('1.0.0', pull, [review('reviewer', 'APPROVED', 'earlier')])).toHaveLength(1);
   });
 
-  it('stops the release when one surface is left unanswered', () => {
-    const packet = answered().replace('**Answer:** read Tokens; it holds.', '**Answer:** _unanswered_');
-    expect(packetProblems(packet, surfaces)).toEqual(['"Tokens" has no answer']);
+  it('stops the release when the approval was dismissed, even though a comment came after it', () => {
+    const reviews = [review('reviewer', 'APPROVED'), review('reviewer', 'DISMISSED'), review('reviewer', 'COMMENTED')];
+    expect(approvalProblems('1.0.0', pull, reviews)).toHaveLength(1);
   });
 
-  it('stops the release when a surface is missing from the packet altogether', () => {
-    const packet = answered().replace('### Deletes files', '### Something else');
-    expect(packetProblems(packet, surfaces)).toEqual(['"Deletes files" has no answer']);
+  it('stops the release while another reviewer still requests changes', () => {
+    const reviews = [review('reviewer', 'APPROVED'), review('other', 'CHANGES_REQUESTED')];
+    expect(approvalProblems('1.0.0', pull, reviews)).toEqual(['other requested changes on pull request #7']);
   });
 
-  it('stops the release when it is the template, unfilled', () => {
-    expect(packetProblems(template, surfaces)).toHaveLength(2 + surfaces.length);
+  it('stops the release when the pull request is not from the branch for that version', () => {
+    expect(approvalProblems('1.0.1', { ...pull, head: { ...pull.head } }, [review('reviewer', 'APPROVED')])).toEqual([
+      'pull request #7 is not from release/1.0.1',
+    ]);
   });
 
-  it('stops the release when no surfaces could be read from AGENTS.md', () => {
-    expect(packetProblems(answered(), [])).toEqual(['no load-bearing surfaces were found in AGENTS.md']);
+  it('refuses a version that is not a plain stable version', () => {
+    expect(approvalProblems('1.0.0-beta.0', pull, [review('reviewer', 'APPROVED')])).toEqual([
+      '"1.0.0-beta.0" is not a stable version such as 1.0.0',
+    ]);
   });
 });
 
-describe('the gate for a version', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-gate-'));
-  fs.mkdirSync(path.join(root, 'docs/review'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'AGENTS.md'), agents);
-  afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
+describe('the gate for a commit on main', () => {
+  /** A stand-in for GitHub's REST API that answers from a fixed table of paths. */
+  function github(answers: Record<string, unknown>) {
+    return {
+      repo: 'owner/repo',
+      token: 'token',
+      fetch: async (url: string) => {
+        const answer = answers[url.replace('https://api.github.com/repos/owner/repo/', '')];
+        return new Response(JSON.stringify(answer ?? {}), { status: answer === undefined ? 404 : 200 });
+      },
+    };
+  }
 
-  it('stops a version that has no packet', () => {
-    expect(releaseProblems('1.0.0', root)).toEqual(['there is no review packet at docs/review/1.0.0.md']);
+  it('allows a commit that merged an approved release pull request', async () => {
+    const api = github({
+      'commits/abc/pulls': [pull],
+      'pulls/7/reviews?per_page=100&page=1': [review('reviewer', 'APPROVED')],
+    });
+    expect(await releaseProblems('1.0.0', 'abc', api)).toEqual([]);
   });
 
-  it('allows a version whose packet is answered', () => {
-    fs.writeFileSync(path.join(root, 'docs/review/1.1.0.md'), answered());
-    expect(releaseProblems('1.1.0', root)).toEqual([]);
+  it('stops a commit that did not come from a release pull request, such as a version edited by hand', async () => {
+    const api = github({ 'commits/abc/pulls': [{ ...pull, head: { ref: 'feature', sha: 'last' } }] });
+    expect(await releaseProblems('1.0.0', 'abc', api)).toEqual([
+      'abc is not the merge of a pull request from release/1.0.0 into main',
+    ]);
   });
 
-  it('refuses a version that is not a plain stable version, even when a packet answers it', () => {
-    fs.writeFileSync(path.join(root, 'docs/review/1.1.0-beta.0.md'), answered());
-    expect(releaseProblems('1.1.0-beta.0', root)).toEqual(['"1.1.0-beta.0" is not a stable version such as 1.0.0']);
+  it('stops a release pull request that was closed without being merged', async () => {
+    const api = github({ 'commits/abc/pulls': [{ ...pull, merged_at: null }] });
+    expect(await releaseProblems('1.0.0', 'abc', api)).toHaveLength(1);
   });
 
-  it('never reads a packet from outside docs/review, whatever the version names', () => {
-    fs.writeFileSync(path.join(root, 'docs/1.1.0.md'), answered());
-    expect(releaseProblems('../1.1.0', root)).toEqual(['"../1.1.0" is not a stable version such as 1.0.0']);
+  it('reads every page of reviews, so a later request for changes is not missed', async () => {
+    const approvals = Array.from({ length: 100 }, () => review('reviewer', 'APPROVED'));
+    const api = github({
+      'commits/abc/pulls': [pull],
+      'pulls/7/reviews?per_page=100&page=1': approvals,
+      'pulls/7/reviews?per_page=100&page=2': [review('other', 'CHANGES_REQUESTED')],
+    });
+    expect(await releaseProblems('1.0.0', 'abc', api)).toEqual(['other requested changes on pull request #7']);
   });
 
-  it('is unanswered for every version today, so no stable release can ship yet', () => {
-    expect(releaseProblems('0.1.0', repoRoot)).not.toEqual([]);
+  it('fails rather than allows when GitHub cannot be asked', async () => {
+    await expect(releaseProblems('1.0.0', 'abc', github({}))).rejects.toThrow('GitHub answered 404');
   });
 });
