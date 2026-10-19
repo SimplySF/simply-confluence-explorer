@@ -22,7 +22,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { approvalProblems, pullRequestBody, releaseProblems, surfacesOf } from '../../../scripts/release-gate.mjs';
+import {
+  REVIEW_GUIDE,
+  approvalProblems,
+  lineOf,
+  pullRequestBody,
+  releaseProblems,
+  surfacesOf,
+} from '../../../scripts/release-gate.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const agents = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
@@ -37,13 +44,46 @@ const pull = {
 const review = (login: string, state: string, commit_id = 'last') => ({ user: { login }, state, commit_id });
 
 describe('the release pull request', () => {
-  it('lists every load-bearing surface in AGENTS.md for its reviewer', () => {
-    const surfaces = surfacesOf(agents);
-    expect(surfaces).toContain('Writes to Confluence');
-    expect(surfaces).toContain('The enforcement itself');
-    expect(surfaces).not.toContain('surface');
-    const body = pullRequestBody('1.0.0', agents);
-    for (const surface of surfaces) expect(body).toContain(`| ${surface} `);
+  const surfaces = surfacesOf(agents);
+  const read = (file: string) => fs.readFileSync(path.join(repoRoot, file), 'utf8');
+  const source = { repoUrl: 'https://github.com/owner/repo', commit: 'abc123', read };
+  const body = pullRequestBody('1.0.0', source);
+
+  it('walks its reviewer through every load-bearing surface in AGENTS.md, in table order', () => {
+    expect(surfaces.map((s) => s.surface)).toContain('Writes to Confluence');
+    expect(surfaces.map((s) => s.surface)).not.toContain('surface');
+    expect(REVIEW_GUIDE.map((area) => area.surface)).toEqual(surfaces.map((s) => s.surface));
+  });
+
+  it('links every source file AGENTS.md names for a surface', () => {
+    for (const { surface, where } of surfaces) {
+      const linked = REVIEW_GUIDE.find((area) => area.surface === surface)?.items.map((item) => item.file) ?? [];
+      for (const [, file] of where.matchAll(/`([\w/]+\.ts)`/g)) {
+        expect(linked, surface).toContain(`packages/simply-confluence-explorer/src/${file}`);
+      }
+    }
+  });
+
+  it('links only files that exist, at declarations that exist', () => {
+    for (const item of REVIEW_GUIDE.flatMap((area) => area.items)) {
+      expect(fs.existsSync(path.join(repoRoot, item.file)), item.file).toBe(true);
+      if (item.symbol) expect(lineOf(read(item.file), item.symbol), `${item.file} ${item.symbol}`).toBeDefined();
+    }
+  });
+
+  it('pins every link to the commit being released, and opens it at the declaration to read', () => {
+    const links = [...body.matchAll(/\]\((https:[^)]+)\)/g)].map((m) => m[1]);
+    const files = links.filter((url) => url.includes('/blob/'));
+    expect(files).toHaveLength(REVIEW_GUIDE.flatMap((area) => area.items).length);
+    for (const url of files) expect(url).toMatch(/^https:\/\/github\.com\/owner\/repo\/blob\/abc123\//);
+    const line = lineOf(read('packages/simply-confluence-explorer/src/confluence/pagePush.ts'), 'writePage');
+    expect(body).toContain(`/src/confluence/pagePush.ts#L${line})`);
+  });
+
+  it('finds a declaration, and not a call or a mention of it', () => {
+    const text = 'call(within);\n// within\nexport function within(base) {}\n';
+    expect(lineOf(text, 'within')).toBe(3);
+    expect(lineOf(text, 'withinAll')).toBeUndefined();
   });
 });
 

@@ -114,7 +114,7 @@ jobs:
           git switch -c "release/$version"
           git commit -am "chore(release): $version"
           git push origin "release/$version"
-          node scripts/release-gate.mjs body "$version" > "$RUNNER_TEMP/body.md"
+          node scripts/release-gate.mjs body "$version" "$(git rev-parse HEAD)" > "$RUNNER_TEMP/body.md"
           gh pr create --base main --head "release/$version" --title "chore(release): $version" --body-file "$RUNNER_TEMP/body.md"
         env:
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
