@@ -34,6 +34,7 @@ import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector } from '../spaces/branchContext.js';
+import { tagsOf } from '../spaces/tags.js';
 import { errorMessage } from '../util/errors.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
@@ -366,7 +367,7 @@ export class BranchRunner {
         throw new HttpError(400, 'a page review reads only its own page');
       return;
     }
-    if (source.kind === 'section') {
+    if (source.kind !== 'tag') {
       // The synced copy when the section is on disk, otherwise Confluence's own tree.
       const flat = (nodes: PageTreeNode[]): PageTreeNode[] => nodes.flatMap((n) => [n, ...flat(n.children)]);
       const below = this.deps.store.readPage(spaceKey, source.rootPageId)
@@ -376,7 +377,12 @@ export class BranchRunner {
       if (pageIds.some((id) => !section.has(id))) throw new HttpError(400, 'a chosen page is not in the section');
       return;
     }
-    throw new HttpError(400, 'unknown review source');
+    const { tag } = source;
+    for (const id of pageIds) {
+      const page = this.deps.store.readPage(spaceKey, id);
+      if (!page || !tagsOf(page, this.deps.store.readMetadata(spaceKey, id)).includes(tag))
+        throw new HttpError(400, `a chosen page does not carry the tag ${tag}, as synced`);
+    }
   }
 
   /**

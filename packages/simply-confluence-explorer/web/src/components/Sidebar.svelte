@@ -14,12 +14,14 @@
     Search,
     X,
   } from '@lucide/svelte';
-  import type { ConfluenceSpace, PageTreeNode, SyncedSpace } from '../../../src/api/types.js';
+  import type { ConfluenceSpace, PageTreeNode, SyncedSpace, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
   import { ancestorsOf, collapsedFor } from '../support/tree.js';
   import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
+  import TagsView from './TagsView.svelte';
+  import Segmented from './ui/Segmented.svelte';
 
   type Props = {
     spaces: ConfluenceSpace[];
@@ -33,6 +35,8 @@
     error: string | null;
     /** The synced copy changed (a sync, a purge): reload the tree. */
     onTreeChanged: () => void;
+    /** Review the pages that carry a tag. */
+    onReviewTag: (tag: TaggedPages) => void;
   };
 
   let {
@@ -46,6 +50,7 @@
     loading,
     error,
     onTreeChanged,
+    onReviewTag,
   }: Props = $props();
 
   type Row = { node: PageTreeNode; depth: number; parentId: string | null; hasChildren: boolean; expanded: boolean };
@@ -85,6 +90,7 @@
   let spaceFilter = $state('');
   let pageFilter = $state('');
   let collapsed = $state(new Set<string>());
+  let view = $state<'pages' | 'tags'>('pages');
   let focusId = $state<string | null>(null);
   let saved = $state<SyncedSpace[]>([]);
   let switcher: HTMLDivElement;
@@ -319,7 +325,19 @@
       />
     {/if}
 
-    <div class="row">
+    <div class="sidebar-view-switch">
+      <Segmented
+        label="Show"
+        value={view}
+        onChange={(v) => (view = v)}
+        options={[
+          { value: 'pages', label: 'Pages' },
+          { value: 'tags', label: 'Tags', title: 'Pages grouped by their labels and AI tags' },
+        ]}
+      />
+    </div>
+
+    <div class="row" hidden={view !== 'pages'}>
       <div class="search-field">
         <Search size={13} />
         <input
@@ -344,7 +362,11 @@
     </div>
   </div>
 
+  {#if view === 'tags'}
+    <TagsView spaceKey={selectedSpace} synced={!!manifest} {selectedPageId} {onSelectPage} onReview={onReviewTag} />
+  {/if}
   <div
+    hidden={view !== 'pages'}
     class="tree-view-content"
     role="tree"
     aria-label="Pages in {selectedSpace}"

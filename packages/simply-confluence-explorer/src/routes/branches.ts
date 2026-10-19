@@ -34,7 +34,11 @@ function sourceFrom(value: unknown): ReviewSource {
     if (!isValidPageId(rootPageId)) throw new HttpError(400, 'a page or section review needs its rootPageId');
     return { kind: fields.kind, rootPageId };
   }
-  throw new HttpError(400, 'source.kind must be page or section');
+  if (fields.kind === 'tag' && typeof fields.tag === 'string') {
+    const tag = fields.tag.trim().toLowerCase();
+    if (tag && tag.length <= 100) return { kind: 'tag', tag };
+  }
+  throw new HttpError(400, 'source.kind must be page, section or tag, with its rootPageId or tag');
 }
 
 /** The chosen pages, from a request: between one and MAX_REVIEW_PAGES valid ids, each once. */
@@ -87,8 +91,13 @@ export function addBranchRoutes(router: Router, services: Services): Router {
       .add('GET', '/api/branches/runs', ({ query }) => {
         const kind = query.get('source');
         const rootPageId = query.get('pageId') ?? '';
+        const tag = query.get('tag')?.trim().toLowerCase();
         const source: ReviewSource | undefined =
-          (kind === 'page' || kind === 'section') && isValidPageId(rootPageId) ? { kind, rootPageId } : undefined;
+          (kind === 'page' || kind === 'section') && isValidPageId(rootPageId)
+            ? { kind, rootPageId }
+            : kind === 'tag' && tag
+              ? { kind, tag }
+              : undefined;
         const runs = branches.store.list(query.get('spaceKey')?.toUpperCase(), source);
         return {
           runs: runs.map(({ items, findings, reportText, ...run }) => ({

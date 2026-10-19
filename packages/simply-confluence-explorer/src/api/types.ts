@@ -387,6 +387,12 @@ export type BranchFinding = {
   suggestion?: string;
 };
 
+/** A tag and the pages that carry it, each with where it sits in the space. */
+export type TaggedPages = {
+  tag: string;
+  pages: Array<{ id: string; title: string; path: string; summary?: string }>;
+};
+
 /** A page a review can offer to read, with how far below the section's page it sits. */
 export type SectionPage = { id: string; title: string; depth: number };
 

@@ -41,6 +41,7 @@ import type {
   SpaceTocNode,
   SyncedSpace,
   SyncProgress,
+  TaggedPages,
 } from '../../../src/api/types.js';
 
 const key = encodeURIComponent;
@@ -131,6 +132,7 @@ export const api = {
   askSpace: (spaceKey: string, prompt: string) =>
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
+  tags: (spaceKey: string) => call<{ tags: TaggedPages[] }>(`/space-cache/${key(spaceKey)}/tags`).then((r) => r.tags),
   section: (spaceKey: string, pageId: string) =>
     call<{ pages: SectionPage[] }>(`/space-cache/${key(spaceKey)}/pages/${key(pageId)}/section`).then((r) => r.pages),
 };

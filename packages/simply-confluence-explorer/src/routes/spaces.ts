@@ -15,7 +15,8 @@
  */
 
 import archiver from 'archiver';
-import type { PurgeResult, SectionPage, SpaceTocNode, SyncProgress } from '../api/types.js';
+import type { PurgeResult, SectionPage, SpaceTocNode, SyncProgress, TaggedPages } from '../api/types.js';
+import { tagIndex } from '../spaces/tags.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
@@ -72,6 +73,11 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
           if (page && !exclusions.isPageExcluded(page, key)) pages.push({ id: page.id, title: page.title, depth: d });
         }
         return { pages };
+      })
+      .add('GET', '/api/space-cache/:spaceKey/tags', ({ params }): { tags: TaggedPages[] } => {
+        if (!store.isSynced(params.spaceKey))
+          throw new HttpError(404, `${params.spaceKey} has not been synced, so its tags are not known`);
+        return { tags: tagIndex(store, params.spaceKey.toUpperCase()) };
       })
       .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', ({ params }) => {
         const descendants = store.descendants(params.spaceKey, params.pageId);

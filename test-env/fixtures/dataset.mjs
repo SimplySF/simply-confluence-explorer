@@ -327,5 +327,7 @@ export const expectations = {
   PEOPLE: {
     excluded: ['Salary Bands', 'Internal', 'Candidate Feedback'],
     visible: ['Policies', 'Remote Work Policy', 'Interviews', 'Interview Guide', 'Benefits Overview'],
+    // Salary Bands carries "compensation" but is excluded, so no tag lists it.
+    tags: { policy: ['Remote Work Policy', 'Travel Policy'] },
   },
 };

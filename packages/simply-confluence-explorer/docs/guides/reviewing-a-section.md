@@ -1,6 +1,6 @@
 ---
 title: Reviewing a section
-description: Review a page and everything under it in one read, choose which suggestions to apply, and decide on each page's edit before anything is written.
+description: Review a page and everything under it, or every page with a tag, in one read, choose which suggestions to apply, and decide on each page's edit before anything is written.
 sidebar:
   order: 7
 ---
@@ -62,6 +62,20 @@ When you have decided:
 The same rules apply as for a single page: a page whose images, macros or links Markdown cannot carry
 is refused, by the dry run and by the push, with the reason shown next to it.
 
+## Review the pages that carry a tag
+
+Pages about one subject often sit in different parts of a space: a DevOps section near the top, and
+a DevOps page inside a project. **Tags** at the top of the sidebar lists every tag in the synced
+space with how many pages carry it. A page's tags are its Confluence labels together with the topic
+tags of its AI summary (**Space → Generate AI summaries**).
+
+![The pages tagged runbook, each with where it sits in the space](../images/tags-view.webp)
+
+Choose a tag to see its pages, each with where it sits in the space and its summary; click one to
+open it. **Review** opens the same review as a section, with the tagged pages listed and ticked:
+untick any you want to leave out, and the suggestions, edits and push work exactly as above. The
+header shows a running tag review as **Review: #tag**.
+
 ## What is left out
 
 - **Excluded pages** are never listed, read or edited, and never named.
@@ -76,8 +90,8 @@ on the same section are listed when you open it again.
 ## How this is checked
 
 `test/branchRuns.test.ts` checks that only the ticked pages are read and excluded ones never are,
-that a page outside the section is refused, that an edit carries only the chosen suggestions, that
+that a page outside the section or without the tag is refused, that an edit carries only the chosen suggestions, that
 only accepted pages are written, that a page changed by someone else is refused while the others are
 written, that a dry run writes nothing, and that a stopped review keeps nothing.
 `test/e2e/branches.e2e.ts` reviews a section and pushes its edits against a real Confluence Data
-Center.
+Center. `test/localCopy.test.ts` checks that a tag never lists an excluded page.

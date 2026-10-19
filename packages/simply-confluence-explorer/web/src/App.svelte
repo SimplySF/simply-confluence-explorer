@@ -70,7 +70,13 @@
   let resizing = $state(false);
   let dialog = $state<'settings' | 'snippet' | 'new-page' | null>(null);
   // The review dialog, for a section or a tag; a page's own review is on its Improve tab.
-  let reviewing = $state<{ spaceKey: string; source: ReviewSource; title: string; openRunId?: string } | null>(null);
+  let reviewing = $state<{
+    spaceKey: string;
+    source: ReviewSource;
+    title: string;
+    openRunId?: string;
+    candidates?: Array<{ id: string; title: string; path?: string }>;
+  } | null>(null);
   // What a review said a new page should cover, to start the new-page dialog with.
   let newPageNotes = $state('');
 
@@ -309,6 +315,13 @@
         loading={treeLoading}
         error={treeError}
         onTreeChanged={reloadTree}
+        onReviewTag={(t) =>
+          (reviewing = {
+            spaceKey: activeSpace,
+            source: { kind: 'tag', tag: t.tag },
+            title: `#${t.tag}`,
+            candidates: t.pages,
+          })}
       />
     </div>
     <!-- A drag handle for the mouse; the sidebar's width is not something the keyboard needs to set. -->

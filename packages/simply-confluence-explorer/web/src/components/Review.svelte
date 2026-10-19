@@ -58,7 +58,13 @@
     if (given) set(given);
     else if (src.kind === 'section')
       api.section(spaceKey, src.rootPageId).then(set, (e: unknown) => (error = messageOf(e)));
-    else if (src.kind === 'page') set([{ id: src.rootPageId, title: '' }]);
+    else if (src.kind === 'tag') {
+      const { tag } = src;
+      api.tags(spaceKey).then(
+        (all) => set(all.find((t) => t.tag === tag)?.pages ?? []),
+        (e: unknown) => (error = messageOf(e)),
+      );
+    } else set([{ id: src.rootPageId, title: '' }]);
   });
 
   $effect(() => {

@@ -24,7 +24,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
-import type { PageResponse, PageTreeNode, SpaceTocNode, SyncProgress, SyncedSpace } from '../src/api/types.js';
+import type {
+  PageResponse,
+  PageTreeNode,
+  SpaceTocNode,
+  SyncProgress,
+  SyncedSpace,
+  TaggedPages,
+} from '../src/api/types.js';
 import { ConfluenceClient } from '../src/confluence/client.js';
 import { createServer } from '../src/server.js';
 import { FAKE_TOKEN, startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -159,6 +166,28 @@ describe('syncing a space', () => {
       const spaces = (await call<{ spaces: SyncedSpace[] }>(app, '/space-cache/cached')).body.spaces;
       expect(spaces.map((s) => s.spaceKey)).toEqual(['PEOPLE']);
       expect(spaces[0].hasTOC).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe('the tags of a synced space', () => {
+  it('list each page by its labels, and never an excluded page', async () => {
+    const app = await startApp();
+    try {
+      await sync(app, 'PEOPLE');
+      const { body } = await call<{ tags: TaggedPages[] }>(app, '/space-cache/PEOPLE/tags');
+      const byTag = Object.fromEntries(body.tags.map((t) => [t.tag, t.pages.map((p) => p.title)]));
+      expect(byTag).toEqual(expectations.PEOPLE.tags);
+      expect(body.tags.find((t) => t.tag === 'policy')?.pages[0].path).toBe('People and HR Home › Policies');
+      expect((await call(app, '/space-cache/ENG/tags')).status).toBe(404);
+      // A page excluded after it was synced, with its copy kept, drops out of its tag at once.
+      await call(app, '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
+      const after = await call<{ tags: TaggedPages[] }>(app, '/space-cache/PEOPLE/tags');
+      expect(after.body.tags.find((t) => t.tag === 'policy')?.pages.map((p) => p.title)).toEqual([
+        'Remote Work Policy',
+      ]);
     } finally {
       await app.close();
     }

@@ -23,6 +23,8 @@ export type SpaceExpectations = {
   excluded: string[];
   visible: string[];
   knownIssueVisible?: string[];
+  /** Each tag of the synced space, with the titles of the pages that carry it. */
+  tags?: Record<string, string[]>;
   guard?: { blocked: Record<string, string>; redacted: Record<string, string[]> };
 };
 

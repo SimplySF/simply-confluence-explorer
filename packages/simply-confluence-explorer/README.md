@@ -182,6 +182,7 @@ readable only by your user account where the operating system allows it (`test/u
 | `POST /api/space-cache/sync`                              | Starts syncing `{ spaceKey, rootPageId? }` to disk; poll `GET /api/space-cache/sync/status/:jobId`                                              |
 | `GET /api/space-cache/:spaceKey/toc`                      | The synced space's table of contents                                                                                                            |
 | `GET /api/space-cache/:spaceKey/pages/:pageId/section`    | The pages a section review can offer, with their depth, without excluded pages                                                                  |
+| `GET /api/space-cache/:spaceKey/tags`                     | Every tag in the synced space, from labels and AI summaries, with its pages; excluded pages are left out                                        |
 | `GET /api/space-cache/:spaceKey/zip`                      | The synced space as a ZIP of Markdown and attachments, without excluded pages                                                                   |
 | `POST /api/space-cache/:spaceKey/pages/:pageId/purge`     | Removes a synced page, optionally with what is below it and a rule to keep it away                                                              |
 | `POST /api/space-cache/:spaceKey/cache/purge`             | Removes synced copies that are excluded, or whose Markdown was deleted from the folder                                                          |
@@ -194,7 +195,7 @@ readable only by your user account where the operating system allows it (`test/u
 | `POST /api/space-cache/:spaceKey/metadata/generate`       | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                                      |
 | `POST /api/pages/:pageId/dry-run`                         | Converts a change as a push would, and reports anything Confluence would refuse, without writing                                                |
 | `POST /api/pages/:pageId/push`                            | Writes `{ markdown, baseVersion }`; refused with a `409` if the page has changed since `baseVersion`                                            |
-| `POST /api/branches/runs`                                 | Starts a review of `{ spaceKey, source, pageIds, aspects?, instructions? }`: up to 50 pages chosen from one page or a section                   |
+| `POST /api/branches/runs`                                 | Starts a review of `{ spaceKey, source, pageIds, aspects?, instructions? }`: up to 50 pages chosen from one page, a section or a tag            |
 | `POST /api/branches/runs/:runId/apply`                    | Stages an edit of each page that the chosen suggestions `{ findings: [indexes] }` name, carrying only those suggestions                         |
 | `GET /api/branches/runs`, `GET /api/branches/runs/:runId` | Reviews and staged edits, and one run with its suggestions or edits                                                                             |
 | `PATCH /api/branches/runs/:runId/items/:pageId`           | Accepts (optionally with edits), rejects or resets one page's staged edit                                                                       |

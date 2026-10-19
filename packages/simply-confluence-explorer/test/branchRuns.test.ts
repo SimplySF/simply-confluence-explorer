@@ -364,3 +364,50 @@ describe('earlier runs', () => {
     });
   });
 });
+
+describe('reviewing the pages that carry a tag', () => {
+  const syncPeople = async (app: TestApp): Promise<void> => {
+    const { body } = await app.call<{ jobId: string }>('POST', '/space-cache/sync', { spaceKey: 'PEOPLE' });
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+      const { body: p } = await app.call<{ status: string }>('GET', `/space-cache/sync/status/${body.jobId}`);
+      if (p.status !== 'running' && p.status !== 'pending') return;
+      // eslint-disable-next-line no-await-in-loop -- as above
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+  const tagged = (pageIds: string[]): Record<string, unknown> => ({
+    spaceKey: 'PEOPLE',
+    source: { kind: 'tag', tag: 'Policy' },
+    pageIds,
+  });
+
+  it('reads the tagged pages wherever they sit, and is listed under its tag', async () => {
+    await withApp(answer, async (app) => {
+      await syncPeople(app);
+      const remote = fake.page('PEOPLE', 'Remote Work Policy').id;
+      const travel = fake.page('PEOPLE', 'Travel Policy').id;
+      const run = await review(app, tagged([remote, travel]));
+      expect(run.status).toBe('ready');
+      expect(run.rootTitle).toBe('#policy');
+      expect(run.pageIds).toEqual({ 'Remote Work Policy': remote, 'Travel Policy': travel });
+      const listed = await app.call<{ runs: unknown[] }>('GET', '/branches/runs?spaceKey=PEOPLE&source=tag&tag=policy');
+      expect(listed.body.runs).toHaveLength(1);
+    });
+  });
+
+  it('refuses a page without the tag, and an excluded page that once carried another, sending nothing', async () => {
+    await withApp(answer, async (app) => {
+      await syncPeople(app);
+      const benefits = fake.page('PEOPLE', 'Benefits Overview').id;
+      expect((await app.call('POST', '/branches/runs', tagged([benefits]))).status).toBe(400);
+      const salary = fake.page('PEOPLE', 'Salary Bands').id;
+      const compensation = { ...tagged([salary]), source: { kind: 'tag', tag: 'compensation' } };
+      expect((await app.call('POST', '/branches/runs', compensation)).status).toBe(400);
+      expect(
+        (await app.call('POST', '/branches/runs', { ...tagged([benefits]), source: { kind: 'tag' } })).status,
+      ).toBe(400);
+      expect(app.sent).toHaveLength(0);
+    });
+  });
+});
