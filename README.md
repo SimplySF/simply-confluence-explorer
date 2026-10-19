@@ -19,13 +19,13 @@ It covers:
   storage format, and a jump box that opens a page from its address.
 - **A copy on disk:** a whole space synced as Markdown files with their attachments, a table of
   contents, a ZIP export, and AI summaries of every page.
-- **Asking an AI:** questions about a page, a page and everything under it, or a whole space, with
-  files of your own added to the conversation. Claude, ChatGPT and Gemini are supported through their
-  APIs, and Gemini also through its command-line tool.
-- **Improving pages:** a proposed revision you review line by line, check with a dry run, and push,
-  for one page or for every page in a section through a review queue.
-- **Writing new pages:** a check for existing pages that already cover the topic, then a draft written
-  with an AI and created under its parent.
+- **Chat:** conversations about a page, a directory, pages chosen by tag, or a whole space, where the
+  AI chooses which pages to read from their summaries. Claude, ChatGPT and Gemini are supported through
+  their APIs, and Gemini also through its command-line tool.
+- **Changing pages:** suggestions from a chat that you tick, edits you review line by line, a dry
+  run, and a push that never overwrites someone else's change.
+- **Writing new pages:** a check for existing pages that already cover the topic, then a page or a
+  series written with an AI that can follow an example page and read a GitLab repository.
 
 Your Confluence token and AI keys stay on your computer and never reach the browser. Pages you exclude
 are never sent to an AI, and everything that is sent passes a leak guard that stops secrets and
@@ -73,8 +73,7 @@ getting-started guide and a guide to each part of the app:
 - [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/)
 - [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)
 - [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)
-- [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)
-- [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/)
+- [Changing pages from a chat](https://simplysf.github.io/simply-confluence-explorer/guides/changing-pages/)
 - [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)
 - [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)
 - [Trying it locally](https://simplysf.github.io/simply-confluence-explorer/guides/trying-it-locally/): the app

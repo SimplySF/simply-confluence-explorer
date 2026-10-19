@@ -1,6 +1,6 @@
 ---
 title: Asking an AI
-description: Choose an AI provider, then ask about a page, a page and everything under it, or a whole synced space, with files of your own added to the conversation.
+description: Choose an AI provider, then chat about a page, a directory, pages you choose by tag, or a whole synced space, with files of your own added to the conversation.
 sidebar:
   order: 4
 ---
@@ -41,79 +41,76 @@ You can also set a key with the environment variables `ANTHROPIC_API_KEY`, `OPEN
 `GEMINI_API_KEY`, and the provider with `AI_PROVIDER`. A key saved in Settings wins over the
 environment.
 
-## Ask about a page
+## Chat about a page or a directory
 
-Open a page and choose the **Ask AI** tab.
+Open a page and choose the **Chat** tab.
 
-![An AI summary of a page, with the leak guard note above the answer](../images/ask-ai.webp)
+![A chat about a page and the pages under it, with the leak guard note above the answer](../images/ask-ai.webp)
 
-1. Choose what to ask about:
+1. Choose what the chat reads:
    - **With sub-pages**: the page and every page under it, if the space is synced. This is chosen
-     whenever the page has sub-pages.
+     whenever the page has sub-pages, so a directory is read as a whole.
    - **This page**: the page you are looking at, on its own.
-
-   A question about the whole space is asked in **Space chat** instead (see below).
-
 2. Click one of the quick questions (**Summary**, **Action items & decisions**, **Technical
    review**, **Runbook checklist**, **Explain simply**), or type your own and click **Send**.
 
-The answer appears under your question, with the provider's name and the time, and a line saying
-what the leak guard did. **Markdown** shows the answer's source text, and **Copy** copies it.
+The answer appears under your question, with the provider's name and the time, a line saying what
+the leak guard did, and **Read N pages**, which lists the pages it read. **Markdown** shows the
+answer's source text, and **Copy** copies it. To change pages from a chat, see
+[Changing pages from a chat](/guides/changing-pages/).
 
 While the AI is answering, **Send** becomes **Stop**. Stopping puts your question back in the box so
 you can correct it and send it again; nothing of the stopped question is kept in the conversation.
 The provider may already have received it, so the app's AI log records it as stopped.
 
-The app sends its own copy of the page, the one it checked against the exclusion rules, never text
-from the browser. A page excluded from AI shows a notice instead of the question box; you can still
-ask about the whole space in Space chat, which leaves the excluded page out.
+The app sends its own copy of each page, the one it checked against the exclusion rules, never text
+from the browser. A page excluded from AI shows a notice instead of the question box.
 
 ### Conversations
 
 A conversation keeps going until you click **New conversation**: each question is sent with the
 earlier ones, so you can ask follow-ups. Conversations are saved on your computer, and when you come
 back to a page the latest conversation for it reopens. Earlier turns are sent up to a limit, newest
-first, so a very long conversation gradually forgets its start.
-
-The page is read again for every question, so if you change the exclusion rules partway through a
-conversation, the next question already follows them.
+first, so a very long conversation gradually forgets its start. Every page is read and checked again
+for every question, so a change to the exclusion rules applies to the next question.
 
 ### Add a file
 
 The paperclip next to the question box adds a file to the conversation, for example a design
-document or a log to compare with the page. The app accepts:
-
-- PDF files with text in them (a scanned PDF has no text, and is refused);
-- HTML, Markdown and plain text;
-- CSV, TSV, JSON, YAML, XML and log files.
-
-Each file can be up to 10 MB, and very long text is cut to fit. The leak guard checks files like
+document or a log to compare with the page: PDF files with text in them, HTML, Markdown and plain
+text, and CSV, TSV, JSON, YAML, XML and log files, up to 10 MB each. The leak guard checks files like
 everything else, but exclusion rules do not apply to them, because they are not Confluence pages.
 
-## Ask about a whole space: Space chat
+## Chat about the whole space, or about pages you choose: Space chat
 
-**Space chat**, at the top of the sidebar, is for questions about the whole space rather than one
-page. It answers from the synced copy, so sync the space first. Its conversations are listed on the
-left, newest first, and kept on your computer, so you can come back to any of them. **New chat**
-starts another; the pencil renames one, and the bin deletes it after you confirm.
+**Space chat**, at the top of the sidebar, is for the space as a whole. It answers from the synced
+copy, so sync the space first. Its conversations are listed on the left, newest first, and kept on
+your computer. **New chat** starts another; the pencil renames one, and the bin deletes it after you
+confirm.
 
-![Space chat, with a conversation, the pages each answer used, and a pinned page](../images/space-chat.webp)
+![Space chat answering from the whole space, with the pages it read and why](../images/space-chat.webp)
 
-For each question the app searches the space's titles, tags, AI summaries and page text, and sends
-the pages that match best, together with the pages the last answers used and an outline of the
-space, up to the size limit. It also searches on your previous question, so a follow-up such as
-"and how do we roll that back?" still finds the right pages. Each answer lists the pages it used;
-click one to open it.
+**Reading** above the conversation says what the chat reads; click it to change it.
 
-To make sure a page is always read, pin it: type its title in **Pin a page to every answer**. With
-**Only these pages** ticked, answers come from the pinned pages alone. **Ask** on a tag (see
-[Reviewing a section](/guides/reviewing-a-section/)) starts a chat with the tag's pages pinned this
-way. Excluded pages can never be pinned or found, and a page holding a secret is left out and named.
+- **Whole space**: for each question, the app searches the space's titles, tags, summaries and text
+  for up to 25 likely pages, and asks the AI which of them to read, from their summaries alone. It
+  then reads those pages in full, with the pages earlier answers read, up to the size limit. **Read N
+  pages** on each answer lists them, with why each was chosen. This is the way in when you do not
+  know the space, such as an unfamiliar system during an incident.
+- **Chosen pages**: tick one or more tags to read their pages, or add pages by name, and remove any
+  you do not want. The chat then reads exactly those pages, up to 50.
 
-The better your pages' summaries, the better the search works: **Space → Generate AI summaries**
-gives every page one.
+![The pages tagged runbook in the sidebar's Tags view, each with where it sits](../images/tags-view.webp)
+
+**Chat about** on a tag in the sidebar's **Tags** view opens a chat on that tag's pages. A page's tags
+are its Confluence labels together with the topic tags of its AI summary. Excluded pages are never
+listed, found or read, and a page holding a secret is left out and named.
 
 ## Summaries and topics
+
+Every chat works better when its pages have AI summaries: they decide which pages a whole-space
+question reads, and they give pages their topic tags. A chat says how many of its pages have one and
+offers **Generate the missing summaries**, which runs in the background and shows in the header.
 
 The **Details** tab of a page has **Generate summary**, which asks the AI for a short summary, topic
 tags, the kind of document (runbook, policy, guide and so on), and the systems it mentions. On a
@@ -125,6 +122,6 @@ that has no summary yet.
 
 `test/ai.test.ts` checks how each provider is called, that a key is stored owner-only and never shown,
 and that a missing key or model is reported before anything is sent. `test/sessions.test.ts` checks
-conversations, the history limit and file uploads. `test/aiRoutes.test.ts` checks that excluded pages
+conversations, the history limit, file uploads, chosen pages and how a whole-space question chooses what to read. `test/aiRoutes.test.ts` checks that excluded pages
 are refused and that summaries reach the table of contents. `test/e2e/ai.e2e.ts` asks questions
 against a real Confluence Data Center, with a stand-in for the AI provider.

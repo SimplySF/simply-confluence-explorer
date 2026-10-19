@@ -78,7 +78,7 @@ rather than dropping them:
 | A task list                         | `- [x]` and `- [ ]`                           |
 
 This is also why some pages cannot be pushed back from Markdown; see
-[Improving a page](/guides/improving-pages/).
+[Changing pages from a chat](/guides/changing-pages/).
 
 ## The table of contents
 

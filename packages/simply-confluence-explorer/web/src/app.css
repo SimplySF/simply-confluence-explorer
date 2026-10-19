@@ -2397,6 +2397,7 @@ div.disclosure-body {
 
 /* How many of a chat's pages have an AI summary */
 .summary-coverage {
+  margin: 0.15rem 0 0.35rem;
   display: flex;
   align-items: center;
   gap: 0.4rem;

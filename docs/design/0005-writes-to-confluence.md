@@ -24,13 +24,13 @@ The app has three ways to write to Confluence, and all of them go through a sing
 
 ## Behavior
 
-| route                             | what it does                                                                                                            |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/branches/runs`         | Reviews a page, a section or a tag's pages; a person then chooses which suggestions to apply (ADR-046).                 |
-| `POST /api/pages/:pageId/dry-run` | Converts the proposal to Confluence's format without writing it, and reports anything the converter rejects.            |
-| `POST /api/pages/:pageId/push`    | Writes the proposal to Confluence, stating which version of the page it was made from.                                  |
-| `/api/branches/runs/...`          | Stages an edit per page from the chosen suggestions; accepts, edits or rejects each page; and pushes the accepted ones. |
-| `/api/drafts/...`                 | Creates a new page: runs the redundancy check, supports writing the page with the AI, and creates it.                   |
+| route                             | what it does                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `/api/ai/sessions/:id/turns/...`  | Stages an edit per page from the suggestions a person ticked in a chat's answer (ADR-049).                   |
+| `POST /api/pages/:pageId/dry-run` | Converts the proposal to Confluence's format without writing it, and reports anything the converter rejects. |
+| `POST /api/pages/:pageId/push`    | Writes the proposal to Confluence, stating which version of the page it was made from.                       |
+| `/api/branches/runs/...`          | Reads a queue of staged edits; accepts, edits or rejects each page; and pushes the accepted ones.            |
+| `/api/drafts/...`                 | Creates a new page: runs the redundancy check, supports writing the page with the AI, and creates it.        |
 
 - **An edit is made from the server's own copy of the page**, after the exclusion check, as a
   question is (ADR-037), and it keeps the version it was made from, which the push then names.

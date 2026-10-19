@@ -1,6 +1,6 @@
 ---
 title: Writing a new page
-description: Check whether a page already covers your topic before writing, then draft the new page with an AI and create it under its parent.
+description: Check whether a page already covers your topic, then draft the new page, or a series of pages, with an AI that can follow an example page and read a GitLab repository, and create it under its parent.
 sidebar:
   order: 8
 ---
@@ -45,13 +45,33 @@ ask the AI for help, such as "Draft an outline from my notes", and add files wit
 they help. While it answers you can **Stop** it, and your question comes back to edit. When the AI proposes new text for the whole page, it appears as a set of changes with
 **Accept** and **Dismiss**; it is never applied without you.
 
+**What the co-writer reads**, above the conversation, gives it more to work from:
+
+- **Follow the structure of an existing page**, such as another service's page, or **paste a
+  structure** of headings to follow. Click **Use these**.
+- **Read a GitLab repository**: paste the link to a repository on your company's GitLab and click
+  **Add**. The app reads its file list, README, docs, API description files and manifest, and adds
+  them to the conversation as a file. Set GitLab up first under **Settings → GitLab** (see
+  [Connecting to Confluence](/guides/connecting/)).
+
+### A series of pages
+
+When the material needs more than one page, such as a service's overview, its API and its runbook,
+the co-writer can propose a series. **Accept the series** turns the draft into those pages, shown as
+tabs: the overview first, then the pages that go under it. Edit each one, and check the similar pages
+the app found for each title.
+
+![A series of three pages, with the API page open and the similar pages found for it](../images/new-page-series.webp)
+
 Unfinished drafts are kept on your computer. **New page** offers to continue a draft you started in the
 same space.
 
 ## Create it
 
-**Dry run** checks that Confluence would accept the page, without creating it. **Create page** asks
-you to confirm, then creates the page under its parent, once. Afterwards you can open it in the app or
+**Dry run** checks that Confluence would accept the page, or every page of a series, without
+creating anything. **Create** asks you to confirm, then creates the page under its parent, once; a
+series is created overview first, then each page under it, in order. If Confluence refuses one, the
+app names the pages already created, and the rest stay in the draft to fix and create again. Afterwards you can open it in the app or
 in Confluence. If the space is synced, the new page is added to your copy straight away.
 
 Confluence refuses a title that is already used in the space; the app tells you so, and you can change
@@ -61,5 +81,7 @@ the title and try again.
 
 `test/drafts.test.ts` checks that the existing page is found, that excluded pages are never offered,
 that nothing is written or created before the check is answered, that an AI proposal is kept apart
-until accepted, that a page is created only once, and that a title already in use is refused.
+until accepted, that a page is created only once, that a title already in use is refused, that an
+excluded page cannot be followed, that a repository passes the leak guard, and that a series is created
+in order. `test/gitlab.test.ts` checks that only the configured GitLab is read.
 `test/e2e/drafts.e2e.ts` creates a page in a real Confluence Data Center.

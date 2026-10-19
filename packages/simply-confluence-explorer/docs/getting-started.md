@@ -71,7 +71,7 @@ picker on the left.
    format.
 3. **Sync the space** from the **Space** menu. The app downloads every page you are allowed to see,
    so the tree, searches and AI questions work from your own disk.
-4. **Set up an AI** under **Settings → AI provider**, then open the **Ask AI** tab on any page and
+4. **Set up an AI** under **Settings → AI provider**, then open the **Chat** tab on any page and
    click **Summary**.
 
 ## Where to go next
@@ -83,8 +83,8 @@ picker on the left.
 - [Asking an AI](/guides/asking-ai/): choosing a provider, asking about a page or a whole space, and
   adding files.
 - [What leaves your computer](/guides/data-safety/): excluded pages and the leak guard.
-- [Improving a page](/guides/improving-pages/): proposals, dry runs, and pushing to Confluence.
-- [Reviewing a section](/guides/reviewing-a-section/): working on a page and everything under it at once.
+- [Changing pages from a chat](/guides/changing-pages/): suggestions, the queue of edits, and pushing
+  to Confluence.
 - [Writing a new page](/guides/new-pages/): checking for existing pages first, then writing with an
   AI.
 - [Troubleshooting](/guides/troubleshooting/): the doctor, and the messages you are most likely to

@@ -35,23 +35,23 @@ frontend is compiled, so no server code can end up in the bundle that ships to t
 The table below lists what a person can do in the app. Where a feature goes beyond browsing, it has
 its own design doc, named in the last column.
 
-| job                     | what the person does in the app                                                                                                                                                                 |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Connect to Confluence   | Enter the Confluence URL and a personal access token in Settings. The token is kept on the server and never sent back to the browser (ADR-019, 0003).                                           |
-| Browse                  | Switch between spaces, move through the page tree, or jump straight to a page by its URL or id. A page can be read as rendered content, as Markdown, or as Confluence's storage format.         |
-| Keep a local copy       | Sync a space to disk. Once synced, the app can generate AI summaries and a table of contents for the space, and download the whole space as a ZIP.                                              |
-| Keep pages away from AI | List pages in a space's `.confluenceignore` file. An excluded page is never sent to a model (ADR-018).                                                                                          |
-| Ask questions           | Ask an AI about one page, about a page together with its sub-pages, or about a whole space, in a conversation that remembers earlier turns (0004).                                              |
-| Improve a page          | Review the page, choose which suggestions to apply, see the edit as a diff against the current page, check it with a dry run, and publish it only after confirming (0005, 0007).                |
-| Review a section        | A section is a page plus everything under it. The app reviews its pages together, and edits for the suggestions a person chooses go to a queue, where each page is accepted or rejected (0007). |
-| Write a new page        | Draft a new page with the AI. The app first checks whether existing pages already cover the topic, and the page is created only after the author has answered that check (ADR-025, 0005).       |
+| job                     | what the person does in the app                                                                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Connect to Confluence   | Enter the Confluence URL and a personal access token in Settings. The token is kept on the server and never sent back to the browser (ADR-019, 0003).                                              |
+| Browse                  | Switch between spaces, move through the page tree, or jump straight to a page by its URL or id. A page can be read as rendered content, as Markdown, or as Confluence's storage format.            |
+| Keep a local copy       | Sync a space to disk. Once synced, the app can generate AI summaries and a table of contents for the space, and download the whole space as a ZIP.                                                 |
+| Keep pages away from AI | List pages in a space's `.confluenceignore` file. An excluded page is never sent to a model (ADR-018).                                                                                             |
+| Ask questions           | Ask an AI about one page, about a page together with its sub-pages, or about a whole space, in a conversation that remembers earlier turns (0004).                                                 |
+| Change pages            | Ask a chat on a page, a directory, chosen pages or the whole space for suggestions, tick the ones to apply, see each edit as a diff, check it with a dry run, and publish after confirming (0007). |
+| Write from a repository | A new page, or a series of pages, can follow an example page and read a GitLab repository (0007).                                                                                                  |
+| Write a new page        | Draft a new page with the AI. The app first checks whether existing pages already cover the topic, and the page is created only after the author has answered that check (ADR-025, 0005).          |
 
 The page layout is the one settled in ADR-026:
 
 - The **header** holds the connection status, New page, Snippet parser, Settings, and the theme
   switch.
 - The **sidebar** holds the space switcher, the Space menu, and the page tree.
-- A page has four **tabs**: Read, Ask AI, Improve, and Details.
+- A page has three **tabs**: Read, Chat, and Details (ADR-049).
 
 The `/api` routes keep the paths they have today, with one rename. The improve, dry-run and push
 routes move from `/api/simply/pages/:pageId/*` to `/api/pages/:pageId/*`. The old prefix named the

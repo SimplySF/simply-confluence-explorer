@@ -41,7 +41,7 @@ An excluded page is treated as if it were not there, everywhere the app could pa
 
 - it is missing from the page tree, and opening it by address says it was not found;
 - a sync does not download it, and the ZIP does not contain it;
-- it is never sent to an AI: not when you ask about it, not as part of a section or a whole space, not
+- it is never sent to an AI: not when you ask about it, not as part of a directory, a tag or a whole space, not
   for a summary, and not as a suggestion when you write a new page;
 - it does not appear in the app's search.
 
@@ -68,7 +68,7 @@ and you are told what was found and on which line, but not the value itself. The
 - values written after words such as `password`, `secret`, `api_key` or `access_token`, unless the
   value is obviously a placeholder such as `****`, `<your-token>` or `changeme`.
 
-When you ask about many pages at once (a section or a whole space), a page holding a secret is left
+When you ask about many pages at once (a directory, chosen pages or a whole space), a page holding a secret is left
 out and named, and the rest are still sent.
 
 **Personal data is replaced.** Email addresses, phone numbers, US Social Security numbers, card
@@ -97,6 +97,14 @@ allow: .+@example\.com
 Each rule is a regular expression, and matching is case-sensitive. A rule that does not parse is
 refused when you save it, with the line number. The rules live in `.confluenceguard` in the space's
 folder.
+
+## What a whole-space question sends first
+
+Before answering a question about the whole space, the app sends the AI the titles, places in the
+space and AI summaries of up to 25 pages that may help, so it can choose which to read. Only pages the
+exclusion rules allow are among them, and the request passes the leak guard like any other. Text from
+a GitLab repository, added to a new page, is checked by the leak guard too; the exclusion rules do not
+apply to it, because it is not a Confluence page.
 
 ## A record of what was sent
 
