@@ -236,6 +236,41 @@ describe('AI summaries', () => {
   });
 });
 
+describe('a second request for AI summaries', () => {
+  it('gets the run already going instead of summarising every page twice', async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const app = await startTestApp(fake, async () => {
+      await held;
+      return '{"summary":"A page about operations.","tags":["ops"],"documentType":"runbook","systemsMentioned":[]}';
+    });
+    try {
+      await sync(app, 'PEOPLE');
+      const route = '/space-cache/PEOPLE/metadata/generate';
+      const first = (await app.call<MetadataProgress>('POST', route, {})).body;
+      const again = (await app.call<MetadataProgress>('POST', route, {})).body;
+      expect(again.jobId).toBe(first.jobId);
+      const section = await app.call<{ error: string }>('POST', route, {
+        rootPageId: fake.page('PEOPLE', 'Benefits Overview').id,
+      });
+      expect(section.status).toBe(409);
+      expect(section.body.error).toContain('already running for all of PEOPLE');
+      release();
+      let progress = first;
+      while (progress.status === 'pending' || progress.status === 'running') {
+        // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // eslint-disable-next-line no-await-in-loop -- as above
+        progress = (await app.call<MetadataProgress>('GET', `/space-cache/metadata/status/${first.jobId}`)).body;
+      }
+      expect(progress.status).toBe('completed');
+      expect(app.sent.length).toBe(progress.total);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe('text with no page named', () => {
   it('is sent as given, through the guard, for snippets and drafts that are not a page yet', async () => {
     await withApp(async (app) => {

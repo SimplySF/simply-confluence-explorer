@@ -86,7 +86,9 @@ topics once those exist. Click a title to open the page. The same table is saved
 `toc.json` in the space's folder, so other tools can use it.
 
 **Generate AI summaries** in the same menu asks your AI to summarise each synced page, one at a time,
-and add topic tags. You can pause it and come back later. It only summarises pages that do not have a
+and add topic tags. It keeps going while you open other pages: the header shows how far it has got,
+and clicking it takes you back. Starting it again while it runs shows the same run rather than
+starting a second one. You can pause it and come back later. It only summarises pages that do not have a
 summary yet; to redo the summary of one page, use **Regenerate** on that page's **Details** tab. A
 page's summary is removed when a sync downloads a newer version of it, so it is never out of date.
 

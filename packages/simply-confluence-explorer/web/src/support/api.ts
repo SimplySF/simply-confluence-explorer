@@ -111,7 +111,7 @@ export const api = {
       'POST',
     ).then((r) => r.metadata),
   generateMetadata: (spaceKey: string, rootPageId?: string) =>
-    call<{ jobId: string }>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId }),
+    call<MetadataProgress>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId }),
   metadataStatus: (jobId: string) => call<MetadataProgress>(`/space-cache/metadata/status/${key(jobId)}`),
   activeMetadata: (spaceKey: string) =>
     call<{ activeJob: MetadataProgress | null }>(`/space-cache/${key(spaceKey)}/metadata/active`).then(

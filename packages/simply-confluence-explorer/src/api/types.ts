@@ -230,6 +230,9 @@ export type MetadataProgress = {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   spaceKey: string;
+  /** The page whose section is being summarised; absent for the whole space. */
+  rootPageId?: string;
+  rootTitle?: string;
   total: number;
   processed: number;
   errorCount: number;

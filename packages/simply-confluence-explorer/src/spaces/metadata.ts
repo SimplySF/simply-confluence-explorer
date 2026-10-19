@@ -16,6 +16,7 @@
 
 import type { MetadataProgress, PageDetail, PageMetadata } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
+import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
@@ -80,9 +81,21 @@ export class MetadataPipeline {
     );
   }
 
+  /**
+   * Starts a run, or returns the one already running for the same pages. Two runs in one space would
+   * summarise the same pages at once and pay for each of them twice, so a run for other pages waits.
+   */
   public start(spaceKey: string, rootPageId?: string): MetadataProgress {
     const key = spaceKey.toUpperCase();
-    return this.jobs.start({ spaceKey: key, total: 0, processed: 0, errorCount: 0 }, (job) =>
+    const running = this.activeFor(key);
+    if (running && running.rootPageId === rootPageId) return running;
+    if (running)
+      throw new HttpError(
+        409,
+        `AI summaries are already running for ${running.rootTitle ?? `all of ${key}`}. Stop that run, or wait for it to finish.`,
+      );
+    const rootTitle = rootPageId ? (this.store.readPage(key, rootPageId)?.title ?? rootPageId) : undefined;
+    return this.jobs.start({ spaceKey: key, rootPageId, rootTitle, total: 0, processed: 0, errorCount: 0 }, (job) =>
       this.run(job, key, rootPageId),
     );
   }

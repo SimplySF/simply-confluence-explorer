@@ -122,6 +122,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .brand-icon {
@@ -2028,4 +2029,43 @@ body {
 }
 div.disclosure-body {
   padding-left: 0.9rem;
+}
+
+/* Background work in the header */
+.jobs-bar {
+  display: flex;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.jobs-bar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 18rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  background: var(--accent-light);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.jobs-bar-item:hover {
+  background: var(--bg-hover);
+}
+
+.jobs-bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-bar-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }

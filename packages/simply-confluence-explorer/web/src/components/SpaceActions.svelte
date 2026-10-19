@@ -11,8 +11,9 @@
     Trash2,
   } from '@lucide/svelte';
   import { onDestroy } from 'svelte';
-  import type { MetadataProgress, SyncProgress, SyncedSpace } from '../../../src/api/types.js';
+  import type { SyncProgress, SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
+  import { jobs } from '../support/jobs.svelte.js';
   import { pollJob } from '../support/poll.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import SpaceRulesDialog from './SpaceRulesDialog.svelte';
@@ -34,44 +35,12 @@
 
   let { spaceKey, manifest, onChanged, onSelectPage }: Props = $props();
   let sync = $state<SyncProgress | null>(null);
-  let meta = $state<MetadataProgress | null>(null);
   let dialog = $state<'toc' | 'rules' | 'purge' | null>(null);
   let stopSyncPoll = (): void => undefined;
-  let stopMetaPoll = (): void => undefined;
-  onDestroy(() => {
-    stopSyncPoll();
-    stopMetaPoll();
-  });
+  onDestroy(() => stopSyncPoll());
 
-  const running = (status: string): boolean => status === 'running' || status === 'pending';
-
-  function watchMeta(job: MetadataProgress): void {
-    meta = job;
-    stopMetaPoll();
-    stopMetaPoll = pollJob(() => api.metadataStatus(job.jobId), {
-      onProgress: (p) => (meta = p),
-      onFinished: (p) => {
-        meta = null;
-        onChanged();
-        toast(
-          p.status === 'completed' ? `AI summaries ready for ${spaceKey}.` : `AI summaries ${p.status}.`,
-          p.status === 'completed' ? 'success' : 'info',
-        );
-      },
-      onError: () => (meta = null),
-    });
-  }
-
-  // A summary run outlives a page reload, so one already running is picked up again.
-  $effect(() => {
-    const key = spaceKey;
-    meta = null;
-    stopMetaPoll();
-    api.activeMetadata(key).then(
-      (job) => job && running(job.status) && watchMeta(job),
-      () => undefined, // No run in progress is the common answer, and there is nothing to show.
-    );
-  });
+  const meta = $derived(jobs.summaries(spaceKey));
+  $effect(() => jobs.onFinished((j) => j.spaceKey === spaceKey && onChanged()));
 
   async function startSync(): Promise<void> {
     try {
@@ -112,35 +81,6 @@
     }
     stopSyncPoll();
     sync = null;
-  }
-
-  async function startMeta(): Promise<void> {
-    try {
-      const { jobId } = await api.generateMetadata(spaceKey);
-      watchMeta({
-        jobId,
-        status: 'running',
-        spaceKey,
-        total: manifest?.pageCount ?? 0,
-        processed: manifest?.metadataCount ?? 0,
-        errorCount: 0,
-        currentPageTitle: 'Starting…',
-      });
-    } catch (e) {
-      toast(`AI summaries did not start: ${messageOf(e)}`, 'error');
-    }
-  }
-
-  async function pauseMeta(): Promise<void> {
-    if (!meta) return;
-    try {
-      await api.cancelMetadata(meta.jobId);
-    } catch (e) {
-      toast(`Could not pause the AI summaries: ${messageOf(e)}`, 'error');
-    }
-    stopMetaPoll();
-    meta = null;
-    onChanged();
   }
 
   async function purgeStale(): Promise<void> {
@@ -199,7 +139,7 @@
           label: metaLabel,
           icon: Sparkles,
           hint: needSync ?? 'Summaries and tags for every page, and the table of contents',
-          onSelect: startMeta,
+          onSelect: () => jobs.startSummaries(spaceKey),
           disabled: !synced || !!meta || !!sync,
         },
         {
@@ -249,8 +189,8 @@
     <JobProgress
       processed={meta.processed}
       total={meta.total}
-      current={meta.currentPageTitle}
-      onStop={pauseMeta}
+      current={meta.current}
+      onStop={() => jobs.stop(meta!)}
       stopLabel="Pause"
     />
   {/if}

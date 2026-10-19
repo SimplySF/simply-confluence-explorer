@@ -2,6 +2,7 @@
   import { FileCode, FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
   import { onMount, untrack } from 'svelte';
   import type { ConfluenceSpace, ConnectionView, PageResponse, PageTreeNode } from '../../src/api/types.js';
+  import JobsBar from './components/JobsBar.svelte';
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
@@ -9,6 +10,7 @@
   import SnippetDialog from './components/SnippetDialog.svelte';
   import Toasts from './components/ui/Toasts.svelte';
   import { api } from './support/api.js';
+  import { jobs, type Job } from './support/jobs.svelte.js';
   import { applyTheme, theme, toggleTheme } from './support/theme.svelte.js';
   import { messageOf } from './support/toast.svelte.js';
 
@@ -183,6 +185,16 @@
     };
   });
 
+  // Work started earlier, in this tab or before a reload, keeps reporting in the header.
+  $effect(() => {
+    if (activeSpace) jobs.resume(activeSpace);
+  });
+
+  function openJob(job: Job): void {
+    chooseSpace(job.spaceKey);
+    if (job.rootPageId) selectedPageId = job.rootPageId;
+  }
+
   function chooseSpace(spaceKey: string): void {
     const key = spaceKey.trim().toUpperCase();
     remember('active_space', key);
@@ -216,6 +228,7 @@
         <span class="status-dot"></span>
         <span>{statusLabel}</span>
       </button>
+      <JobsBar onOpen={openJob} />
     </div>
     <div class="header-actions">
       <button
