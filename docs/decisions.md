@@ -622,7 +622,7 @@ runs as, and each conversation can be deleted.
 
 ## ADR-024 — Branch work goes through a review queue: nothing is written that a person did not accept, page by page
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-041, ADR-046 and ADR-047.
 
 "Work on branch" acts on a page and everything under it (`server/src/branches/branchRuns.ts`). Each
 piece of work is a run, saved in `data/branch-runs/`. There are two kinds of run:
@@ -694,7 +694,7 @@ says so.
 ## ADR-026 — The page has four tabs, a space's actions live in one Space menu, and branch work starts from the page, not that menu
 
 **Status:** accepted, 2026-10-15. Amends ADR-025: the table of contents sits with Update space and
-the ZIP in the Space menu, rather than as buttons beside them.
+the ZIP in the Space menu, rather than as buttons beside them. Amended by ADR-046.
 
 The layout is:
 
@@ -1358,3 +1358,57 @@ a plain `npx` installs. That is accepted because a release now gets a second per
 the end-to-end suite runs against a real Confluence on every pull request, and because in practice
 no beta was ever tried: the eight that were versioned never reached npm. Someone who wants to try `main` can still
 build and run it from a checkout.
+
+---
+
+## ADR-046 — Every improvement starts from a review whose suggestions the person chooses, and a page, a section and a tag are reviewed by the same flow
+
+**Status:** accepted, 2026-10-19. Amends ADR-024 and ADR-026.
+
+Before this record the app had three ways to improve pages, each with its own shape. The Improve tab
+asked for a focus, one of four, and returned a whole rewritten page. "Work on branch" could review a
+page and everything under it, but its findings could only be read, and its "Improve every page"
+rewrote every page with the same focus. The maintainer found that what they wanted was the review:
+a list of what is wrong, from which they pick what to fix.
+
+- **One flow.** A review works on a set of pages, chosen in one of three ways: one page (the Improve
+  tab), a page and everything under it, which the app now calls a **section** because "branch" read
+  as source control, or the pages that carry a **tag**. The person ticks the pages and the aspects to
+  look for (accuracy, repetition, staleness, clarity, depth, structure, runbooks), adds any context,
+  and gets suggestions, each with a tick box. **Apply selected** asks the AI for an edit of each page
+  the ticked suggestions name, carrying only those suggestions. The edits then go through the queue
+  ADR-024 describes, unchanged: accept, edit or reject each page, check, then push.
+- **One run.** On the server every review is a run in `data/branch-runs/` holding the ids of the
+  pages it read. The browser sends only page ids and suggestion numbers. The server checks each page
+  against the exclusion rules and the secrets check, and that a section's pages are inside it and a
+  tag's pages carry it.
+- **Removed:** "Improve every page", and the Improve tab's four focuses and whole-page rewrite. A
+  suggestion that needs a page moved, split, merged or written is shown but cannot be applied,
+  because no edit of an existing page does it.
+- **Layout (amends ADR-026).** "Work on branch" becomes "Review section". The sidebar gains a switch
+  between the page tree and a list of tags, and a **Space chat** for questions about the whole space,
+  with its saved conversations. Ask AI on a page asks about the page or its sub-pages, starting with
+  the sub-pages, and no longer about the whole space. The header shows work that is running in the
+  background, such as a sync, AI summaries or a review, and opens it when clicked.
+
+**The argument against:** a rewrite with a focus could make changes nobody thought to ask for, and a
+review only finds what it is asked to look for. That is accepted because the aspects all start
+ticked, the person can add their own instructions, and a change the person did not choose is
+exactly what ADR-024 exists to prevent.
+
+---
+
+## ADR-047 — A request to an AI can be stopped while it is in progress, and a stopped request leaves nothing behind
+
+**Status:** accepted, 2026-10-19. Amends ADR-024, which deferred cancelling a request in progress.
+
+Every chat (Ask AI, Space chat and the new-page writer) and every review has a **Stop** button while
+the AI is answering. Stopping aborts the browser's request; the server passes the abort to the
+provider's SDK or ends the Gemini CLI process, records `stopped` in the AI audit log, and discards a
+reply that arrives afterwards, so a conversation never gains half a turn and a review never gains
+findings after it was stopped. In a chat the question goes back into the box, so the person can
+correct it and send it again.
+
+**The argument against:** a stopped request may already have reached the provider, which may still
+bill for it and keep it under its own retention rules. Stopping therefore cannot undo a send, and
+the audit log records the request as sent and stopped rather than as never sent.
