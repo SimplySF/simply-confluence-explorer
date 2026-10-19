@@ -120,17 +120,18 @@ title already used in the space is refused with the reason (`test/drafts.test.ts
 
 ## Guides
 
-| Guide                                                                                                    | What it covers                                                              |
-| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Get started](https://simplysf.github.io/simply-confluence-explorer/getting-started/)                    | Requirements, starting the app, connecting, and your first few minutes      |
-| [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/)     | Personal access tokens, environment variables, company certificates         |
-| [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/)  | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
-| [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)                  | Providers, questions about a page, a section or a space, files, summaries   |
-| [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)   | Excluded pages, the leak guard and its rules, the audit log, network access |
-| [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)        | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
-| [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/) | Reviewing a page and everything under it, choosing suggestions, and edits   |
-| [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)            | The check for existing pages, writing with an AI, creating the page         |
-| [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)         | The doctor's checks, and the messages you are most likely to see            |
+| Guide                                                                                                    | What it covers                                                                 |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [Get started](https://simplysf.github.io/simply-confluence-explorer/getting-started/)                    | Requirements, starting the app, connecting, and your first few minutes         |
+| [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/)     | Personal access tokens, environment variables, company certificates            |
+| [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/)  | Syncing a space, the Markdown it produces, the table of contents, the ZIP      |
+| [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)                  | Providers, questions about a page, a section or a space, files, summaries      |
+| [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)   | Excluded pages, the leak guard and its rules, the audit log, network access    |
+| [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)        | Proposals, dry runs, pushing, and the pages that cannot be pushed              |
+| [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/) | Reviewing a page and everything under it, choosing suggestions, and edits      |
+| [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)            | The check for existing pages, writing with an AI, creating the page            |
+| [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)         | The doctor's checks, and the messages you are most likely to see               |
+| [Trying it locally](https://simplysf.github.io/simply-confluence-explorer/guides/trying-it-locally/)     | Running the app from its source against a local test Confluence, and its tests |
 
 The guides are on the [documentation site](https://simplysf.github.io/simply-confluence-explorer/), with
 search. They are written in this package's [`docs/`](docs) folder.

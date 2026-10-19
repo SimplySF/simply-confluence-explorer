@@ -89,3 +89,5 @@ picker on the left.
   AI.
 - [Troubleshooting](/guides/troubleshooting/): the doctor, and the messages you are most likely to
   see.
+- [Trying it locally](/guides/trying-it-locally/): the app from its source, against a Confluence of
+  its own.

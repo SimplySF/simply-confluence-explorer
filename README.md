@@ -77,6 +77,8 @@ getting-started guide and a guide to each part of the app:
 - [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/)
 - [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)
 - [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)
+- [Trying it locally](https://simplysf.github.io/simply-confluence-explorer/guides/trying-it-locally/): the app
+  from its source, against a Confluence of its own on your machine, away from your company's
 
 The guides are written in [`packages/simply-confluence-explorer/docs/`](packages/simply-confluence-explorer/docs),
 which is where to change them.
