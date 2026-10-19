@@ -111,13 +111,15 @@ export const api = {
       `/space-cache/${key(spaceKey)}/pages/${key(pageId)}/metadata/generate`,
       'POST',
     ).then((r) => r.metadata),
-  generateMetadata: (spaceKey: string, rootPageId?: string) =>
-    call<MetadataProgress>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId }),
+  generateMetadata: (spaceKey: string, rootPageId?: string, pageIds?: string[]) =>
+    call<MetadataProgress>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId, pageIds }),
   metadataStatus: (jobId: string) => call<MetadataProgress>(`/space-cache/metadata/status/${key(jobId)}`),
   activeMetadata: (spaceKey: string) =>
     call<{ activeJob: MetadataProgress | null }>(`/space-cache/${key(spaceKey)}/metadata/active`).then(
       (r) => r.activeJob,
     ),
+  summaryCoverage: (spaceKey: string, body: { rootPageId?: string; pageIds?: string[] }) =>
+    call<{ pages: number; missing: number }>(`/space-cache/${key(spaceKey)}/metadata/coverage`, 'POST', body),
   cancelMetadata: (jobId: string) => call(`/space-cache/metadata/cancel/${key(jobId)}`, 'POST'),
 
   aiSettings: () => call<AiSettingsView>('/ai/settings'),

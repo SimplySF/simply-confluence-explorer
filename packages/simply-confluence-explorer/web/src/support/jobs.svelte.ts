@@ -106,9 +106,9 @@ class Jobs {
     return () => this.listeners.delete(listener);
   }
 
-  public async startSummaries(spaceKey: string, rootPageId?: string): Promise<void> {
+  public async startSummaries(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<void> {
     try {
-      this.watchSummaries(await api.generateMetadata(spaceKey, rootPageId));
+      this.watchSummaries(await api.generateMetadata(spaceKey, rootPageId, pageIds));
     } catch (e) {
       toast(`AI summaries did not start: ${messageOf(e)}`, 'error');
     }

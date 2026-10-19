@@ -2394,3 +2394,16 @@ div.disclosure-body {
   flex-direction: column;
   gap: 0.5rem;
 }
+
+/* How many of a chat's pages have an AI summary */
+.summary-coverage {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.chat-context-coverage:not(:empty) {
+  padding: 0 0.65rem 0.4rem;
+}

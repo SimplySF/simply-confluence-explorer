@@ -8,6 +8,7 @@
   import { api } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import ChatThread from './ChatThread.svelte';
+  import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
 
   // One conversation with the AI about a page, or the page and everything under it. A question about
@@ -130,6 +131,13 @@
     {/if}
   </div>
 
+  {#if !blocked}
+    <SummaryCoverage
+      {spaceKey}
+      rootPageId={effective === 'branch' ? detail.id : undefined}
+      pageIds={effective === 'page' ? [detail.id] : undefined}
+    />
+  {/if}
   {#if engine && !engine.available}
     <div class="alert alert-warning">No AI provider is set up. Choose one under Settings → AI provider.</div>
   {/if}

@@ -85,18 +85,23 @@ export class MetadataPipeline {
    * Starts a run, or returns the one already running for the same pages. Two runs in one space would
    * summarise the same pages at once and pay for each of them twice, so a run for other pages waits.
    */
-  public start(spaceKey: string, rootPageId?: string): MetadataProgress {
+  public start(spaceKey: string, rootPageId?: string, pageIds?: string[]): MetadataProgress {
     const key = spaceKey.toUpperCase();
     const running = this.activeFor(key);
-    if (running && running.rootPageId === rootPageId) return running;
+    if (running && running.rootPageId === rootPageId && !pageIds && !running.chosen) return running;
     if (running)
       throw new HttpError(
         409,
         `AI summaries are already running for ${running.rootTitle ?? `all of ${key}`}. Stop that run, or wait for it to finish.`,
       );
-    const rootTitle = rootPageId ? (this.store.readPage(key, rootPageId)?.title ?? rootPageId) : undefined;
-    return this.jobs.start({ spaceKey: key, rootPageId, rootTitle, total: 0, processed: 0, errorCount: 0 }, (job) =>
-      this.run(job, key, rootPageId),
+    const rootTitle = pageIds
+      ? `${pageIds.length} chosen pages`
+      : rootPageId
+        ? (this.store.readPage(key, rootPageId)?.title ?? rootPageId)
+        : undefined;
+    return this.jobs.start(
+      { spaceKey: key, rootPageId, rootTitle, chosen: !!pageIds, total: 0, processed: 0, errorCount: 0 },
+      (job) => this.run(job, key, rootPageId, pageIds),
     );
   }
 
@@ -114,18 +119,36 @@ export class MetadataPipeline {
     return this.jobs.find((job) => job.spaceKey === key && (job.status === 'pending' || job.status === 'running'));
   }
 
-  private async run(job: MetadataProgress, spaceKey: string, rootPageId?: string): Promise<void> {
-    job.status = 'running';
-    const ai = this.ai();
-    const root = rootPageId ? this.store.readPage(spaceKey, rootPageId) : undefined;
-    const pages = rootPageId
-      ? [root, ...this.store.descendants(spaceKey, rootPageId).map((n) => this.store.readPage(spaceKey, n.id))].filter(
-          (p): p is PageDetail => !!p,
-        )
-      : this.store.visiblePages(spaceKey);
-    const targets = pages.filter(
+  /**
+   * The synced pages of a space, a section or a list that have no summary yet, leaving out excluded
+   * pages, and how many pages were looked at.
+   */
+  public coverage(spaceKey: string, rootPageId?: string, pageIds?: string[]): { pages: number; missing: number } {
+    const key = spaceKey.toUpperCase();
+    const pages = this.pagesOf(key, rootPageId, pageIds).filter((p) => !this.exclusions.isPageExcluded(p, key));
+    return { pages: pages.length, missing: this.missing(key, rootPageId, pageIds).length };
+  }
+
+  private pagesOf(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
+    const read = (id: string): PageDetail | undefined => this.store.readPage(spaceKey, id);
+    if (pageIds) return pageIds.map(read).filter((p): p is PageDetail => !!p);
+    if (rootPageId)
+      return [rootPageId, ...this.store.descendants(spaceKey, rootPageId).map((n) => n.id)]
+        .map(read)
+        .filter((p): p is PageDetail => !!p);
+    return this.store.visiblePages(spaceKey);
+  }
+
+  private missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
+    return this.pagesOf(spaceKey, rootPageId, pageIds).filter(
       (p) => !this.exclusions.isPageExcluded(p, spaceKey) && !this.store.readMetadata(spaceKey, p.id),
     );
+  }
+
+  private async run(job: MetadataProgress, spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<void> {
+    job.status = 'running';
+    const ai = this.ai();
+    const targets = this.missing(spaceKey, rootPageId, pageIds);
     job.total = targets.length;
     // One page at a time: a space can have thousands of pages, and providers limit request rates.
     for (const page of targets) {

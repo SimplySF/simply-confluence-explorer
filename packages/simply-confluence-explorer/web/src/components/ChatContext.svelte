@@ -2,6 +2,7 @@
   import { BookOpen, ChevronDown, ChevronUp, Tag, X } from '@lucide/svelte';
   import type { SessionScope, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
+  import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
 
   // What a Space chat reads, shown above it and changed in place: the whole space, where each question
@@ -70,6 +71,9 @@
     <span>Reading: {label}</span>
     {#if open}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
   </button>
+  <div class="chat-context-coverage">
+    <SummaryCoverage {spaceKey} pageIds={chosen.length ? chosen : undefined} />
+  </div>
   {#if open}
     <div class="chat-context-panel">
       <Segmented

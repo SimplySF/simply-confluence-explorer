@@ -20,6 +20,7 @@ import type { AiSettingsView, AnalyzeResponse, MetadataProgress } from '../api/t
 import { listModels } from '../ai/engine.js';
 import { guardRulesPath, parseGuardRules, withWithheld } from '../ai/guard.js';
 import { API_PROVIDERS, type ApiProvider, type SettingsUpdate } from '../ai/settings.js';
+import { isValidPageId } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
@@ -29,6 +30,17 @@ import { generateMetadata } from '../spaces/metadata.js';
 import { errorMessage } from '../util/errors.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
+
+/** An optional list of up to 50 page ids, from a request body. */
+function pageIdsOf(body: unknown): string[] | undefined {
+  const value = fieldsOf(body).pageIds;
+  if (value === undefined) return undefined;
+  const raw: unknown[] = Array.isArray(value) ? value : [];
+  const ids = raw.map((v) => (typeof v === 'number' ? String(v) : v));
+  if (!Array.isArray(value) || ids.length === 0 || ids.length > 50 || !ids.every(isValidPageId))
+    throw new HttpError(400, 'pageIds is a list of 1 to 50 page ids');
+  return [...new Set(ids)];
+}
 
 /** A settings change from the browser, with every value checked to be the string it must be. */
 function settingsUpdate(body: unknown): SettingsUpdate {
@@ -184,7 +196,11 @@ export function addAiRoutes(router: Router, services: Services): Router {
         return { metadata: result };
       })
       .add('POST', '/api/space-cache/:spaceKey/metadata/generate', ({ params, body }): MetadataProgress =>
-        metadata.start(params.spaceKey, optionalString(body, 'rootPageId')),
+        metadata.start(params.spaceKey, optionalString(body, 'rootPageId'), pageIdsOf(body)),
+      )
+      // How many of a space's, a section's or a list's pages have an AI summary, for a chat to show.
+      .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', ({ params, body }) =>
+        metadata.coverage(params.spaceKey, optionalString(body, 'rootPageId'), pageIdsOf(body)),
       )
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);

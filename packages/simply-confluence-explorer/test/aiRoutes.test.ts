@@ -294,3 +294,33 @@ describe('the AI status', () => {
     });
   });
 });
+
+describe('AI summaries for chosen pages', () => {
+  it('summarise only those pages, and say how many of them had one', async () => {
+    await withApp(async (app) => {
+      await sync(app, 'PEOPLE');
+      const ids = [fake.page('PEOPLE', 'Travel Policy').id, fake.page('PEOPLE', 'Remote Work Policy').id];
+      const coverage = (body: unknown): Promise<{ body: { pages: number; missing: number } }> =>
+        app.call('POST', '/space-cache/PEOPLE/metadata/coverage', body);
+      expect((await coverage({ pageIds: ids })).body).toEqual({ pages: 2, missing: 2 });
+      const { body: started } = await app.call<MetadataProgress>('POST', '/space-cache/PEOPLE/metadata/generate', {
+        pageIds: ids,
+      });
+      let progress = started;
+      while (progress.status === 'pending' || progress.status === 'running') {
+        // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // eslint-disable-next-line no-await-in-loop -- as above
+        progress = (await app.call<MetadataProgress>('GET', `/space-cache/metadata/status/${started.jobId}`)).body;
+      }
+      expect(progress.total).toBe(2);
+      expect(app.sent).toHaveLength(2);
+      expect((await coverage({ pageIds: ids })).body).toEqual({ pages: 2, missing: 0 });
+      const whole = (await coverage({})).body;
+      expect(whole.missing).toBe(whole.pages - 2);
+      const salary = fake.page('PEOPLE', 'Salary Bands').id;
+      expect((await coverage({ pageIds: [salary] })).body).toEqual({ pages: 0, missing: 0 });
+      expect((await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', { pageIds: ['../x'] })).status).toBe(400);
+    });
+  });
+});

@@ -233,6 +233,8 @@ export type MetadataProgress = {
   /** The page whose section is being summarised; absent for the whole space. */
   rootPageId?: string;
   rootTitle?: string;
+  /** The run is for a list of chosen pages, such as a chat's. */
+  chosen?: boolean;
   total: number;
   processed: number;
   errorCount: number;
