@@ -41,7 +41,7 @@ The first start downloads Confluence and Postgres and sets them up, which takes 
 starts take about a minute. It finishes by creating four test spaces, **PLAT**, **OPS**, **PEOPLE**
 and **ENG**, with pages, labels, attachments and `.confluenceignore` rules, so every feature has
 something to work on. The administrator account is `admin` with the password `admin`, and Confluence
-itself is at <http://localhost:8090> if you want to look at the pages there.
+itself is at `http://localhost:8090` if you want to look at the pages there.
 
 Confluence runs on Atlassian's developer licence, which lasts three hours. `pnpm run testenv:status`
 shows when it runs out; after that every write is refused, and `pnpm run testenv:down` followed by
@@ -56,7 +56,7 @@ pnpm run dev
 
 The first line points the app at your local Confluence, with a token it created, and gives it a data
 folder of its own in `test-env/.state/data`. (`node test-env/testenv.mjs env` prints the four
-variables it sets, if your shell needs them set another way.) Open <http://localhost:5173>. The app is already
+variables it sets, if your shell needs them set another way.) Open `http://localhost:5173`. The app is already
 connected, so you can sync a space, read pages, review them and push changes straight away. Changes
 to the browser side of the code appear as you save them; changes to the server need `pnpm run dev`
 to be started again.
