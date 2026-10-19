@@ -1,8 +1,8 @@
 name: release
 
-# Every merge to main publishes a beta under npm's `beta` tag (ADR-039). A stable release starts by
-# hand, as a pull request that sets the version; merging it publishes the version as `latest`, once
-# scripts/release-gate.mjs finds it approved by someone other than its author (ADR-044).
+# A release starts by hand, as a pull request that sets the version. Merging it publishes the version
+# to npm as `latest`, once scripts/release-gate.mjs finds it approved by someone other than its
+# author (ADR-044). Any other merge to main publishes nothing (ADR-045).
 on:
   push:
     branches:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       stable:
-        description: 'Open a pull request that graduates the current beta to a stable release. Leave unticked to only publish versions already in git but missing from npm.'
+        description: 'Open a pull request for the next release. Leave unticked to only publish a merged release that is missing from npm.'
         type: boolean
         default: false
 
@@ -70,15 +70,9 @@ jobs:
           git rev-parse -q --verify "refs/tags/$tag" >/dev/null && tagged=true
           { echo "version=$version"; echo "tag=$tag"; echo "release=$release"; echo "tagged=$tagged"; } >> "$GITHUB_OUTPUT"
 
-      - name: Version (beta)
-        if: github.event_name == 'push' && github.ref_name == 'main' && steps.state.outputs.release == 'false'
-        run: pnpm exec lerna version --conventional-commits --conventional-prerelease --preid beta --create-release github --yes
-        env:
-          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-
       # The commit checked is the one the version was merged in: the tag's commit when an earlier run
       # pushed the tag, otherwise the commit this run is on.
-      - name: Check the release was approved (stable)
+      - name: Check the release was approved
         if: steps.state.outputs.release == 'true'
         run: |
           commit=$GITHUB_SHA
@@ -90,7 +84,7 @@ jobs:
           TAG: ${{ steps.state.outputs.tag }}
           TAGGED: ${{ steps.state.outputs.tagged }}
 
-      - name: Tag (stable)
+      - name: Tag
         if: steps.state.outputs.release == 'true' && steps.state.outputs.tagged == 'false'
         run: |
           git tag -a "$TAG" -m "$TAG"
@@ -103,13 +97,13 @@ jobs:
           VERSION: ${{ steps.state.outputs.version }}
           TAG: ${{ steps.state.outputs.tag }}
 
-      # Lerna writes the graduated version and its changelog without committing or tagging; the
-      # commit goes on its own branch, and nothing is published until its pull request is approved
+      # Lerna works out the next version from the commits since the last release, and writes it and
+      # its changelog without committing or tagging; the commit goes on its own branch, and nothing is published until its pull request is approved
       # and merged.
-      - name: Open the release pull request (stable)
+      - name: Open the release pull request
         if: github.event_name == 'workflow_dispatch' && inputs.stable && github.ref_name == 'main'
         run: |
-          pnpm exec lerna version --conventional-commits --conventional-graduate --no-git-tag-version --no-push --yes
+          pnpm exec lerna version --conventional-commits --no-git-tag-version --no-push --yes
           version=$(node -p "require('./packages/simply-confluence-explorer/package.json').version")
           git switch -c "release/$version"
           git commit -am "chore(release): $version"
@@ -119,12 +113,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-      # Publishes whatever version is committed to git but still missing from npm. It runs even when
-      # no version step did, so a run whose tag was pushed but whose publish failed is finished by the
-      # next one; for a stable version, only once the approval check above has passed. A prerelease
-      # goes to the `beta` tag, so it never becomes what a plain install gets.
+      # Runs only after the approval check has passed. A run whose tag was pushed but whose publish
+      # failed is finished by the next merge, or by running the workflow by hand with stable unticked.
       - name: Publish
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.stable) }}
-        run: pnpm exec lerna publish from-package --pre-dist-tag beta --yes
+        if: steps.state.outputs.release == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.stable)
+        run: pnpm exec lerna publish from-package --yes
         env:
           NPM_CONFIG_PROVENANCE: true
