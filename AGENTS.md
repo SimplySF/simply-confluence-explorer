@@ -116,9 +116,10 @@ template's wording; our additions to them follow this rule.
 A load-bearing surface is a part of the code where a mistake would leak data, change Confluence
 without consent, or switch off one of the project's safeguards. Every change to one is flagged in
 the pull request description and reviewed by a person. Because this project declares stakes `real`,
-a second person also answers the release's review packet for these surfaces before the release
-ships. A review packet is a document in `docs/review/` that lists what was checked, what was not,
-and what is still outstanding. The paths below are relative to `packages/simply-confluence-explorer/src/`.
+a stable release also ships only after a second person, not the one who opened it, approves the
+pull request that releases it; that pull request lists these surfaces for its reviewer, and
+`scripts/release-gate.mjs` refuses to publish without the approval (ADR-044). The paths below are
+relative to `packages/simply-confluence-explorer/src/`.
 
 | surface                         | where                                                                                                                           |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |

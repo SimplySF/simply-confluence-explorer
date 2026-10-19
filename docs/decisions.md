@@ -13,7 +13,8 @@ number, and the discussion does not have to start over.
 
 ## ADR-001 — The project is held to the agent-led development standard at stakes `real`
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-044, which replaces the written review packet
+with a second person's approval of the release pull request.
 
 The agent-led development standard sorts projects into tiers by what is at stake if they go wrong.
 Confluence Explorer belongs in the `real` tier, the tier for projects that other people depend on
@@ -1104,7 +1105,8 @@ Confluence.
 
 ## ADR-039 — Every merge to main publishes a beta, and a stable release is published only after the review packet for its version is answered
 
-**Status:** accepted, 2026-10-16. Implements ADR-001's release gate; it does not amend it.
+**Status:** accepted, 2026-10-16. Implements ADR-001's release gate; it does not amend it. The
+stable-release half is superseded by ADR-044; betas are still published as this record describes.
 
 Releases come from `.github/workflows/release.yml`, which follows the release workflow of the
 simply-atlassian repository: Lerna works out each version from the Conventional Commits since the
@@ -1293,3 +1295,40 @@ versions in the workflow, so they add nothing to any manifest.
 different and a second workflow to maintain, which is what the shared site was built to avoid. That is
 accepted because the owner of the shared site asked for this, and because the site follows the same
 template, logo and theme as the other SimplySF sites.
+
+---
+
+## ADR-044 — A stable release is published when a second person approves its release pull request, instead of answering a written review packet
+
+**Status:** accepted, 2026-10-19. Amends ADR-001 and supersedes the stable-release half of ADR-039.
+
+ADR-039 held back stable releases until a second reviewer had written an answer for each
+load-bearing surface into `docs/review/<version>.md`. The maintainer replaced that with a review the
+team already knows how to do: a pull request.
+
+- **A stable release starts as a pull request.** Running `release.yml` by hand with **stable**
+  ticked works out the version the current beta graduates to, writes it and its changelog on a
+  branch named `release/<version>`, and opens a pull request for it. The pull request's description
+  lists the load-bearing surfaces, read from the table in `AGENTS.md`, so the reviewer knows which
+  parts of the code carry the risk.
+- **A second person approves it.** The approval must come from someone other than the person who
+  opened the pull request, and must be for the pull request's last commit, so a change pushed after
+  the approval is not covered by it.
+- **Merging it publishes the release.** When a merge to `main` leaves a stable version that npm does
+  not have yet, the workflow runs `scripts/release-gate.mjs`, which reads the merged pull request
+  and its reviews from GitHub and fails unless the conditions above hold. Only then is the version
+  tagged and published as `latest`, so a plain `npx @simplysf/simply-confluence-explorer` installs it.
+  The same check runs before a stable version is published by hand, so the manual publish is not a
+  way around it.
+
+Every other merge to `main` still publishes a beta under the `beta` tag, as ADR-039 describes.
+
+**The argument against:** this project follows the agent-led development standard at stakes `real`
+(ADR-001), and that standard (§7.5) asks for more than an approval. It asks the reviewer to write
+answers for every load-bearing surface into the release's review packet, and for CI to refuse the
+release until they are there. An approval is one click; it shows that a second person accepted the
+release, not what they read or what they found. By this decision the project no longer meets §7.5,
+and says so here rather than lowering its declared stakes, which ADR-001 refused to do. The
+maintainer accepted this because the reviewer is a member of the team who reviews SimplySF's other
+releases the same way, and a written packet asked the reviewer to repeat in a document what a pull
+request review already records. `docs/review/` stays, for any written review a release does get.

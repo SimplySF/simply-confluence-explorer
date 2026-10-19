@@ -8,8 +8,8 @@ monorepo.
 
 ![Confluence Explorer showing a page, with the space's page tree on the left](docs/images/overview-light.webp)
 
-> **Status:** every feature below is built, in the server and in the browser. Versions are published
-> as betas under npm's `beta` tag; there is no stable release yet. The AI features have so far run
+> **Status:** every feature below is built, in the server and in the browser. Stable releases are
+> published under npm's `latest` tag, and every merge in between as a beta under `beta`. The AI features have so far run
 > only against a stand-in for each provider, not with real provider keys.
 
 The [guides](https://simplysf.github.io/simply-confluence-explorer/) explain each feature in full, with screenshots. This README is the reference:
@@ -25,7 +25,7 @@ options, environment variables, where data is kept, the HTTP routes and the embe
 ## Usage
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta
+npx @simplysf/simply-confluence-explorer
 # Confluence Explorer is running at http://127.0.0.1:4280/
 ```
 
@@ -47,7 +47,7 @@ host name, and every request another website sends from your browser, is refused
 ### Checking your setup
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta doctor
+npx @simplysf/simply-confluence-explorer doctor
 ```
 
 The doctor checks the Node version, the Confluence connection, certificate checking, the data
@@ -75,7 +75,7 @@ certificate authority, ask your IT team for that authority's certificate file an
 `NODE_EXTRA_CA_CERTS` pointing at it:
 
 ```sh
-NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer@beta
+NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer
 ```
 
 [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/) covers creating a token and the connection in

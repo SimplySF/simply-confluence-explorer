@@ -8,7 +8,7 @@ sidebar:
 Start with the doctor. It checks everything the app depends on and prints a fix for each problem:
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta doctor
+npx @simplysf/simply-confluence-explorer doctor
 ```
 
 Each line starts with `✓` (fine), `!` (a warning), `✗` (a failure) or `-` (does not apply), followed
