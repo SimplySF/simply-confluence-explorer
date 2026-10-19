@@ -19,6 +19,7 @@
   } from '@lucide/svelte';
   import type { PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
+  import { forPage } from '../support/pageResult.js';
   import { toast } from '../support/toast.svelte.js';
   import AskAiPanel, { type AiScope } from './AskAiPanel.svelte';
   import BranchWorkspace from './BranchWorkspace.svelte';
@@ -94,11 +95,16 @@
     };
   });
 
+  const current = (): string | undefined => detail?.id;
+  const setMetadata = (pageId: string, m: PageMetadata | null): void =>
+    forPage(pageId, current, (v: PageMetadata | null) => (metadata = v))(m);
+
   function reloadMetadata(): void {
     if (detail) {
-      api.metadata(spaceKey, detail.id).then(
-        (m) => (metadata = m),
-        () => (metadata = null),
+      const pageId = detail.id;
+      api.metadata(spaceKey, pageId).then(
+        (m) => setMetadata(pageId, m),
+        () => setMetadata(pageId, null),
       );
     }
   }
@@ -244,8 +250,8 @@
         {descendantCount}
         {metadata}
         {metadataLoading}
-        onMetadata={(m) => (metadata = m)}
-        onMetadataLoading={(b) => (metadataLoading = b)}
+        onMetadata={setMetadata}
+        onMetadataLoading={(pageId, b) => forPage(pageId, current, (v: boolean) => (metadataLoading = v))(b)}
         {reloadMetadata}
       />
     </div>

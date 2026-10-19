@@ -14,8 +14,9 @@
     descendantCount: number;
     metadata: PageMetadata | null;
     metadataLoading: boolean;
-    onMetadata: (m: PageMetadata | null) => void;
-    onMetadataLoading: (loading: boolean) => void;
+    /** A summary arrived for a page, which may no longer be the one on screen. */
+    onMetadata: (pageId: string, m: PageMetadata | null) => void;
+    onMetadataLoading: (pageId: string, loading: boolean) => void;
     reloadMetadata: () => void;
   };
 
@@ -35,13 +36,14 @@
   $effect(() => jobs.onFinished((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && reloadMetadata()));
 
   async function generateOne(): Promise<void> {
-    onMetadataLoading(true);
+    const pageId = detail.id;
+    onMetadataLoading(pageId, true);
     try {
-      onMetadata(await api.generatePageMetadata(spaceKey, detail.id));
+      onMetadata(pageId, await api.generatePageMetadata(spaceKey, pageId));
     } catch (e) {
       toast(`Could not generate the summary: ${messageOf(e)}`, 'error');
     } finally {
-      onMetadataLoading(false);
+      onMetadataLoading(pageId, false);
     }
   }
 
