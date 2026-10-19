@@ -193,6 +193,7 @@
   function openJob(job: Job): void {
     chooseSpace(job.spaceKey);
     if (job.rootPageId) selectedPageId = job.rootPageId;
+    if (job.kind === 'review') jobs.requested = job;
   }
 
   function chooseSpace(spaceKey: string): void {

@@ -2,11 +2,13 @@
   import { Ban, Check, GitBranch, RefreshCw, RotateCcw, Search, ShieldCheck, Upload, Wand2 } from '@lucide/svelte';
   import type { BranchItem, BranchRun } from '../../../src/api/types.js';
   import { branches, type BranchRunSummary } from '../support/api.js';
+  import { jobs } from '../support/jobs.svelte.js';
   import { bodyOf } from '../support/markdown.js';
   import { messageOf } from '../support/toast.svelte.js';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
   import Dialog from './ui/Dialog.svelte';
   import Diff from './ui/Diff.svelte';
+  import JobProgress from './ui/JobProgress.svelte';
 
   // Work on a page and everything under it: review the branch as a whole, or improve each page through
   // a queue where nothing is written until it is accepted (ADR-024).
@@ -66,6 +68,19 @@
       (h) => (history = h),
       (e: unknown) => (error = messageOf(e)),
     );
+  });
+
+  // A run still going, or the one the header asked for, opens straight away.
+  $effect(() => {
+    const wanted = jobs.requested?.rootPageId === pageId ? jobs.requested : jobs.review(spaceKey, pageId);
+    if (!wanted || run) return;
+    jobs.requested = null;
+    void act('open', () => branches.get(wanted.jobId));
+  });
+
+  // The header follows a running run, so closing this dialog does not lose sight of it.
+  $effect(() => {
+    if (run?.status === 'running') jobs.watchReview(run);
   });
 
   // Proposals arrive one page at a time, so a running run is read again every second until it is ready.
@@ -156,7 +171,7 @@
           changed.
         </p>
         <button class="btn btn-primary btn-sm" disabled={!!busy} onclick={() => start('review')}>
-          {#if busy === 'review'}<RefreshCw size={13} class="spin" />{:else}<Search size={13} />{/if} Review
+          {#if busy === 'review'}<RefreshCw size={13} class="spin" /> Collecting pages…{:else}<Search size={13} /> Review{/if}
         </button>
       </section>
       <section>
@@ -169,7 +184,7 @@
           {#each FOCUSES as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
         </select>
         <button class="btn btn-primary btn-sm" disabled={!!busy} onclick={() => start('improve')}>
-          {#if busy === 'improve'}<RefreshCw size={13} class="spin" />{:else}<Wand2 size={13} />{/if} Start proposals
+          {#if busy === 'improve'}<RefreshCw size={13} class="spin" /> Collecting pages…{:else}<Wand2 size={13} /> Start proposals{/if}
         </button>
       </section>
     </div>
@@ -192,15 +207,18 @@
     {/if}
   {:else}
     <div class="branch-runbar">
-      <span>
-        {run.kind === 'review' ? 'Review' : 'Improve'} · {run.status === 'running'
-          ? `working, ${run.processed} of ${run.total}`
-          : run.status}
-      </span>
       {#if run.status === 'running'}
-        <button class="btn btn-secondary btn-sm" onclick={() => run && act('cancel', () => branches.cancel(run!.id))}
-          >Stop</button
-        >
+        <JobProgress
+          processed={run.processed}
+          total={run.kind === 'review' ? 0 : run.total}
+          current={run.kind === 'review'
+            ? `Reading ${Object.keys(run.pageIds ?? {}).length} pages with the AI`
+            : run.items.find((i) => i.status === 'working')?.title}
+          startedAt={run.createdAt}
+          onStop={() => run && act('cancel', () => branches.cancel(run!.id))}
+        />
+      {:else}
+        <span>{run.kind === 'review' ? 'Review' : 'Improve'} · {run.status}</span>
       {/if}
       <button class="btn btn-secondary btn-sm" onclick={() => (run = null)}>Back</button>
     </div>

@@ -18,12 +18,12 @@
 // component that started it, so opening another page does not lose its progress, and the header can
 // show it and lead back to it.
 
-import type { MetadataProgress, SyncProgress } from '../../../src/api/types.js';
-import { api } from './api.js';
+import type { BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
+import { api, branches } from './api.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
-export type JobKind = 'summaries' | 'sync';
+export type JobKind = 'summaries' | 'sync' | 'review';
 
 export type Job = {
   kind: JobKind;
@@ -32,6 +32,7 @@ export type Job = {
   /** The page the work started from, which the header opens; absent for a whole space. */
   rootPageId?: string;
   label: string;
+  /** How far it has got; a total of 0 means it cannot say, as when one request is being answered. */
   processed: number;
   total: number;
   current?: string;
@@ -43,8 +44,50 @@ const running = (status: string): boolean => status === 'running' || status === 
 
 class Jobs {
   public list = $state<Job[]>([]);
+  /** A review the header asked to open; the page view opens it once its page is on screen. */
+  public requested = $state<Job | null>(null);
   private readonly stops = new Map<string, () => void>();
   private readonly listeners = new Set<Finished>();
+
+  /** The review running on a page, if any. */
+  public review(spaceKey: string, rootPageId: string): Job | undefined {
+    return this.list.find((j) => j.kind === 'review' && j.spaceKey === spaceKey && j.rootPageId === rootPageId);
+  }
+
+  /** Follows a review run, so the header shows it while its dialog is closed. */
+  public watchReview(run: BranchRun): void {
+    if (run.status !== 'running' || this.stops.has(run.id)) return;
+    const job = (r: BranchRun): Job => ({
+      kind: 'review',
+      jobId: r.id,
+      spaceKey: r.spaceKey,
+      rootPageId: r.rootPageId,
+      label: `${r.kind === 'review' ? 'Review' : 'Proposals'}: ${r.rootTitle}`,
+      processed: r.processed,
+      total: r.kind === 'review' ? 0 : r.total,
+      current: r.items.find((i) => i.status === 'working')?.title,
+    });
+    this.put(job(run));
+    this.stops.set(
+      run.id,
+      pollJob(
+        () => branches.get(run.id),
+        {
+          onProgress: (r) => this.put(job(r)),
+          onFinished: (r) => {
+            if (r.status !== 'cancelled')
+              toast(
+                `${job(r).label}: ${r.status === 'ready' ? 'ready to read' : r.status}.`,
+                r.status === 'ready' ? 'success' : 'error',
+              );
+            this.finish(job(r), r.status);
+          },
+          onError: () => this.finish(job(run), 'failed'),
+        },
+        1000,
+      ),
+    );
+  }
 
   /** The summary run for a section, or for the whole space when no page is given. */
   public summaries(spaceKey: string, rootPageId?: string): Job | undefined {
@@ -83,7 +126,7 @@ class Jobs {
 
   public async stop(job: Job): Promise<void> {
     try {
-      await (job.kind === 'sync' ? api.cancelSync(job.jobId) : api.cancelMetadata(job.jobId));
+      await { sync: api.cancelSync, summaries: api.cancelMetadata, review: branches.cancel }[job.kind](job.jobId);
     } catch (e) {
       toast(`Could not stop it: ${messageOf(e)}`, 'error');
       return;

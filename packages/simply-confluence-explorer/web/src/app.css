@@ -1501,6 +1501,25 @@ body {
   background-color: var(--accent-primary);
   transition: width 0.2s;
 }
+.job-progress-moving {
+  width: 35%;
+  animation: jobProgressSweep 1.4s ease-in-out infinite;
+}
+@keyframes jobProgressSweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .job-progress-moving {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
 .job-progress-label {
   flex: 1;
   min-width: 0;

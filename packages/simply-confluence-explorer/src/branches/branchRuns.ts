@@ -18,7 +18,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BranchFinding, BranchItem, BranchRun } from '../api/types.js';
-import type { AiEngine } from '../ai/engine.js';
+import { AiStopped, type AiEngine } from '../ai/engine.js';
 import { GuardBlockedError } from '../ai/guard.js';
 import { improvePrompt, parseRecommendationResponse } from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
@@ -133,6 +133,8 @@ export class BranchRunner {
   // A run that is still being filled is one shared object, so a decision made while proposals are
   // arriving is not overwritten by the next save of the run.
   private readonly live = new Map<string, BranchRun>();
+  // Stop aborts the request in flight, not only the requests still to come (ADR-047).
+  private readonly stoppers = new Map<string, AbortController>();
 
   public constructor(private readonly deps: BranchDeps) {
     this.store = new BranchRunStore(deps.dataDir);
@@ -165,8 +167,8 @@ export class BranchRunner {
       })),
     });
     this.store.save(run);
-    this.live.set(run.id, run);
-    void this.propose(run).finally(() => this.live.delete(run.id));
+    const signal = this.begin(run);
+    void this.propose(run, signal).finally(() => this.end(run));
     return run;
   }
 
@@ -181,6 +183,7 @@ export class BranchRunner {
       pageIds,
     });
     this.store.save(run);
+    const signal = this.begin(run);
     const context = pages
       .map(
         (p) =>
@@ -189,7 +192,7 @@ export class BranchRunner {
       .join('\n\n---\n\n');
     const prompt = input.instructions ? `${REVIEW_PROMPT}\nAlso: ${input.instructions}` : REVIEW_PROMPT;
     void this.deps.ai
-      .analyzeDocument(context, prompt, `Branch: ${run.rootTitle}`, { spaceKey })
+      .analyzeDocument(context, prompt, `Branch: ${run.rootTitle}`, { spaceKey, signal })
       .then((answer) => {
         const findings = parseFindings(answer.text);
         if (findings) run.findings = findings;
@@ -197,19 +200,28 @@ export class BranchRunner {
         run.status = 'ready';
       })
       .catch((error: unknown) => {
+        // A stopped review keeps nothing: the engine refuses even an answer that arrives afterwards.
+        if (this.cancelled.has(run.id)) return;
         run.status = 'failed';
         run.error = errorMessage(error);
       })
       .finally(() => {
-        run.processed = 1;
+        if (run.status !== 'cancelled') run.processed = 1;
         this.store.save(run);
+        this.end(run);
       });
     return run;
   }
 
+  /** Stops a run at once, ending the request in flight; a run that has finished is left as it is. */
   public cancel(id: string): BranchRun {
+    const run = this.get(id);
+    if (run.status !== 'running') return run;
     this.cancelled.add(id);
-    return this.get(id);
+    this.stoppers.get(id)?.abort();
+    run.status = 'cancelled';
+    this.store.save(run);
+    return run;
   }
 
   /** Accepts, rejects or resets one page. An accepted page may carry the person's own edits. */
@@ -261,7 +273,19 @@ export class BranchRunner {
     };
   }
 
-  private async propose(run: BranchRun): Promise<void> {
+  private begin(run: BranchRun): AbortSignal {
+    const stopper = new AbortController();
+    this.live.set(run.id, run);
+    this.stoppers.set(run.id, stopper);
+    return stopper.signal;
+  }
+
+  private end(run: BranchRun): void {
+    this.live.delete(run.id);
+    this.stoppers.delete(run.id);
+  }
+
+  private async propose(run: BranchRun, signal: AbortSignal): Promise<void> {
     const prompt = improvePrompt(run.focus, run.instructions);
     // One page at a time: a branch can be large, and providers limit request rates.
     for (const item of run.items) {
@@ -272,6 +296,7 @@ export class BranchRunner {
         // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
         const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
           spaceKey: run.spaceKey,
+          signal,
         });
         const parsed = parseRecommendationResponse(answer.text);
         Object.assign(item, {
@@ -282,6 +307,10 @@ export class BranchRunner {
           guardSummary: answer.guard.summary,
         });
       } catch (error) {
+        if (error instanceof AiStopped) {
+          item.status = 'pending';
+          break;
+        }
         item.status = error instanceof GuardBlockedError ? 'skipped' : 'failed';
         item.message = errorMessage(error);
       }

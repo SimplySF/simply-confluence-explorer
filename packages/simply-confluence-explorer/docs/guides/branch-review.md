@@ -26,7 +26,10 @@ shows how many pages the branch holds.
 
 ![Review findings, each naming the pages it is about](../images/branch-review.webp)
 
-Each finding names the pages it is about; click a name to open that page. A review changes nothing.
+While the AI reads, a moving bar shows how long it has been working, and **Stop** ends the request
+at once. You can close the dialog and keep browsing: the header shows the review until it is ready,
+and clicking it brings you back. Each finding names the pages it is about; click a name to open that
+page. A review changes nothing.
 
 ## Improve every page
 
@@ -70,5 +73,6 @@ branch are listed when you open it again.
 
 `test/branchRuns.test.ts` checks that excluded pages are left out, that only accepted pages are
 written, that a page changed by someone else is refused while the others are written, that a dry run
-writes nothing, and that decisions made while proposals arrive are kept. `test/e2e/branches.e2e.ts`
+writes nothing, that decisions made while proposals arrive are kept, and that a stopped review keeps
+nothing. `test/e2e/branches.e2e.ts`
 runs a branch against a real Confluence Data Center.

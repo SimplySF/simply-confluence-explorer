@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-const FINISHED = new Set(['completed', 'failed', 'cancelled']);
+// A job ends as completed, failed or cancelled; a review run ends as ready.
+const FINISHED = new Set(['completed', 'ready', 'failed', 'cancelled']);
 
 /**
  * Polls a server job until it finishes. The returned function stops it, so a component that started

@@ -36,7 +36,7 @@ const proposal = (payload: GuardedPayload): string => {
 };
 
 async function withApp(
-  reply: (payload: GuardedPayload, n: number) => string | Promise<string>,
+  reply: (payload: GuardedPayload, n: number, signal?: AbortSignal) => string | Promise<string>,
   run: (app: TestApp) => Promise<void>,
 ): Promise<void> {
   const app = await startTestApp(fake, reply);
@@ -189,6 +189,33 @@ describe('reviewing a branch', () => {
         expect(app.sentText()).not.toContain('Candidate Feedback');
       },
     );
+  });
+
+  it('stops at once when stopped before its answer arrives, ends the request, and keeps no findings', async () => {
+    let aborted = false;
+    let answered = (): void => undefined;
+    const late = new Promise<void>((resolve) => (answered = resolve));
+    const reply = async (_payload: GuardedPayload, _n: number, signal?: AbortSignal): Promise<string> => {
+      signal?.addEventListener('abort', () => (aborted = true));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      answered();
+      return '{"findings":[{"kind":"stale","pages":["Interviews"],"detail":"Old"}]}';
+    };
+    await withApp(reply, async (app) => {
+      const { body: started } = await app.call<BranchRun>('POST', '/branches/runs', {
+        kind: 'review',
+        spaceKey: 'PEOPLE',
+        pageId: interviews(),
+      });
+      const stopped = (await app.call<BranchRun>('POST', `/branches/runs/${started.id}/cancel`)).body;
+      expect(stopped.status).toBe('cancelled');
+      await late;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const after = (await app.call<BranchRun>('GET', `/branches/runs/${started.id}`)).body;
+      expect(after.status).toBe('cancelled');
+      expect(after.findings).toBeUndefined();
+      expect(aborted).toBe(true);
+    });
   });
 
   it('keeps the answer as text when it is not findings, and drops a finding of an unknown kind', async () => {

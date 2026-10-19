@@ -19,6 +19,7 @@
   } from '@lucide/svelte';
   import type { PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
+  import { jobs } from '../support/jobs.svelte.js';
   import { forPage } from '../support/pageResult.js';
   import { toast } from '../support/toast.svelte.js';
   import AskAiPanel, { type AiScope } from './AskAiPanel.svelte';
@@ -96,6 +97,11 @@
   });
 
   const current = (): string | undefined => detail?.id;
+
+  // The header opened a review that started on this page: show it.
+  $effect(() => {
+    if (jobs.requested?.kind === 'review' && jobs.requested.rootPageId === detail?.id) branchOpen = true;
+  });
   const setMetadata = (pageId: string, m: PageMetadata | null): void =>
     forPage(pageId, current, (v: PageMetadata | null) => (metadata = v))(m);
 
