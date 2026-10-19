@@ -44,11 +44,12 @@ import type {
 
 const key = encodeURIComponent;
 
-async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
+async function call<T>(url: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`/api${url}`, {
     method,
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   const text = await res.text();
   let parsed: unknown;
@@ -151,7 +152,8 @@ export const sessions = {
   },
   get: (id: string) => call<AiSessionView>(`${SESSIONS}/${key(id)}`),
   create: (scope: SessionScope) => call<AiSessionView>(SESSIONS, 'POST', { scope }),
-  send: (id: string, prompt: string) => call<AiSessionView>(`${SESSIONS}/${key(id)}/messages`, 'POST', { prompt }),
+  send: (id: string, prompt: string, signal?: AbortSignal) =>
+    call<AiSessionView>(`${SESSIONS}/${key(id)}/messages`, 'POST', { prompt }, signal),
   addFile: async (id: string, file: File): Promise<AiSessionView> => {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = '';
@@ -200,7 +202,8 @@ export const drafts = {
     call<AiSessionView>(`${DRAFTS}/${key(id)}/decision`, 'POST', { decision, linkedPageIds }),
   save: (id: string, patch: { title?: string; markdown?: string }) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}`, 'PUT', patch),
-  send: (id: string, prompt: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/messages`, 'POST', { prompt }),
+  send: (id: string, prompt: string, signal?: AbortSignal) =>
+    call<AiSessionView>(`${DRAFTS}/${key(id)}/messages`, 'POST', { prompt }, signal),
   check: (id: string) => call<unknown>(`${DRAFTS}/${key(id)}/check`, 'POST'),
   create: (id: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/create`, 'POST'),
 };

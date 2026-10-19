@@ -85,8 +85,16 @@ export function systemCliLookup(configured: string, env: NodeJS.ProcessEnv): Cli
 const STDIN_INSTRUCTION =
   'Follow the instructions at the start of the input below, applying them to the document that follows.';
 
-/** Runs one guarded prompt with the document on standard input, in a scratch working directory. */
-export function runGeminiCli(scriptPath: string, payload: GuardedPayload, env: NodeJS.ProcessEnv): Promise<string> {
+/**
+ * Runs one guarded prompt with the document on standard input, in a scratch working directory.
+ * Aborting `signal` ends the process.
+ */
+export function runGeminiCli(
+  scriptPath: string,
+  payload: GuardedPayload,
+  env: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
+): Promise<string> {
   const systemPrompt = payload.system;
   // The CLI takes one prompt, so a conversation is written out as a transcript.
   const documentContext =
@@ -98,6 +106,7 @@ export function runGeminiCli(scriptPath: string, payload: GuardedPayload, env: N
       cwd: os.tmpdir(),
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...env, NO_COLOR: '1' },
+      signal,
     });
 
     let stdoutData = '';
@@ -107,7 +116,13 @@ export function runGeminiCli(scriptPath: string, payload: GuardedPayload, env: N
     child.stdin.end(`INSTRUCTIONS:\n${systemPrompt}\n\nDOCUMENT:\n${documentContext}`);
     child.stdout.on('data', (chunk: Buffer) => (stdoutData += chunk.toString()));
     child.stderr.on('data', (chunk: Buffer) => (stderrData += chunk.toString()));
-    child.on('error', (err) => reject(new Error(`Failed to spawn Gemini CLI: ${err.message}`)));
+    child.on('error', (err) =>
+      reject(
+        new Error(
+          err.name === 'AbortError' ? 'the Gemini CLI was stopped' : `Failed to spawn Gemini CLI: ${err.message}`,
+        ),
+      ),
+    );
 
     child.on('close', (code) => {
       const cleanOutput = stdoutData

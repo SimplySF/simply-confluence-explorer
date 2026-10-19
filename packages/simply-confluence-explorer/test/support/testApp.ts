@@ -57,7 +57,7 @@ const echo = (payload: GuardedPayload, n: number): string => {
 
 export async function startTestApp(
   fake: FakeConfluence,
-  reply: (payload: GuardedPayload, n: number) => string | Promise<string> = echo,
+  reply: (payload: GuardedPayload, n: number, signal?: AbortSignal) => string | Promise<string> = echo,
   env: NodeJS.ProcessEnv = {},
 ): Promise<TestApp> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-app-'));
@@ -73,9 +73,9 @@ export async function startTestApp(
       AI_PROVIDER: 'anthropic',
       ...env,
     },
-    aiTransport: (payload) => {
+    aiTransport: (payload, signal) => {
       sent.push(payload);
-      return Promise.resolve(reply(payload, sent.length));
+      return Promise.resolve(reply(payload, sent.length, signal));
     },
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

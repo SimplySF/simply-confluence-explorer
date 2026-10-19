@@ -93,10 +93,10 @@ export function addDraftRoutes(router: Router, services: Services): Router {
           deps,
         ),
       )
-      .add('POST', '/api/drafts/:sessionId/messages', ({ params, body }) => {
+      .add('POST', '/api/drafts/:sessionId/messages', ({ params, body, signal }) => {
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
-        return coWrite(params.sessionId, prompt, deps);
+        return coWrite(params.sessionId, prompt, deps, signal);
       })
       .add('POST', '/api/drafts/:sessionId/check', ({ params }) => checkDraft(params.sessionId, deps))
       .add('POST', '/api/drafts/:sessionId/create', ({ params }) => createFromDraft(params.sessionId, deps))

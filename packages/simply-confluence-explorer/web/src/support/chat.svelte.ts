@@ -28,6 +28,7 @@ export class AiChat {
   public error = $state<string | null>(null);
   private scope: SessionScope | null = null;
   private generation = 0;
+  private stopper: AbortController | null = null;
 
   public get sending(): boolean {
     return this.pending !== null;
@@ -48,14 +49,33 @@ export class AiChat {
   public async send(prompt: string): Promise<void> {
     this.error = null;
     this.pending = prompt;
+    const stopper = new AbortController();
+    this.stopper = stopper;
     try {
       const s = await this.ensure();
-      this.session = await sessions.send(s.id, prompt);
+      this.session = await sessions.send(s.id, prompt, stopper.signal);
     } catch (e) {
-      this.error = messageOf(e);
+      // A stopped question is not an error: the person is about to ask it again.
+      if (!stopper.signal.aborted) this.error = messageOf(e);
     } finally {
-      this.pending = null;
+      if (this.stopper === stopper) {
+        this.stopper = null;
+        this.pending = null;
+      }
     }
+  }
+
+  /**
+   * Stops the question being answered. The server keeps no part of it (ADR-047).
+   *
+   * @returns The question, so it can be put back in the box to correct and send again.
+   */
+  public stop(): string | null {
+    const prompt = this.pending;
+    this.stopper?.abort();
+    this.stopper = null;
+    this.pending = null;
+    return prompt;
   }
 
   public async addFiles(files: File[]): Promise<void> {

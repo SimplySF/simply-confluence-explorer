@@ -17,6 +17,8 @@
 // Conversations: what each turn sends, what is kept, and what an upload may be (ADR-023).
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, test } from 'vitest';
 import type { AiSessionView } from '../src/api/types.js';
 import { extractText, historyToSend, SessionStore } from '../src/ai/sessions.js';
@@ -175,4 +177,35 @@ test('a scope must name a valid space, and a page scope a page', async () => {
     assert.equal((await app.call('POST', '/ai/sessions', { scope: { kind: 'space', spaceKey: '..' } })).status, 400);
     assert.equal((await app.call('GET', '/ai/sessions/not-a-uuid')).status, 400);
   });
+});
+
+test('a question the person stops adds nothing to the conversation, even when the answer arrives afterwards', async () => {
+  let answered = (): void => undefined;
+  const late = new Promise<void>((resolve) => (answered = resolve));
+  // The answer ignores the stop and comes anyway, as a provider that already had the request might.
+  const app = await startTestApp(fake, async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    answered();
+    return 'an answer nobody is waiting for';
+  });
+  try {
+    const { body: c } = await app.call<AiSessionView>('POST', '/ai/sessions', pageScope());
+    const stop = new AbortController();
+    const asked = fetch(`${app.base}/ai/sessions/${c.id}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'A question with a typo' }),
+      signal: stop.signal,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    stop.abort();
+    await assert.rejects(asked);
+    await late;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal((await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`)).body.turns.length, 0);
+    const audit = fs.readFileSync(path.join(app.dataDir, 'data', 'ai-audit.jsonl'), 'utf8');
+    assert.match(audit, /"outcome":"stopped"/);
+  } finally {
+    await app.close();
+  }
 });

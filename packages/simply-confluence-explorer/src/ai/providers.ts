@@ -61,10 +61,10 @@ export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Mes
 }
 /* eslint-enable camelcase */
 
-async function anthropic(cfg: ResolvedApi, system: string, messages: Messages): Promise<string> {
+async function anthropic(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<string> {
   const client = new Anthropic({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
   // Streamed, because page context can be long, and a long request that is not streamed can time out.
-  const message = await client.beta.messages.stream(anthropicRequest(cfg, system, messages)).finalMessage();
+  const message = await client.beta.messages.stream(anthropicRequest(cfg, system, messages), { signal }).finalMessage();
   if (message.stop_reason === 'refusal') {
     const category = message.stop_details?.category;
     throw new Error(`Claude declined this request${category ? ` (${category})` : ''}`);
@@ -75,11 +75,11 @@ async function anthropic(cfg: ResolvedApi, system: string, messages: Messages): 
     .trim();
 }
 
-async function openai(cfg: ResolvedApi, system: string, messages: Messages): Promise<string> {
+async function openai(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<string> {
   const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
   const input =
     messages.length === 1 ? messages[0].content : messages.map((m) => ({ role: m.role, content: m.content }));
-  const response = await client.responses.create({ model: cfg.model, instructions: system, input });
+  const response = await client.responses.create({ model: cfg.model, instructions: system, input }, { signal });
   return response.output_text.trim();
 }
 
@@ -87,7 +87,7 @@ function geminiClient(cfg: ResolvedApi): GoogleGenAI {
   return new GoogleGenAI({ apiKey: cfg.apiKey, httpOptions: cfg.baseUrl ? { baseUrl: cfg.baseUrl } : undefined });
 }
 
-async function gemini(cfg: ResolvedApi, system: string, messages: Messages): Promise<string> {
+async function gemini(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<string> {
   const contents =
     messages.length === 1
       ? messages[0].content
@@ -95,17 +95,25 @@ async function gemini(cfg: ResolvedApi, system: string, messages: Messages): Pro
   const response = await geminiClient(cfg).models.generateContent({
     model: cfg.model,
     contents,
-    config: { systemInstruction: system },
+    config: { systemInstruction: system, abortSignal: signal },
   });
   return (response.text ?? '').trim();
 }
 
-/** Sends a payload the outbound guard has passed; nothing else can be sent. */
-export async function complete(provider: ApiProvider, cfg: ResolvedApi, payload: GuardedPayload): Promise<string> {
+/**
+ * Sends a payload the outbound guard has passed; nothing else can be sent. Aborting `signal` ends the
+ * request, though a provider may already have received it.
+ */
+export async function complete(
+  provider: ApiProvider,
+  cfg: ResolvedApi,
+  payload: GuardedPayload,
+  signal?: AbortSignal,
+): Promise<string> {
   if (!cfg.apiKey) throw new Error(`no API key is set for ${provider}`);
   if (!cfg.model) throw new Error(`no model is chosen for ${provider}`);
   const run = { anthropic, openai, gemini }[provider];
-  return run(cfg, payload.system, payload.messages);
+  return run(cfg, payload.system, payload.messages, signal);
 }
 
 /**

@@ -26,7 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
 import { ConfiguredAi } from '../src/ai/engine.js';
-import { resolveGeminiCli, systemCliLookup, type CliLookup } from '../src/ai/geminiService.js';
+import { resolveGeminiCli, runGeminiCli, systemCliLookup, type CliLookup } from '../src/ai/geminiService.js';
 import { OutboundGuard } from '../src/ai/guard.js';
 import { anthropicRequest, complete } from '../src/ai/providers.js';
 import { AiSettingsStore, type Provider } from '../src/ai/settings.js';
@@ -325,4 +325,41 @@ test('the settings API saves a key and never returns it', async () => {
   } finally {
     server.close();
   }
+});
+
+test('a stopped request ends the call to every provider instead of waiting for its answer', async () => {
+  const closed: string[] = [];
+  // A provider that never answers; it only notices when the request is dropped.
+  const server = http.createServer((req) => req.on('close', () => closed.push(req.url ?? '')));
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    for (const [provider, model] of [
+      ['anthropic', 'claude-opus-5-5'],
+      ['openai', 'gpt-5'],
+      ['gemini', 'gemini-3-pro'],
+    ] as const) {
+      const stop = new AbortController();
+      setTimeout(() => stop.abort(), 50);
+      // eslint-disable-next-line no-await-in-loop -- one provider at a time, so each close is its own
+      await assert.rejects(complete(provider, cfg(url, model), guarded('S', 'D'), stop.signal));
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(closed.length, 3);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test('a stopped Gemini CLI run ends the process', async () => {
+  const dir = tmp();
+  const script = path.join(dir, 'gemini.js');
+  // A stand-in for the CLI that would run for a minute.
+  fs.writeFileSync(script, 'setTimeout(() => {}, 60000);\n');
+  const stop = new AbortController();
+  const started = Date.now();
+  setTimeout(() => stop.abort(), 100);
+  await assert.rejects(runGeminiCli(script, guarded('S', 'D'), {}, stop.signal), /stopped/);
+  assert.ok(Date.now() - started < 5000);
 });

@@ -57,6 +57,10 @@ Open a page and choose the **Ask AI** tab.
 The answer appears under your question, with the provider's name and the time, and a line saying
 what the leak guard did. **Markdown** shows the answer's source text, and **Copy** copies it.
 
+While the AI is answering, **Send** becomes **Stop**. Stopping puts your question back in the box so
+you can correct it and send it again; nothing of the stopped question is kept in the conversation.
+The provider may already have received it, so the app's AI log records it as stopped.
+
 The app sends its own copy of the page, the one it checked against the exclusion rules, never text
 from the browser. A page excluded from AI shows a notice instead of the question box; you can still
 ask about the whole space, which leaves the excluded page out.

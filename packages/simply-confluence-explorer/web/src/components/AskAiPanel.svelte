@@ -13,12 +13,12 @@
     Lightbulb,
     ListOrdered,
     Paperclip,
-    RefreshCw,
     RotateCcw,
     Send,
     ShieldCheck,
     ShieldOff,
     Sparkles,
+    Square,
     UserCheck,
     X,
   } from '@lucide/svelte';
@@ -320,8 +320,19 @@
       bind:value={input}
       disabled={chat.sending || blocked}
     />
-    <button type="submit" class="btn btn-primary" disabled={!input.trim() || chat.sending || blocked}>
-      {#if chat.sending}<RefreshCw size={15} class="spin" />{:else}<Send size={15} />{/if} Send
-    </button>
+    {#if chat.sending}
+      <button
+        type="button"
+        class="btn btn-secondary"
+        onclick={() => (input = chat.stop() ?? input)}
+        title="Stop the answer and put the question back to edit"
+      >
+        <Square size={13} /> Stop
+      </button>
+    {:else}
+      <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked}>
+        <Send size={15} /> Send
+      </button>
+    {/if}
   </form>
 </div>

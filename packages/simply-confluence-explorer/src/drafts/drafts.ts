@@ -192,7 +192,12 @@ export function decide(id: string, decision: string, linkedPageIds: string[], de
  * One turn with the co-writer. A complete revised draft in the reply is kept on the turn as a
  * proposal, never applied: the draft changes only when the author saves it.
  */
-export async function coWrite(id: string, prompt: string, deps: DraftDeps): Promise<AiSessionView> {
+export async function coWrite(
+  id: string,
+  prompt: string,
+  deps: DraftDeps,
+  signal?: AbortSignal,
+): Promise<AiSessionView> {
   const session = draftOf(id, deps);
   const { draft, scope } = session;
   if (!draft.redundancy?.decision) throw new HttpError(409, 'answer the check for similar pages first');
@@ -212,7 +217,7 @@ export async function coWrite(id: string, prompt: string, deps: DraftDeps): Prom
   const guard = new OutboundGuard(loadGuardRules(deps.dataDir, scope.spaceKey), deps.sessions.guardState(id));
   const answer = await deps.ai.chat(
     { context, history: historyToSend(session.turns), prompt, system: CO_WRITER_SYSTEM },
-    { spaceKey: scope.spaceKey, guard },
+    { spaceKey: scope.spaceKey, guard, signal },
   );
   const proposedDraft = DRAFT_BLOCK.exec(answer.text)?.[1];
   // The draft is kept on the turn rather than in its text, so the history does not resend every version.

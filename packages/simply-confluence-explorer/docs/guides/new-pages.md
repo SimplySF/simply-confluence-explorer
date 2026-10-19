@@ -42,7 +42,7 @@ says so.
 
 Write in the editor on the left; it saves as you type, and nothing is in Confluence yet. On the right,
 ask the AI for help, such as "Draft an outline from my notes", and add files with the paperclip if
-they help. When the AI proposes new text for the whole page, it appears as a set of changes with
+they help. While it answers you can **Stop** it, and your question comes back to edit. When the AI proposes new text for the whole page, it appears as a set of changes with
 **Accept** and **Dismiss**; it is never applied without you.
 
 Unfinished drafts are kept on your computer. **New page** offers to continue a draft you started in the

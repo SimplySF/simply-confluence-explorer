@@ -123,7 +123,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         sessions.removeFile(params.sessionId, params.fileId);
         return found(params.sessionId);
       })
-      .add('POST', '/api/ai/sessions/:sessionId/messages', async ({ params, body }) => {
+      .add('POST', '/api/ai/sessions/:sessionId/messages', async ({ params, body, signal }) => {
         const session = found(params.sessionId);
         if (session.scope.kind === 'draft') {
           throw new HttpError(400, 'a draft is written through /api/drafts/:sessionId/messages');
@@ -137,7 +137,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         );
         const answer = await ai.chat(
           { context: ctx.context, history: historyToSend(session.turns), prompt },
-          { spaceKey: session.scope.spaceKey, guard },
+          { spaceKey: session.scope.spaceKey, guard, signal },
         );
         const report = withWithheld(answer.guard, ctx.withheld);
         const now = new Date().toISOString();

@@ -10,6 +10,7 @@
     Search,
     Send,
     ShieldCheck,
+    Square,
     Upload,
   } from '@lucide/svelte';
   import type { AiSessionView, RedundancyDecision } from '../../../src/api/types.js';
@@ -70,6 +71,9 @@
     checkOk = null;
   }
 
+  // The question being answered, so Stop can end it and put it back in the box (ADR-047).
+  let asking = $state<{ prompt: string; stopper: AbortController } | null>(null);
+
   async function act(label: string, fn: () => Promise<AiSessionView | void>): Promise<void> {
     busy = label;
     error = null;
@@ -77,10 +81,18 @@
       const s = await fn();
       if (s) load(s);
     } catch (e) {
-      error = messageOf(e);
+      // A stopped question is not an error: the author is about to ask it again.
+      if (label !== 'send' || !asking?.stopper.signal.aborted) error = messageOf(e);
     } finally {
       busy = null;
+      if (label === 'send') asking = null;
     }
+  }
+
+  function stopAsking(): void {
+    if (!asking) return;
+    asking.stopper.abort();
+    prompt = asking.prompt;
   }
 
   // The editor saves itself shortly after typing stops.
@@ -119,7 +131,9 @@
     if (!p || !session) return;
     const { id } = session;
     prompt = '';
-    void act('send', () => drafts.save(id, { markdown }).then(() => drafts.send(id, p)));
+    const stopper = new AbortController();
+    asking = { prompt: p, stopper };
+    void act('send', () => drafts.save(id, { markdown }).then(() => drafts.send(id, p, stopper.signal)));
   }
 
   function addFiles(files: File[]): void {
@@ -344,9 +358,19 @@
             placeholder="e.g. Draft an outline from my notes"
             disabled={busy === 'send'}
           />
-          <button class="btn btn-primary" disabled={!prompt.trim() || busy === 'send'} aria-label="Send">
-            {#if busy === 'send'}<RefreshCw size={14} class="spin" />{:else}<Send size={14} />{/if}
-          </button>
+          {#if busy === 'send'}
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick={stopAsking}
+              aria-label="Stop"
+              title="Stop the answer and put the question back to edit"
+            >
+              <Square size={13} />
+            </button>
+          {:else}
+            <button class="btn btn-primary" disabled={!prompt.trim()} aria-label="Send"><Send size={14} /></button>
+          {/if}
         </form>
       </div>
     </div>

@@ -41,7 +41,19 @@ export type AiContext = {
   spaceKey?: string;
   /** A conversation's guard, so a value keeps its placeholder from one turn to the next. */
   guard?: OutboundGuard;
+  /** Aborts the request when the person stops it (ADR-047). */
+  signal?: AbortSignal;
 };
+
+/** A request the person stopped. Nothing may act on its answer, even one that arrives afterwards. */
+export class AiStopped extends Error {
+  // 499 is the status for a request the client gave up on; the browser that stopped it is not waiting.
+  public readonly status = 499;
+
+  public constructor() {
+    super('The request to the AI was stopped.');
+  }
+}
 
 /** What the routes need from an AI engine. Tests pass their own. */
 export type AiEngine = {
@@ -56,7 +68,7 @@ export type AiEngine = {
 };
 
 /** Sends a guarded payload and returns the reply. The real one calls a provider or the CLI. */
-export type Transport = (payload: GuardedPayload) => Promise<string>;
+export type Transport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<string>;
 
 const CHAT_SYSTEM =
   'You are an expert technical assistant helping a person work with their Confluence documentation. ' +
@@ -125,7 +137,7 @@ export class ConfiguredAi implements AiEngine {
       prompt,
       document: `# Document Title: ${pageTitle ?? 'Confluence Document'}\n\n${markdown}\n`,
     });
-    return this.deliver(payload, report, guard, ctx.spaceKey);
+    return this.deliver(payload, report, guard, ctx);
   }
 
   public async chat(
@@ -133,11 +145,11 @@ export class ConfiguredAi implements AiEngine {
     ctx: AiContext & { guard: OutboundGuard },
   ): Promise<AiAnswer> {
     const { payload, report } = ctx.guard.inspectChat({ ...parts, system: parts.system ?? CHAT_SYSTEM });
-    return this.deliver(payload, report, ctx.guard, ctx.spaceKey);
+    return this.deliver(payload, report, ctx.guard, ctx);
   }
 
-  private send(payload: GuardedPayload): Promise<string> {
-    if (this.options.transport) return this.options.transport(payload);
+  private send(payload: GuardedPayload, signal?: AbortSignal): Promise<string> {
+    if (this.options.transport) return this.options.transport(payload, signal);
     const s = this.settings.resolve();
     if (s.provider === 'gemini-cli') {
       const cli = this.cliPath();
@@ -145,17 +157,18 @@ export class ConfiguredAi implements AiEngine {
         throw new Error(
           'The Gemini CLI was not found. Install it, set its path in Settings, or choose an API provider.',
         );
-      return runGeminiCli(cli, payload, this.options.env);
+      return runGeminiCli(cli, payload, this.options.env, signal);
     }
-    return complete(s.provider, s.api[s.provider], payload);
+    return complete(s.provider, s.api[s.provider], payload, signal);
   }
 
   private async deliver(
     payload: GuardedPayload,
     report: GuardReport,
     guard: OutboundGuard,
-    spaceKey?: string,
+    { spaceKey, signal }: AiContext,
   ): Promise<AiAnswer> {
+    if (signal?.aborted) throw new AiStopped();
     const chars = payload.system.length + payload.messages.reduce((n, m) => n + m.content.length, 0);
     const entry = {
       engine: this.getEngine(),
@@ -166,11 +179,16 @@ export class ConfiguredAi implements AiEngine {
     };
     let reply: string;
     try {
-      reply = await this.send(payload);
+      reply = await this.send(payload, signal);
     } catch (error) {
-      // Recorded either way: a request that failed part of the way through may still have been sent.
-      this.audit({ ...entry, outcome: `failed: ${errorMessage(error)}` });
-      throw error;
+      // Recorded either way: a request that failed or was stopped part of the way through may still
+      // have been sent.
+      this.audit({ ...entry, outcome: signal?.aborted ? 'stopped' : `failed: ${errorMessage(error)}` });
+      throw signal?.aborted ? new AiStopped() : error;
+    }
+    if (signal?.aborted) {
+      this.audit({ ...entry, outcome: 'stopped' });
+      throw new AiStopped();
     }
     this.audit({ ...entry, outcome: 'sent' });
     return { text: guard.restore(reply), guard: report };
