@@ -182,6 +182,20 @@ const sameSource = (a: ReviewSource, b: ReviewSource): boolean =>
   a.kind === b.kind &&
   (a.kind === 'tag' ? a.tag === (b as { tag: string }).tag : a.rootPageId === (b as { rootPageId: string }).rootPageId);
 
+/** Suggestions the server stored, ready to be staged as edits. */
+export type StagedOrigin = {
+  spaceKey: string;
+  rootPageId: string;
+  rootTitle: string;
+  source?: ReviewSource;
+  instructions?: string;
+  findings: BranchFinding[];
+  /** The pages that were read, by title, so a suggestion's pages can be found. */
+  pageIds: Record<string, string>;
+  fromRunId?: string;
+  fromSessionId?: string;
+};
+
 export type ReviewInput = {
   spaceKey: string;
   source: ReviewSource;
@@ -260,28 +274,50 @@ export class BranchRunner {
   }
 
   /**
-   * Stages an edit of each page the chosen suggestions name, carrying only those suggestions. The
-   * suggestions are read from the saved review, never from the browser, and each page is checked
-   * again and edited from its current version. It returns at once, and the run fills as it goes.
+   * Stages edits from a finished review's suggestions.
    *
    * @param reviewId The review whose suggestions to apply.
    * @param chosen The indexes of the chosen suggestions in the review's findings.
    */
-  public async apply(reviewId: string, chosen: number[]): Promise<BranchRun> {
+  public apply(reviewId: string, chosen: number[]): Promise<BranchRun> {
     const review = this.get(reviewId);
     if (review.kind !== 'review' || review.status !== 'ready' || !review.findings)
       throw new HttpError(409, 'only a finished review with suggestions can be applied');
-    const findings = review.findings;
+    return this.stageEdits(
+      {
+        spaceKey: review.spaceKey,
+        rootPageId: review.rootPageId,
+        rootTitle: review.rootTitle,
+        source: sourceOf(review),
+        instructions: review.instructions,
+        findings: review.findings,
+        pageIds: review.pageIds ?? {},
+        fromRunId: review.id,
+      },
+      chosen,
+    );
+  }
+
+  /**
+   * Stages an edit of each page the chosen suggestions name, carrying only those suggestions. The
+   * suggestions come from where the server stored them, a review or a chat's answer, never from the
+   * browser, and each page is checked again and edited from its current version. It returns at once,
+   * and the run fills as it goes.
+   *
+   * @param origin The stored suggestions, the pages they may name by title, and where they came from.
+   * @param chosen The indexes of the chosen suggestions.
+   */
+  public async stageEdits(origin: StagedOrigin, chosen: number[]): Promise<BranchRun> {
+    const { findings } = origin;
     if (chosen.length === 0 || chosen.some((i) => !Number.isInteger(i) || i < 0 || i >= findings.length))
-      throw new HttpError(400, 'choose suggestions from the review');
+      throw new HttpError(400, 'choose suggestions from the list');
     const picked = [...new Set(chosen)].map((i) => findings[i]);
     if (picked.some((f) => NOT_EDITABLE.has(f.kind)))
       throw new HttpError(400, 'a suggestion to move, split, merge or write a page cannot be applied as an edit');
-    const ids = review.pageIds ?? {};
     const fixesFor = new Map<string, BranchFix[]>();
     for (const f of picked) {
       for (const title of f.pages) {
-        const id = ids[title];
+        const id = origin.pageIds[title];
         if (!id) continue;
         const fix = {
           kind: f.kind,
@@ -292,19 +328,20 @@ export class BranchRunner {
         fixesFor.set(id, [...(fixesFor.get(id) ?? []), fix]);
       }
     }
-    if (fixesFor.size === 0) throw new HttpError(400, 'the chosen suggestions name no page the review read');
+    if (fixesFor.size === 0) throw new HttpError(400, 'the chosen suggestions name no page that was read');
     // Each page is sent on its own, so the pages as a whole have no size limit.
     const { pages, leftOut } = await this.pagesFor(
-      review.spaceKey,
+      origin.spaceKey,
       [...fixesFor.keys()],
       Number.MAX_SAFE_INTEGER,
       true,
     );
     if (pages.length === 0) throw new HttpError(422, `None of the pages can be edited: ${leftOut.join(', ')}.`);
-    const run = newRun('improve', review.spaceKey, review.rootPageId, review.rootTitle, {
-      source: sourceOf(review),
-      fromRunId: review.id,
-      instructions: review.instructions,
+    const run = newRun('improve', origin.spaceKey, origin.rootPageId, origin.rootTitle, {
+      source: origin.source,
+      fromRunId: origin.fromRunId,
+      fromSessionId: origin.fromSessionId,
+      instructions: origin.instructions,
       total: pages.length,
       leftOut,
       items: pages.map((p): BranchItem => ({

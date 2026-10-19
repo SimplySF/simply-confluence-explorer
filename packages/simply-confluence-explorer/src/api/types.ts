@@ -422,6 +422,8 @@ export type BranchRun = {
   aspects?: ReviewAspect[];
   /** For staged edits, the review whose suggestions they apply. */
   fromRunId?: string;
+  /** For staged edits, the chat whose suggestions they apply. */
+  fromSessionId?: string;
   focus?: string;
   instructions?: string;
   status: 'running' | 'ready' | 'failed' | 'cancelled';
