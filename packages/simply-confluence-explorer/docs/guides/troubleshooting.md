@@ -61,7 +61,7 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
   anywhere inside a title.
 - **A page you deleted in Confluence is still in the tree**: a sync never deletes. Remove the copy
   with **⋯ → Remove from this machine…**.
-- **"Work on branch" and "With sub-pages" are missing**: they need the space to be synced.
+- **"Review section" and "With sub-pages" are missing**: they need the space to be synced.
 
 ### The AI does not answer
 

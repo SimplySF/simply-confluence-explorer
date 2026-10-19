@@ -83,7 +83,7 @@ picker on the left.
   adding files.
 - [What leaves your computer](/guides/data-safety/): excluded pages and the leak guard.
 - [Improving a page](/guides/improving-pages/): proposals, dry runs, and pushing to Confluence.
-- [Reviewing a branch](/guides/branch-review/): working on a page and everything under it at once.
+- [Reviewing a section](/guides/reviewing-a-section/): working on a page and everything under it at once.
 - [Writing a new page](/guides/new-pages/): checking for existing pages first, then writing with an
   AI.
 - [Troubleshooting](/guides/troubleshooting/): the doctor, and the messages you are most likely to

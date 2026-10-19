@@ -41,7 +41,7 @@ An excluded page is treated as if it were not there, everywhere the app could pa
 
 - it is missing from the page tree, and opening it by address says it was not found;
 - a sync does not download it, and the ZIP does not contain it;
-- it is never sent to an AI: not when you ask about it, not as part of a branch or a whole space, not
+- it is never sent to an AI: not when you ask about it, not as part of a section or a whole space, not
   for a summary, and not as a suggestion when you write a new page;
 - it does not appear in the app's search.
 
@@ -68,7 +68,7 @@ and you are told what was found and on which line, but not the value itself. The
 - values written after words such as `password`, `secret`, `api_key` or `access_token`, unless the
   value is obviously a placeholder such as `****`, `<your-token>` or `changeme`.
 
-When you ask about many pages at once (a branch or a whole space), a page holding a secret is left
+When you ask about many pages at once (a section or a whole space), a page holding a secret is left
 out and named, and the rest are still sent.
 
 **Personal data is replaced.** Email addresses, phone numbers, US Social Security numbers, card

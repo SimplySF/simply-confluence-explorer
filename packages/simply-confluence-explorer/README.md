@@ -101,7 +101,7 @@ guard, including how to write your own rules.
 A page changes only when a push is sent for it. The push names the version its proposal was made
 from, and is refused if the page has changed since, so a colleague's edit is never replaced unseen
 (`test/pagePush.test.ts`, and against a real Confluence, `test/e2e/push.e2e.ts`). The frontmatter
-block the app adds to a page's Markdown is removed before the page is written. A branch run writes
+block the app adds to a page's Markdown is removed before the page is written. A section review writes
 only the pages a person accepted, through the same path (`test/branchRuns.test.ts`,
 `test/e2e/branches.e2e.ts`).
 
@@ -120,17 +120,17 @@ title already used in the space is refused with the reason (`test/drafts.test.ts
 
 ## Guides
 
-| Guide                                                                                                   | What it covers                                                              |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Get started](https://simplysf.github.io/simply-confluence-explorer/getting-started/)                   | Requirements, starting the app, connecting, and your first few minutes      |
-| [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/)    | Personal access tokens, environment variables, company certificates         |
-| [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/) | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
-| [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)                 | Providers, questions about a page, a branch or a space, files, summaries    |
-| [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)  | Excluded pages, the leak guard and its rules, the audit log, network access |
-| [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)       | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
-| [Reviewing a branch](https://simplysf.github.io/simply-confluence-explorer/guides/branch-review/)       | Reviewing a page and everything under it, and the queue of proposals        |
-| [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)           | The check for existing pages, writing with an AI, creating the page         |
-| [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)        | The doctor's checks, and the messages you are most likely to see            |
+| Guide                                                                                                    | What it covers                                                              |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Get started](https://simplysf.github.io/simply-confluence-explorer/getting-started/)                    | Requirements, starting the app, connecting, and your first few minutes      |
+| [Connecting to Confluence](https://simplysf.github.io/simply-confluence-explorer/guides/connecting/)     | Personal access tokens, environment variables, company certificates         |
+| [Keeping a copy on disk](https://simplysf.github.io/simply-confluence-explorer/guides/syncing-a-space/)  | Syncing a space, the Markdown it produces, the table of contents, the ZIP   |
+| [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)                  | Providers, questions about a page, a section or a space, files, summaries   |
+| [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)   | Excluded pages, the leak guard and its rules, the audit log, network access |
+| [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)        | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
+| [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/) | Reviewing a page and everything under it, and the queue of proposals        |
+| [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)            | The check for existing pages, writing with an AI, creating the page         |
+| [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)         | The doctor's checks, and the messages you are most likely to see            |
 
 The guides are on the [documentation site](https://simplysf.github.io/simply-confluence-explorer/), with
 search. They are written in this package's [`docs/`](docs) folder.
@@ -148,7 +148,7 @@ readable only by your user account where the operating system allows it (`test/u
 | `config/ai-settings.json` | The AI provider, models, endpoints and keys                                                                                  |
 | `spaces/<KEY>/`           | A synced space: its Markdown pages and attachments, summaries, table of contents, `.confluenceignore` and `.confluenceguard` |
 | `data/sessions/`          | AI conversations, drafts of new pages, and the text of files added to them                                                   |
-| `data/branch-runs/`       | Branch reviews and their queues                                                                                              |
+| `data/branch-runs/`       | Section reviews and their queues                                                                                             |
 | `data/ai-audit.jsonl`     | One line per AI request, without its content                                                                                 |
 
 ## Keyboard shortcuts

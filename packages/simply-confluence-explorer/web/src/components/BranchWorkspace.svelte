@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Ban, Check, GitBranch, RefreshCw, RotateCcw, Search, ShieldCheck, Upload, Wand2 } from '@lucide/svelte';
+  import { Ban, Check, FolderTree, RefreshCw, RotateCcw, Search, ShieldCheck, Upload, Wand2 } from '@lucide/svelte';
   import type { BranchItem, BranchRun } from '../../../src/api/types.js';
   import { branches, type BranchRunSummary } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
@@ -10,7 +10,7 @@
   import Diff from './ui/Diff.svelte';
   import JobProgress from './ui/JobProgress.svelte';
 
-  // Work on a page and everything under it: review the branch as a whole, or improve each page through
+  // Work on a section, a page and everything under it: review it as a whole, or improve each page through
   // a queue where nothing is written until it is accepted (ADR-024).
   type Props = {
     spaceKey: string;
@@ -157,7 +157,7 @@
 
 <Dialog size="branch-workspace" {onClose} footer={run?.kind === 'improve' ? improveFooter : undefined}>
   {#snippet header()}
-    <GitBranch size={16} />
+    <FolderTree size={16} />
     {title} and {descendantCount} page{descendantCount === 1 ? '' : 's'} under it
   {/snippet}
   {#if error}<div class="branch-error">{error}</div>{/if}
@@ -165,7 +165,7 @@
   {#if !run}
     <div class="branch-start">
       <section>
-        <h4><Search size={14} /> Review this branch</h4>
+        <h4><Search size={14} /> Review this section</h4>
         <p>
           One read of every page together: what is wrong, repeated, out of date, misplaced or missing. Nothing is
           changed.
@@ -197,7 +197,7 @@
     ></textarea>
     {#if history.length > 0}
       <div class="branch-history">
-        <h4>Earlier runs on this branch</h4>
+        <h4>Earlier runs on this section</h4>
         {#each history as h (h.id)}
           <button class="branch-history-row" onclick={() => act('open', () => branches.get(h.id))}>
             {h.kind === 'review' ? 'Review' : `Improve (${h.focus})`} · {new Date(h.createdAt).toLocaleString()} · {h.status}

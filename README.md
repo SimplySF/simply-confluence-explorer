@@ -23,7 +23,7 @@ It covers:
   files of your own added to the conversation. Claude, ChatGPT and Gemini are supported through their
   APIs, and Gemini also through its command-line tool.
 - **Improving pages:** a proposed revision you review line by line, check with a dry run, and push,
-  for one page or for every page in a branch through a review queue.
+  for one page or for every page in a section through a review queue.
 - **Writing new pages:** a check for existing pages that already cover the topic, then a draft written
   with an AI and created under its parent.
 
@@ -74,7 +74,7 @@ getting-started guide and a guide to each part of the app:
 - [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)
 - [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)
 - [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)
-- [Reviewing a branch](https://simplysf.github.io/simply-confluence-explorer/guides/branch-review/)
+- [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/)
 - [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)
 - [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)
 

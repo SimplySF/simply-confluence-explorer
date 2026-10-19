@@ -6,7 +6,7 @@
     Copy,
     Download,
     ExternalLink,
-    GitBranch,
+    FolderTree,
     Info,
     MoreHorizontal,
     Paperclip,
@@ -165,9 +165,9 @@
           <button
             class="btn btn-secondary btn-sm"
             onclick={() => (branchOpen = true)}
-            title="Review or improve this page and everything under it"
+            title="Review this page and everything under it"
           >
-            <GitBranch size={13} /> Work on branch ({descendantCount + 1})
+            <FolderTree size={13} /> Review section ({descendantCount + 1} pages)
           </button>
         {/if}
         {#if detail.webUrl}

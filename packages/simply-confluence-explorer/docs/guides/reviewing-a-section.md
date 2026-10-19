@@ -1,28 +1,27 @@
 ---
-title: Reviewing a branch
+title: Reviewing a section
 description: Review a page and everything under it in one read, or get a proposed revision for every page and decide on each one before anything is written.
 sidebar:
   order: 7
 ---
 
-A branch is a page and every page under it. **Work on branch** lets you look at a whole section of a
-space at once: either one review that reads every page together, or a proposal for each page that you
+A section is a page and every page under it. **Review section** lets you look at all of it at once: either one review that reads every page together, or a proposal for each page that you
 accept or reject one by one. Nothing is written to Confluence until you push the pages you accepted.
 
 The button appears on a page that has pages under it in the synced copy, so sync the space first. It
-shows how many pages the branch holds.
+shows how many pages the section holds.
 
-![Starting work on a branch: review it, or improve every page](../images/branch-start.webp)
+![Starting work on a section: review it, or improve every page](../images/branch-start.webp)
 
-## Review the branch
+## Review the section
 
-**Review** sends every page in the branch to the AI together, and asks what is wrong across them:
+**Review** sends every page in the section to the AI together, and asks what is wrong across them:
 
 - **Incorrect or contradictory**: pages that disagree with each other or are wrong;
 - **Redundant**: pages that say the same thing;
 - **Out of date**: content that no longer holds;
 - **Structure**: pages in the wrong place;
-- **Missing**: something the branch should explain and does not.
+- **Missing**: something the section should explain and does not.
 
 ![Review findings, each naming the pages it is about](../images/branch-review.webp)
 
@@ -67,7 +66,7 @@ the reason shown next to it.
   lists them too.
 
 Runs are saved on your computer, so a queue survives restarting the app. Earlier runs on the same
-branch are listed when you open it again.
+section are listed when you open it again.
 
 ## How this is checked
 
@@ -75,4 +74,4 @@ branch are listed when you open it again.
 written, that a page changed by someone else is refused while the others are written, that a dry run
 writes nothing, that decisions made while proposals arrive are kept, and that a stopped review keeps
 nothing. `test/e2e/branches.e2e.ts`
-runs a branch against a real Confluence Data Center.
+runs a section against a real Confluence Data Center.

@@ -32,11 +32,11 @@ function scopeFrom(body: unknown): SessionScope {
   const scope = fieldsOf(fieldsOf(body).scope);
   const kind = scope.kind;
   if (typeof kind !== 'string' || !KINDS.has(kind) || !isValidSpaceKey(scope.spaceKey)) {
-    throw new HttpError(400, 'a scope with a kind (page, branch or space) and a spaceKey is required');
+    throw new HttpError(400, 'a scope with a kind (page, branch for a section, or space) and a spaceKey is required');
   }
   const pageId =
     typeof scope.pageId === 'string' || typeof scope.pageId === 'number' ? String(scope.pageId) : undefined;
-  if (kind !== 'space' && !isValidPageId(pageId)) throw new HttpError(400, 'a page or branch scope needs a pageId');
+  if (kind !== 'space' && !isValidPageId(pageId)) throw new HttpError(400, 'a page or section scope needs a pageId');
   return {
     kind: kind as SessionScope['kind'],
     spaceKey: scope.spaceKey.toUpperCase(),

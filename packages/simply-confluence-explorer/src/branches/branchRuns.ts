@@ -41,13 +41,13 @@ export type BranchDeps = GateDeps & {
   log: (message: string) => void;
 };
 
-const REVIEW_PROMPT = `Review this branch of Confluence documentation as a whole: the pages that follow belong together.
+const REVIEW_PROMPT = `Review this section of Confluence documentation as a whole: the pages that follow belong together.
 Find what a maintainer should fix:
 - "incorrect": statements that contradict another page or look wrong
 - "redundant": the same content in more than one page
 - "stale": content that looks out of date (old versions, dates, retired systems)
 - "structure": pages in the wrong place, or that should be split or merged
-- "gap": something the branch clearly needs and does not have
+- "gap": something the section clearly needs and does not have
 Reply with JSON only, in this shape:
 {"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do"}]}
 Use exact page titles. Report nothing you are not confident of; an empty list is a valid answer.`;
@@ -101,7 +101,7 @@ export class BranchRunStore {
 
   public get(id: string): BranchRun {
     const file = this.file(id);
-    if (!fs.existsSync(file)) throw new HttpError(404, 'no such branch run');
+    if (!fs.existsSync(file)) throw new HttpError(404, 'no such review run');
     return readJsonOrEmpty<BranchRun>(file);
   }
 
@@ -192,7 +192,7 @@ export class BranchRunner {
       .join('\n\n---\n\n');
     const prompt = input.instructions ? `${REVIEW_PROMPT}\nAlso: ${input.instructions}` : REVIEW_PROMPT;
     void this.deps.ai
-      .analyzeDocument(context, prompt, `Branch: ${run.rootTitle}`, { spaceKey, signal })
+      .analyzeDocument(context, prompt, `Section: ${run.rootTitle}`, { spaceKey, signal })
       .then((answer) => {
         const findings = parseFindings(answer.text);
         if (findings) run.findings = findings;
