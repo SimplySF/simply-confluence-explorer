@@ -27,7 +27,7 @@ computer; the browser never sees them.
 ## Start it
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta
+npx @simplysf/simply-confluence-explorer
 ```
 
 `npx` downloads the app the first time and runs it. When it is ready it prints:
@@ -38,15 +38,16 @@ Confluence Explorer is running at http://127.0.0.1:4280/
 
 Open that address in your browser. The app keeps running until you press Ctrl+C in the terminal.
 
-The `@beta` tag matters: Confluence Explorer has not had its first stable release yet, and every
-version published so far is a beta.
+This runs the latest stable release. Every change merged into the project is also published as a
+beta, which you can try with `npx @simplysf/simply-confluence-explorer@beta`; a beta has not yet
+had the review a stable release gets.
 
 ## Check your setup
 
 Before you connect, or whenever something does not work, run the doctor:
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta doctor
+npx @simplysf/simply-confluence-explorer doctor
 ```
 
 It checks your Node version, your Confluence connection, the folder the app keeps its data in, and

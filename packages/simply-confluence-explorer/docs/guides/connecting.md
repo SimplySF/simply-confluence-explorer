@@ -46,7 +46,7 @@ where you would rather not type the token into a browser:
 ```sh
 CONFLUENCE_URL=https://confluence.example.com \
 CONFLUENCE_PERSONAL_TOKEN=your-token \
-npx @simplysf/simply-confluence-explorer@beta
+npx @simplysf/simply-confluence-explorer
 ```
 
 When `CONFLUENCE_URL` is set, it is the connection: the Settings dialog shows it but cannot change
@@ -65,7 +65,7 @@ Ask your IT team for the certificate authority's file (often ending in `.pem` or
 the app with `NODE_EXTRA_CA_CERTS` pointing at it:
 
 ```sh
-NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer@beta
+NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem npx @simplysf/simply-confluence-explorer
 ```
 
 The variable must be set when the app starts; the `.env` file in the data folder cannot set it. The

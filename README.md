@@ -53,7 +53,7 @@ personal access token for your account. Atlassian Cloud is not supported.
 Run it with `npx`, which downloads it the first time:
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta
+npx @simplysf/simply-confluence-explorer
 # Confluence Explorer is running at http://127.0.0.1:4280/
 ```
 
@@ -61,7 +61,7 @@ Open the address it prints, then connect to your Confluence under **Settings**. 
 work, the doctor checks your setup and says what to fix:
 
 ```sh
-npx @simplysf/simply-confluence-explorer@beta doctor
+npx @simplysf/simply-confluence-explorer doctor
 ```
 
 ## Documentation
