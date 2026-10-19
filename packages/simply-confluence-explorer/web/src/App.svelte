@@ -392,6 +392,7 @@
       parentId={page.detail.id}
       parentTitle={page.detail.title}
       notes={newPageNotes}
+      pages={allPages}
       onClose={() => {
         dialog = null;
         newPageNotes = '';

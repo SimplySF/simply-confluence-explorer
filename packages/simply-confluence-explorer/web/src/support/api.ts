@@ -203,7 +203,9 @@ export const drafts = {
   recheck: (id: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/recheck`, 'POST'),
   decide: (id: string, decision: RedundancyDecision, linkedPageIds: string[]) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}/decision`, 'POST', { decision, linkedPageIds }),
-  save: (id: string, patch: { title?: string; markdown?: string }) =>
+  addRepository: (id: string, link: string) =>
+    call<AiSessionView>(`${DRAFTS}/${key(id)}/repositories`, 'POST', { link }),
+  save: (id: string, patch: { title?: string; markdown?: string; examplePageId?: string; template?: string }) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}`, 'PUT', patch),
   send: (id: string, prompt: string, signal?: AbortSignal) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}/messages`, 'POST', { prompt }, signal),

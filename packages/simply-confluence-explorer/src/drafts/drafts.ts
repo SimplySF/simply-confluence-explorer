@@ -23,6 +23,7 @@ import { HttpError } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { tokens, type SearchIndex } from '../spaces/searchIndex.js';
+import { GitLabClient, type GitLabStore } from '../gitlab/client.js';
 import { errorMessage } from '../util/errors.js';
 
 // Writing a new page with an AI co-writer (ADR-025). Before drafting, the existing pages are searched
@@ -31,6 +32,8 @@ import { errorMessage } from '../util/errors.js';
 
 export type DraftDeps = GateDeps & {
   ai: AiEngine;
+  /** The GitLab connection, when repositories may be read (ADR-050). */
+  gitlab?: GitLabStore;
   index: SearchIndex;
   sessions: SessionStore;
   dataDir: string;
@@ -209,10 +212,16 @@ export async function coWrite(
         : '';
     }),
   );
+  // An example page is a page like any other: checked against the exclusion rules before it is sent.
+  const example = draft.examplePageId ? await gatePageForAi(draft.examplePageId, scope.spaceKey, deps) : undefined;
+  const follow =
+    (example?.allowed && example.page
+      ? `\n\n---\n\n## [Example page whose structure to follow: ${example.page.title}]\n${parsePage(example.page).markdown}`
+      : '') + (draft.template?.trim() ? `\n\n---\n\n## Structure to follow\n${draft.template}` : '');
   const files = deps.sessions.filesContext(id);
   const context =
     `# New page: ${draft.title}\nUnder: ${draft.parentTitle ?? draft.parentId}\n\n## The author's notes\n${draft.notes || '(none)'}\n\n## Current draft\n${draft.markdown}` +
-    `${related.join('')}${files ? `\n\n---\n\n# Files\n\n${files}` : ''}`;
+    `${follow}${related.join('')}${files ? `\n\n---\n\n# Files and repositories\n\n${files}` : ''}`;
 
   const guard = new OutboundGuard(loadGuardRules(deps.dataDir, scope.spaceKey), deps.sessions.guardState(id));
   const answer = await deps.ai.chat(
@@ -242,18 +251,41 @@ export async function coWrite(
   );
 }
 
-export function saveDraft(
+export async function saveDraft(
   id: string,
-  patch: { title?: string; markdown?: string; notes?: string },
+  patch: { title?: string; markdown?: string; notes?: string; examplePageId?: string; template?: string },
   deps: DraftDeps,
-): AiSessionView {
-  const { draft } = draftOf(id, deps);
+): Promise<AiSessionView> {
+  const { draft, scope } = draftOf(id, deps);
   if (draft.createdPageId) throw new HttpError(409, 'this page has already been created');
   const next: Partial<DraftState> = {};
   if (patch.title?.trim()) next.title = patch.title.trim();
   if (patch.markdown !== undefined) next.markdown = patch.markdown;
   if (patch.notes !== undefined) next.notes = patch.notes;
+  if (patch.template !== undefined) next.template = patch.template.slice(0, 20_000);
+  if (patch.examplePageId !== undefined) {
+    // An example the author could not have been offered, because it is excluded, is refused outright.
+    if (patch.examplePageId) {
+      const gate = await gatePageForAi(patch.examplePageId, scope.spaceKey, deps);
+      if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'That page cannot be sent to an AI.');
+    }
+    next.examplePageId = patch.examplePageId || undefined;
+  }
   return deps.sessions.updateDraft(id, next);
+}
+
+/**
+ * Adds what a GitLab repository says about itself to a draft, as a file of the conversation, so the
+ * co-writer reads it with every turn and the author can remove it like any file (ADR-050).
+ */
+export async function addRepository(id: string, link: string, deps: DraftDeps): Promise<AiSessionView> {
+  const { draft } = draftOf(id, deps);
+  if (draft.createdPageId) throw new HttpError(409, 'this page has already been created');
+  if (!deps.gitlab)
+    throw new HttpError(400, 'GitLab is not set up: add its address and a token under Settings → GitLab.');
+  const repo = await new GitLabClient(deps.gitlab.resolve()).readRepository(link);
+  await deps.sessions.addFile(id, `${repo.name} (GitLab).md`, Buffer.from(repo.text, 'utf8'));
+  return draftOf(id, deps);
 }
 
 function readyToCreate(draft: DraftState): void {

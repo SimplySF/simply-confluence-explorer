@@ -2407,3 +2407,20 @@ div.disclosure-body {
 .chat-context-coverage:not(:empty) {
   padding: 0 0.65rem 0.4rem;
 }
+
+/* What the co-writer of a new page reads */
+.new-page-reads {
+  font-size: 0.8rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.new-page-reads summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.new-page-reads[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}

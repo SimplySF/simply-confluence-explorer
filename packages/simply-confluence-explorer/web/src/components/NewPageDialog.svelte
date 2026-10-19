@@ -30,13 +30,27 @@
     parentTitle: string;
     /** What the page should cover, when a review suggested it. */
     notes?: string;
+    /** The space's pages, to choose one whose structure to follow; excluded pages are never among them. */
+    pages: Array<{ id: string; title: string }>;
     onClose: () => void;
     /** The author chose to work on an existing page instead, or opens the new one. */
     onOpenPage: (pageId: string) => void;
     onCreated: () => void;
   };
 
-  let { spaceKey, parentId, parentTitle, notes: suggested = '', onClose, onOpenPage, onCreated }: Props = $props();
+  let {
+    spaceKey,
+    parentId,
+    parentTitle,
+    notes: suggested = '',
+    pages,
+    onClose,
+    onOpenPage,
+    onCreated,
+  }: Props = $props();
+  let exampleTitle = $state('');
+  let template = $state('');
+  let repoLink = $state('');
   const OVERLAP_LABEL = { high: 'Already covers this', some: 'Covers part of it', low: 'Little overlap' } as const;
   const UPLOAD_TYPES = '.pdf,.md,.markdown,.txt,.csv,.tsv,.json,.yaml,.yml,.log,.xml,.html,.htm';
 
@@ -71,6 +85,8 @@
     session = s;
     markdown = s.draft?.markdown ?? '';
     title = s.draft?.title ?? '';
+    template = s.draft?.template ?? '';
+    exampleTitle = pages.find((p) => p.id === s.draft?.examplePageId)?.title ?? '';
     checkOk = null;
   }
 
@@ -137,6 +153,29 @@
     const stopper = new AbortController();
     asking = { prompt: p, stopper };
     void act('send', () => drafts.save(id, { markdown }).then(() => drafts.send(id, p, stopper.signal)));
+  }
+
+  /** Saves the example page and structure the co-writer follows. */
+  function saveGuides(): void {
+    if (!session) return;
+    const { id } = session;
+    const example = pages.find((p) => p.title.toLowerCase() === exampleTitle.trim().toLowerCase());
+    if (exampleTitle.trim() && !example) {
+      error = `No page called “${exampleTitle.trim()}” in ${spaceKey}.`;
+      return;
+    }
+    void act('guides', () => drafts.save(id, { examplePageId: example?.id ?? '', template }));
+  }
+
+  function addRepository(): void {
+    if (!session || !repoLink.trim()) return;
+    const { id } = session;
+    const link = repoLink.trim();
+    void act('repo', async () => {
+      const s = await drafts.addRepository(id, link);
+      repoLink = '';
+      return s;
+    });
   }
 
   function addFiles(files: File[]): void {
@@ -295,6 +334,56 @@
       </div>
 
       <div class="new-page-chat">
+        <details class="new-page-reads">
+          <summary
+            >What the co-writer reads: notes, files{d.examplePageId ? ', an example page' : ''}{d.template
+              ? ', a structure'
+              : ''}{session.files.some((x) => x.name.endsWith('(GitLab).md')) ? ', GitLab' : ''}</summary
+          >
+          <label class="form-label" for="np-example">Follow the structure of an existing page</label>
+          <input
+            id="np-example"
+            class="form-input input-sm"
+            list="np-pages"
+            placeholder="Start typing a page title, such as another service's page"
+            bind:value={exampleTitle}
+          />
+          <datalist id="np-pages"
+            >{#each pages as p (p.id)}<option value={p.title}></option>{/each}</datalist
+          >
+          <label class="form-label" for="np-template">Or paste a structure to follow</label>
+          <textarea
+            id="np-template"
+            class="form-input"
+            rows="3"
+            placeholder="## Overview&#10;## Architecture&#10;## Runbook"
+            bind:value={template}
+          ></textarea>
+          <button class="btn btn-secondary btn-sm" disabled={busy === 'guides'} onclick={saveGuides}>
+            <Check size={13} /> Use these
+          </button>
+          <label class="form-label" for="np-repo">Read a GitLab repository</label>
+          <form
+            class="row"
+            onsubmit={(e) => {
+              e.preventDefault();
+              addRepository();
+            }}
+          >
+            <input
+              id="np-repo"
+              class="form-input input-sm"
+              placeholder="https://gitlab.yourcompany.com/group/service"
+              bind:value={repoLink}
+            />
+            <button class="btn btn-secondary btn-sm" disabled={!repoLink.trim() || busy === 'repo'}>
+              {busy === 'repo' ? 'Reading…' : 'Add'}
+            </button>
+          </form>
+          <span class="branch-note"
+            >Its README, docs, API files and manifest are added as a file. Set GitLab up in Settings.</span
+          >
+        </details>
         <div class="new-page-turns">
           {#if session.turns.length === 0}
             <p class="branch-note">

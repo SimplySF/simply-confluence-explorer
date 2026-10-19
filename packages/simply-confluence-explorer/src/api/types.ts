@@ -324,6 +324,10 @@ export type DraftState = {
   parentId: string;
   parentTitle?: string;
   notes: string;
+  /** An existing page whose structure the new page follows, such as another service's docs. */
+  examplePageId?: string;
+  /** A structure for the new page, pasted by the author. */
+  template?: string;
   markdown: string;
   redundancy?: {
     checkedAt: string;

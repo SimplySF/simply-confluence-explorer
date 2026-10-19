@@ -19,6 +19,7 @@ import {
   checkRedundancy,
   coWrite,
   createFromDraft,
+  addRepository,
   decide,
   draftOf,
   saveDraft,
@@ -47,6 +48,7 @@ export function addDraftRoutes(router: Router, services: Services): Router {
     client: services.client,
     dataDir: services.dataDir,
     log: services.log,
+    gitlab: services.gitlab,
   };
   return (
     router
@@ -82,17 +84,28 @@ export function addDraftRoutes(router: Router, services: Services): Router {
           : [];
         return decide(params.sessionId, optionalString(body, 'decision') ?? '', ids, deps);
       })
-      .add('PUT', '/api/drafts/:sessionId', ({ params, body }) =>
-        saveDraft(
+      .add('PUT', '/api/drafts/:sessionId', ({ params, body }) => {
+        const example = fieldsOf(body).examplePageId;
+        const examplePageId = typeof example === 'number' ? String(example) : example;
+        if (examplePageId !== undefined && examplePageId !== '' && !isValidPageId(examplePageId))
+          throw new HttpError(400, 'invalid examplePageId');
+        return saveDraft(
           params.sessionId,
           {
             title: optionalString(body, 'title'),
             markdown: optionalString(body, 'markdown'),
             notes: optionalString(body, 'notes'),
+            examplePageId,
+            template: optionalString(body, 'template'),
           },
           deps,
-        ),
-      )
+        );
+      })
+      .add('POST', '/api/drafts/:sessionId/repositories', ({ params, body }) => {
+        const link = optionalString(body, 'link')?.trim();
+        if (!link) throw new HttpError(400, 'a link to a GitLab repository is required');
+        return addRepository(params.sessionId, link, deps);
+      })
       .add('POST', '/api/drafts/:sessionId/messages', ({ params, body, signal }) => {
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
