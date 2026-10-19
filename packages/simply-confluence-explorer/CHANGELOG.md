@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.1.0-beta.7](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.6...%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.7) (2026-10-19)
+
+### Features
+
+- publish a stable release when its release pull request is approved ([#21](https://github.com/SimplySF/simply-confluence-explorer/issues/21)) ([f544759](https://github.com/SimplySF/simply-confluence-explorer/commit/f544759c1505b0bab3e5d4516a88cfbbda49a662))
+
 # [0.1.0-beta.6](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.5...%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.6) (2026-10-19)
 
 **Note:** Version bump only for package @simplysf/simply-confluence-explorer
