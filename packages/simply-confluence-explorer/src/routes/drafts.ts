@@ -31,6 +31,18 @@ import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
+/** A series' child pages from a request: each a title and its Markdown. */
+function childrenOf(value: unknown): Array<{ title: string; markdown: string }> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new HttpError(400, 'children must be a list of pages');
+  return value.map((v: unknown) => {
+    const page = fieldsOf(v);
+    if (typeof page.title !== 'string' || typeof page.markdown !== 'string')
+      throw new HttpError(400, 'each page of a series has a title and its Markdown');
+    return { title: page.title, markdown: page.markdown.slice(0, 200_000) };
+  });
+}
+
 /**
  * Adds the routes for writing a new page with a co-writer, after a check for pages that already say
  * it (ADR-025).
@@ -97,6 +109,7 @@ export function addDraftRoutes(router: Router, services: Services): Router {
             notes: optionalString(body, 'notes'),
             examplePageId,
             template: optionalString(body, 'template'),
+            children: childrenOf(fieldsOf(body).children),
           },
           deps,
         );

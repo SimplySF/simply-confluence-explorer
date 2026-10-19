@@ -14,7 +14,7 @@
     Upload,
   } from '@lucide/svelte';
   import { untrack } from 'svelte';
-  import type { AiSessionView, RedundancyDecision } from '../../../src/api/types.js';
+  import type { AiSessionView, RedundancyDecision, SeriesPage } from '../../../src/api/types.js';
   import { drafts, sessions, type DraftSummary } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
@@ -48,6 +48,9 @@
     onOpenPage,
     onCreated,
   }: Props = $props();
+  // A series: the overview is the draft itself (tab 0), and its child pages follow.
+  let children = $state<SeriesPage[]>([]);
+  let tab = $state(0);
   let exampleTitle = $state('');
   let template = $state('');
   let repoLink = $state('');
@@ -78,14 +81,23 @@
 
   const d = $derived(session?.draft);
   const stage = $derived(
-    !session ? 'describe' : !d?.redundancy?.decision ? 'check' : d.createdPageId ? 'done' : 'write',
+    !session
+      ? 'describe'
+      : !d?.redundancy?.decision
+        ? 'check'
+        : d.createdPageId && (d.children ?? []).every((c) => c.createdPageId)
+          ? 'done'
+          : 'write',
   );
+  const pageCount = $derived(1 + children.length);
 
   function load(s: AiSessionView): void {
     session = s;
     markdown = s.draft?.markdown ?? '';
     title = s.draft?.title ?? '';
     template = s.draft?.template ?? '';
+    children = (s.draft?.children ?? []).map((c) => ({ ...c }));
+    if (tab > children.length) tab = 0;
     exampleTitle = pages.find((p) => p.id === s.draft?.examplePageId)?.title ?? '';
     checkOk = null;
   }
@@ -114,11 +126,11 @@
     prompt = asking.prompt;
   }
 
-  // The editor saves itself shortly after typing stops.
+  // The editor saves itself shortly after typing stops; the overview cannot change once it is created.
   $effect(() => {
     const text = markdown;
     const id = session?.id;
-    if (stage !== 'write' || !id || text === d?.markdown) return;
+    if (stage !== 'write' || !id || text === d?.markdown || d?.createdPageId) return;
     const t = setTimeout(() => {
       drafts.save(id, { markdown: text }).then(
         (s) => (session = s),
@@ -128,14 +140,45 @@
     return () => clearTimeout(t);
   });
 
+  // A series' pages save themselves the same way.
+  $effect(() => {
+    const pages = JSON.stringify(children.map((c) => ({ title: c.title, markdown: c.markdown })));
+    const id = session?.id;
+    const saved = JSON.stringify((d?.children ?? []).map((c) => ({ title: c.title, markdown: c.markdown })));
+    if (stage !== 'write' || !id || pages === saved) return;
+    const timer = setTimeout(() => {
+      drafts.save(id, { children: JSON.parse(pages) as SeriesPage[] }).then(
+        (s) => (session = s),
+        (e: unknown) => (error = messageOf(e)),
+      );
+    }, 800);
+    return () => clearTimeout(timer);
+  });
+
   const proposal = $derived.by(() => {
     const turns = session?.turns ?? [];
     for (let i = turns.length - 1; i >= 0; i--) {
       const text = turns[i].proposedDraft;
-      if (text && !dismissed.has(i)) return { index: i, text };
+      const series = turns[i].proposedSeries;
+      if ((text || series?.length) && !dismissed.has(i)) return { index: i, text, series };
     }
     return null;
   });
+
+  function acceptSeries(series: SeriesPage[], index: number): void {
+    if (!session) return;
+    const { id } = session;
+    const [overview, ...rest] = series;
+    dismiss(index);
+    tab = 0;
+    void act('series', () =>
+      drafts.save(id, {
+        title: overview.title,
+        markdown: overview.markdown,
+        children: rest.map((p) => ({ title: p.title, markdown: p.markdown })),
+      }),
+    );
+  }
 
   const decide = (decision: RedundancyDecision): Promise<void> =>
     act(decision, () => drafts.decide(session!.id, decision, decision === 'link' ? linked : []));
@@ -209,15 +252,20 @@
     onclick={() =>
       session &&
       act('check', async () => {
-        await drafts.save(session!.id, { markdown });
+        await drafts.save(session!.id, {
+          ...(d?.createdPageId ? {} : { markdown }),
+          children: children.map((c) => ({ title: c.title, markdown: c.markdown })),
+        });
         await drafts.check(session!.id);
-        checkOk = 'Dry run passed: Confluence will accept this page.';
+        checkOk = `Dry run passed: Confluence will accept ${pageCount === 1 ? 'this page' : `all ${pageCount} pages`}.`;
       })}
   >
     {#if busy === 'check'}<RefreshCw size={14} class="spin" />{:else}<Check size={14} />{/if} Dry run
   </button>
   <button class="btn btn-primary" disabled={!!busy} onclick={() => (confirmCreate = true)}>
-    {#if busy === 'create'}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if} Create page
+    {#if busy === 'create'}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if} Create {pageCount === 1
+      ? 'page'
+      : `${pageCount} pages`}
   </button>
 {/snippet}
 
@@ -313,22 +361,68 @@
   {:else if stage === 'write' && session && d}
     <div class="new-page-write">
       <div class="new-page-editor">
+        {#if children.length > 0}
+          <div class="new-page-series" role="tablist" aria-label="Pages of the series">
+            {#each [{ title, createdPageId: d.createdPageId }, ...children] as p, i (i)}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === i}
+                class={['new-page-series-tab', tab === i && 'active']}
+                onclick={() => (tab = i)}
+              >
+                {i === 0 ? 'Overview: ' : ''}{p.title}{p.createdPageId ? ' (created)' : ''}
+              </button>
+            {/each}
+          </div>
+        {/if}
         <div class="branch-runbar">
-          <input
-            class="form-input"
-            aria-label="Title"
-            bind:value={title}
-            onblur={() => title.trim() && title !== d.title && act('title', () => drafts.save(session!.id, { title }))}
-          />
+          {#if tab === 0}
+            <input
+              class="form-input"
+              aria-label="Title"
+              bind:value={title}
+              disabled={!!d.createdPageId}
+              onblur={() =>
+                title.trim() && title !== d.title && act('title', () => drafts.save(session!.id, { title }))}
+            />
+          {:else}
+            <input
+              class="form-input"
+              aria-label="Title of this page"
+              bind:value={children[tab - 1].title}
+              disabled={!!children[tab - 1].createdPageId}
+            />
+          {/if}
           <button class="btn btn-secondary btn-sm" onclick={() => (preview = !preview)}>
             {#if preview}<Pencil size={13} />{:else}<Eye size={13} />{/if}
             {preview ? 'Edit' : 'Preview'}
           </button>
         </div>
+        {#if tab > 0 && children[tab - 1].similar?.length}
+          <div class="branch-note">
+            Similar pages already in the space: {children[tab - 1].similar?.map((s) => s.title).join(', ')}.
+          </div>
+        {/if}
         {#if preview}
-          <Markdown source={markdown} extraClass="markdown-preview new-page-preview" />
+          <Markdown
+            source={tab === 0 ? markdown : children[tab - 1].markdown}
+            extraClass="markdown-preview new-page-preview"
+          />
+        {:else if tab === 0}
+          <textarea
+            class="form-input branch-editor"
+            aria-label="Page content"
+            bind:value={markdown}
+            disabled={!!d.createdPageId}
+          ></textarea>
         {:else}
-          <textarea class="form-input branch-editor" aria-label="Page content" bind:value={markdown}></textarea>
+          <textarea
+            class="form-input branch-editor"
+            aria-label="Content of this page"
+            bind:value={children[tab - 1].markdown}
+            disabled={!!children[tab - 1].createdPageId}
+          ></textarea>
         {/if}
         {#if checkOk}<div class="guard-note"><Check size={12} /> {checkOk}</div>{/if}
       </div>
@@ -398,7 +492,23 @@
             </div>
           {/each}
         </div>
-        {#if proposal}
+        {#if proposal?.series?.length}
+          <div class="new-page-proposal">
+            <strong>Proposed series of {proposal.series.length} pages</strong>
+            <ol class="plain-list">
+              {#each proposal.series as p, i (i)}<li>{i === 0 ? 'Overview: ' : ''}{p.title}</li>{/each}
+            </ol>
+            <p class="branch-note">
+              Accepting replaces the draft with these pages; the children go under the overview.
+            </p>
+            <div class="branch-actions">
+              <button class="btn btn-primary btn-sm" onclick={() => acceptSeries(proposal.series!, proposal.index)}>
+                <Check size={13} /> Accept the series
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick={() => dismiss(proposal.index)}>Dismiss</button>
+            </div>
+          </div>
+        {:else if proposal?.text}
           <div class="new-page-proposal">
             <strong>Proposed change</strong>
             <Diff before={markdown} after={proposal.text} />
@@ -406,7 +516,7 @@
               <button
                 class="btn btn-primary btn-sm"
                 onclick={() => {
-                  markdown = proposal.text;
+                  markdown = proposal.text!;
                   dismiss(proposal.index);
                 }}
               >
@@ -468,7 +578,12 @@
     </div>
   {:else if stage === 'done' && d}
     <div class="new-page-done">
-      <p><strong>{d.title}</strong> was created in {spaceKey}.</p>
+      <p>
+        <strong>{d.title}</strong> was created in {spaceKey}{#if d.children?.length}, with {d.children.length} page{d
+            .children.length === 1
+            ? ''
+            : 's'} under it: {d.children.map((c) => c.title).join(', ')}{/if}.
+      </p>
       <div class="branch-actions">
         <button class="btn btn-primary" onclick={() => d.createdPageId && onOpenPage(d.createdPageId)}
           >Open it here</button
@@ -483,11 +598,17 @@
   {/if}
 
   {#if confirmCreate && session}
-    <ConfirmDialog title="Create this page in Confluence?" onCancel={() => (confirmCreate = false)} onConfirm={create}>
-      {#snippet confirmLabel()}<Upload size={14} /> Create page{/snippet}
+    <ConfirmDialog
+      title={pageCount === 1 ? 'Create this page in Confluence?' : `Create these ${pageCount} pages in Confluence?`}
+      onCancel={() => (confirmCreate = false)}
+      onConfirm={create}
+    >
+      {#snippet confirmLabel()}<Upload size={14} /> Create{/snippet}
       <p>
-        <strong>{title}</strong> is created under “{d?.parentTitle}” in {spaceKey}. A title already used in the space is
-        refused.
+        <strong>{title}</strong> is created under “{d?.parentTitle}” in {spaceKey}{children.length
+          ? `, then ${children.map((c) => c.title).join(', ')} under it, in that order`
+          : ''}. A title already used in the space is refused; if one is, the pages already created are named and the
+        rest stay here to create again.
       </p>
     </ConfirmDialog>
   {/if}

@@ -278,6 +278,8 @@ export type SessionTurn = {
   runIds?: string[];
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
+  /** On a co-writer's answer: a proposed series, an overview page then its child pages. */
+  proposedSeries?: SeriesPage[];
 };
 
 export type SessionFileInfo = {
@@ -328,6 +330,8 @@ export type DraftState = {
   examplePageId?: string;
   /** A structure for the new page, pasted by the author. */
   template?: string;
+  /** Pages created under the new page with it, in order, when the draft is a series. */
+  children?: SeriesPage[];
   markdown: string;
   redundancy?: {
     checkedAt: string;
@@ -408,6 +412,15 @@ export type BranchFinding = {
   pages: string[];
   detail: string;
   suggestion?: string;
+};
+
+/** One page of a series written with the co-writer: its title, its Markdown, and once created, its id. */
+export type SeriesPage = {
+  title: string;
+  markdown: string;
+  /** Existing pages with a similar title, found when the page was added to the series. */
+  similar?: Array<{ pageId: string; title: string }>;
+  createdPageId?: string;
 };
 
 /** The GitLab connection, as a browser may see it: never the token (ADR-050). */

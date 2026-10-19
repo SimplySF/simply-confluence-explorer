@@ -205,8 +205,16 @@ export const drafts = {
     call<AiSessionView>(`${DRAFTS}/${key(id)}/decision`, 'POST', { decision, linkedPageIds }),
   addRepository: (id: string, link: string) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}/repositories`, 'POST', { link }),
-  save: (id: string, patch: { title?: string; markdown?: string; examplePageId?: string; template?: string }) =>
-    call<AiSessionView>(`${DRAFTS}/${key(id)}`, 'PUT', patch),
+  save: (
+    id: string,
+    patch: {
+      title?: string;
+      markdown?: string;
+      examplePageId?: string;
+      template?: string;
+      children?: Array<{ title: string; markdown: string }>;
+    },
+  ) => call<AiSessionView>(`${DRAFTS}/${key(id)}`, 'PUT', patch),
   send: (id: string, prompt: string, signal?: AbortSignal) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}/messages`, 'POST', { prompt }, signal),
   check: (id: string) => call<unknown>(`${DRAFTS}/${key(id)}/check`, 'POST'),

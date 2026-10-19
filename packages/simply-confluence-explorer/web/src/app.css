@@ -2424,3 +2424,25 @@ div.disclosure-body {
   flex-direction: column;
   gap: 0.35rem;
 }
+
+/* The pages of a series in the New page dialog */
+.new-page-series {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+.new-page-series-tab {
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel-secondary);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.new-page-series-tab.active {
+  background: var(--accent-light);
+  border-color: var(--accent-primary);
+}
