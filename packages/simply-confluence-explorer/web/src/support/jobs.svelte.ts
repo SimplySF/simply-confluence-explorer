@@ -18,12 +18,12 @@
 // component that started it, so opening another page does not lose its progress, and the header can
 // show it and lead back to it.
 
-import type { MetadataProgress } from '../../../src/api/types.js';
+import type { MetadataProgress, SyncProgress } from '../../../src/api/types.js';
 import { api } from './api.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
-export type JobKind = 'summaries';
+export type JobKind = 'summaries' | 'sync';
 
 export type Job = {
   kind: JobKind;
@@ -51,6 +51,10 @@ class Jobs {
     return this.list.find((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && j.rootPageId === rootPageId);
   }
 
+  public sync(spaceKey: string): Job | undefined {
+    return this.list.find((j) => j.kind === 'sync' && j.spaceKey === spaceKey);
+  }
+
   /**
    * Calls `listener` whenever a job finishes, so what shows its results can read them again.
    *
@@ -69,9 +73,17 @@ class Jobs {
     }
   }
 
+  public async startSync(spaceKey: string): Promise<void> {
+    try {
+      this.watchSync(await api.sync(spaceKey));
+    } catch (e) {
+      toast(`Sync did not start: ${messageOf(e)}`, 'error');
+    }
+  }
+
   public async stop(job: Job): Promise<void> {
     try {
-      await api.cancelMetadata(job.jobId);
+      await (job.kind === 'sync' ? api.cancelSync(job.jobId) : api.cancelMetadata(job.jobId));
     } catch (e) {
       toast(`Could not stop it: ${messageOf(e)}`, 'error');
       return;
@@ -81,9 +93,51 @@ class Jobs {
 
   /** Picks up the work already running for a space, which outlives a reload of the page. */
   public resume(spaceKey: string): void {
+    // Nothing running is the usual answer, and a failed check leaves nothing to show.
     api.activeMetadata(spaceKey).then(
       (p) => p && running(p.status) && this.watchSummaries(p),
-      () => undefined, // Nothing running is the usual answer, and a failed check leaves nothing to show.
+      () => undefined,
+    );
+    api.activeSync(spaceKey).then(
+      (p) => p && running(p.status) && this.watchSync(p),
+      () => undefined,
+    );
+  }
+
+  private watchSync(p: SyncProgress): void {
+    if (this.stops.has(p.jobId)) return;
+    const job = (q: SyncProgress): Job => ({
+      kind: 'sync',
+      jobId: q.jobId,
+      spaceKey: q.spaceKey,
+      label: `Syncing ${q.spaceKey}`,
+      processed: q.processed,
+      total: q.total,
+      current: q.currentPageTitle,
+    });
+    this.put(job(p));
+    this.stops.set(
+      p.jobId,
+      pollJob(
+        () => api.syncStatus(p.jobId),
+        {
+          onProgress: (q) => this.put(job(q)),
+          onFinished: (q) => {
+            toast(
+              q.status === 'completed'
+                ? `${q.spaceKey} synced: ${q.downloadedCount} page${q.downloadedCount === 1 ? '' : 's'} downloaded, ${q.skippedCount} already current or excluded.`
+                : `Sync ${q.status}${q.errors.length ? `: ${q.errors[0].error}` : ''}.`,
+              q.status === 'completed' ? 'success' : 'error',
+            );
+            this.finish(job(q), q.status);
+          },
+          onError: (e) => {
+            toast(`Sync stopped reporting: ${messageOf(e)}`, 'error');
+            this.finish(job(p), 'failed');
+          },
+        },
+        400,
+      ),
     );
   }
 

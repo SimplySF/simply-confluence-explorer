@@ -165,6 +165,33 @@ describe('syncing a space', () => {
   });
 });
 
+describe('a second sync of a space', () => {
+  it('gets the sync already running, which a reloaded browser can find again', async () => {
+    const app = await startApp();
+    try {
+      const [first, second] = await Promise.all([
+        call<SyncProgress>(app, '/space-cache/sync', { spaceKey: 'PLAT' }),
+        call<SyncProgress>(app, '/space-cache/sync', { spaceKey: 'plat' }),
+      ]);
+      expect(second.body.jobId).toBe(first.body.jobId);
+      const active = await call<{ activeJob: SyncProgress | null }>(app, '/space-cache/PLAT/sync/active');
+      expect(active.body.activeJob?.jobId).toBe(first.body.jobId);
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+        const { body } = await call<SyncProgress>(app, `/space-cache/sync/status/${first.body.jobId}`);
+        if (body.status === 'completed') break;
+        // eslint-disable-next-line no-await-in-loop -- as above
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(
+        (await call<{ activeJob: SyncProgress | null }>(app, '/space-cache/PLAT/sync/active')).body.activeJob,
+      ).toBe(null);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe('a synced space', () => {
   it('has a table of contents and knows what is below each page', async () => {
     const app = await startApp();

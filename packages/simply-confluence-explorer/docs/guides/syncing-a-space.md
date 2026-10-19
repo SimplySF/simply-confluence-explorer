@@ -15,7 +15,8 @@ Choose a space in the sidebar, open the **Space** menu, and choose **Sync space*
 
 ![The Space menu, with Sync space at the top](../images/space-menu.webp)
 
-The menu shows progress as the pages arrive, with a **Stop** button. When the sync finishes, a
+The menu shows progress as the pages arrive, with a **Stop** button, and the header shows it too
+while you browse; if you reload the page, the progress comes back. When the sync finishes, a
 message says how many pages were downloaded and how many were already current or excluded, and the
 badge under the space picker changes from **Not synced** to the number of pages synced.
 

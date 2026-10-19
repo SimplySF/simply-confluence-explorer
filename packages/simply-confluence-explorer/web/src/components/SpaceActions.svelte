@@ -10,11 +10,9 @@
     Sparkles,
     Trash2,
   } from '@lucide/svelte';
-  import { onDestroy } from 'svelte';
-  import type { SyncProgress, SyncedSpace } from '../../../src/api/types.js';
+  import type { SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
-  import { pollJob } from '../support/poll.js';
   import { summaryAction } from '../support/summaries.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import SpaceRulesDialog from './SpaceRulesDialog.svelte';
@@ -35,54 +33,12 @@
   };
 
   let { spaceKey, manifest, onChanged, onSelectPage }: Props = $props();
-  let sync = $state<SyncProgress | null>(null);
   let dialog = $state<'toc' | 'rules' | 'purge' | null>(null);
-  let stopSyncPoll = (): void => undefined;
-  onDestroy(() => stopSyncPoll());
 
+  // Sync and summary runs are held in the jobs store, so they keep reporting after this menu goes away.
+  const sync = $derived(jobs.sync(spaceKey));
   const meta = $derived(jobs.summaries(spaceKey));
   $effect(() => jobs.onFinished((j) => j.spaceKey === spaceKey && onChanged()));
-
-  async function startSync(): Promise<void> {
-    try {
-      const started = await api.sync(spaceKey);
-      sync = started;
-      stopSyncPoll = pollJob(
-        () => api.syncStatus(started.jobId),
-        {
-          onProgress: (p) => (sync = p),
-          onFinished: (p) => {
-            sync = null;
-            onChanged();
-            toast(
-              p.status === 'completed'
-                ? `${spaceKey} synced: ${p.downloadedCount} page${p.downloadedCount === 1 ? '' : 's'} downloaded, ${p.skippedCount} already current or excluded.`
-                : `Sync ${p.status}${p.errors.length ? `: ${p.errors[0].error}` : ''}.`,
-              p.status === 'completed' ? 'success' : 'error',
-            );
-          },
-          onError: (e) => {
-            sync = null;
-            toast(`Sync stopped reporting: ${messageOf(e)}`, 'error');
-          },
-        },
-        400,
-      );
-    } catch (e) {
-      toast(`Sync did not start: ${messageOf(e)}`, 'error');
-    }
-  }
-
-  async function stopSync(): Promise<void> {
-    if (!sync) return;
-    try {
-      await api.cancelSync(sync.jobId);
-    } catch (e) {
-      toast(`Could not stop the sync: ${messageOf(e)}`, 'error');
-    }
-    stopSyncPoll();
-    sync = null;
-  }
 
   async function purgeStale(): Promise<void> {
     dialog = null;
@@ -127,7 +83,7 @@
           label: synced ? 'Update space' : 'Sync space',
           icon: FolderSync,
           hint: 'Download changed pages to this machine',
-          onSelect: startSync,
+          onSelect: () => jobs.startSync(spaceKey),
           disabled: !!sync,
         },
         {
@@ -176,8 +132,8 @@
     <JobProgress
       processed={sync.processed}
       total={sync.total}
-      current={sync.currentPageTitle || 'Starting sync…'}
-      onStop={stopSync}
+      current={sync.current || 'Starting sync…'}
+      onStop={() => jobs.stop(sync!)}
     />
   {/if}
   {#if meta}

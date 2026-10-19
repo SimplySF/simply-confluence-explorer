@@ -83,6 +83,8 @@ export const api = {
   sync: (spaceKey: string) => call<SyncProgress>('/space-cache/sync', 'POST', { spaceKey }),
   syncStatus: (jobId: string) => call<SyncProgress>(`/space-cache/sync/status/${key(jobId)}`),
   cancelSync: (jobId: string) => call(`/space-cache/sync/cancel/${key(jobId)}`, 'POST'),
+  activeSync: (spaceKey: string) =>
+    call<{ activeJob: SyncProgress | null }>(`/space-cache/${key(spaceKey)}/sync/active`).then((r) => r.activeJob),
   toc: (spaceKey: string) => call<{ toc: SpaceTocNode[] }>(`/space-cache/${key(spaceKey)}/toc`).then((r) => r.toc),
   zipUrl: (spaceKey: string) => `/api/space-cache/${key(spaceKey)}/zip`,
   purgeStale: (spaceKey: string) => call<PurgeResult>(`/space-cache/${key(spaceKey)}/cache/purge`, 'POST'),

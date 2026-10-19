@@ -44,6 +44,9 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
     })
     .add('GET', '/api/space-cache/sync/status/:jobId', ({ params }) => sync.get(params.jobId) ?? notFound(params.jobId))
     .add('POST', '/api/space-cache/sync/cancel/:jobId', ({ params }) => ({ cancelled: sync.cancel(params.jobId) }))
+    .add('GET', '/api/space-cache/:spaceKey/sync/active', ({ params }) => ({
+      activeJob: sync.activeFor(params.spaceKey) ?? null,
+    }))
     .add('GET', '/api/space-cache/:spaceKey/toc', ({ params }): { toc: SpaceTocNode[] } => {
       if (!store.isSynced(params.spaceKey))
         throw new HttpError(404, `${params.spaceKey} has not been synced, so it has no table of contents`);

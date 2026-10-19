@@ -51,13 +51,16 @@ export class SpaceSync {
   }
 
   /**
-   * Starts a sync in the background.
+   * Starts a sync in the background, or returns the one already running for the space, since two
+   * at once would download the same pages twice.
    *
    * @param spaceKey The space to sync.
    * @param rootPageId Sync only this page and what is below it, adding to what is already on disk.
    */
   public start(spaceKey: string, rootPageId?: string): SyncProgress {
     const key = spaceKey.trim().toUpperCase();
+    const running = this.activeFor(key);
+    if (running) return running;
     const fields = {
       spaceKey: key,
       total: 0,
@@ -76,6 +79,12 @@ export class SpaceSync {
 
   public cancel(jobId: string): boolean {
     return this.jobs.cancel(jobId) !== undefined;
+  }
+
+  /** The sync running for a space, so a browser that reloads can pick up its progress. */
+  public activeFor(spaceKey: string): SyncProgress | undefined {
+    const key = spaceKey.trim().toUpperCase();
+    return this.jobs.find((job) => job.spaceKey === key && (job.status === 'pending' || job.status === 'running'));
   }
 
   private async run(job: SyncProgress, spaceKey: string, rootPageId?: string): Promise<void> {
