@@ -15,6 +15,7 @@
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { pollJob } from '../support/poll.js';
+  import { summaryAction } from '../support/summaries.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import SpaceRulesDialog from './SpaceRulesDialog.svelte';
   import TocViewer from './TocViewer.svelte';
@@ -106,13 +107,7 @@
 
   const synced = $derived(!!manifest);
   const needSync = $derived(synced ? undefined : 'Sync the space first');
-  const metaLabel = $derived.by(() => {
-    if (!manifest) return 'Generate AI summaries';
-    if (manifest.metadataCount > 0 && manifest.metadataCount < manifest.pageCount)
-      return `Resume AI summaries (${manifest.metadataCount}/${manifest.pageCount})`;
-    if (manifest.pageCount > 0 && manifest.metadataCount >= manifest.pageCount) return 'Regenerate AI summaries';
-    return 'Generate AI summaries';
-  });
+  const summaries = $derived(summaryAction(manifest));
 </script>
 
 <div class="space-actions">
@@ -136,11 +131,11 @@
           disabled: !!sync,
         },
         {
-          label: metaLabel,
+          label: summaries.label,
           icon: Sparkles,
-          hint: needSync ?? 'Summaries and tags for every page, and the table of contents',
+          hint: needSync ?? summaries.hint,
           onSelect: () => jobs.startSummaries(spaceKey),
-          disabled: !synced || !!meta || !!sync,
+          disabled: !synced || !!meta || !!sync || summaries.done,
         },
         {
           label: 'Table of contents',

@@ -89,7 +89,7 @@ topics once those exist. Click a title to open the page. The same table is saved
 and add topic tags. It keeps going while you open other pages: the header shows how far it has got,
 and clicking it takes you back. Starting it again while it runs shows the same run rather than
 starting a second one. You can pause it and come back later. It only summarises pages that do not have a
-summary yet; to redo the summary of one page, use **Regenerate** on that page's **Details** tab. A
+summary yet; once every page has one, the menu says so; to redo the summary of one page, use **Regenerate** on that page's **Details** tab. A
 page's summary is removed when a sync downloads a newer version of it, so it is never out of date.
 
 ![The Details tab, with a page's AI summary and its frontmatter](../images/details.webp)
