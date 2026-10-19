@@ -6,7 +6,6 @@
     Copy,
     Download,
     ExternalLink,
-    FolderTree,
     Info,
     MoreHorizontal,
     Paperclip,
@@ -15,7 +14,6 @@
     Tag,
     Trash2,
     User,
-    Wand2,
   } from '@lucide/svelte';
   import type { BranchFinding, PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
@@ -24,16 +22,14 @@
   import { toast } from '../support/toast.svelte.js';
   import AskAiPanel, { type AiScope } from './AskAiPanel.svelte';
   import DetailsPanel from './DetailsPanel.svelte';
-  import ImprovePanel from './ImprovePanel.svelte';
   import PurgePageDialog from './PurgePageDialog.svelte';
   import ReadPanel from './ReadPanel.svelte';
   import Menu from './ui/Menu.svelte';
 
-  type Tab = 'read' | 'ai' | 'improve' | 'details';
+  type Tab = 'read' | 'ai' | 'details';
   const TABS = [
     { id: 'read', label: 'Read', icon: BookOpen },
     { id: 'ai', label: 'Chat', icon: Sparkles },
-    { id: 'improve', label: 'Improve', icon: Wand2 },
     { id: 'details', label: 'Details', icon: Info },
   ] as const;
 
@@ -46,29 +42,16 @@
     onPagePurged: () => void;
     /** Pages were written to Confluence: reload the tree and this page. */
     onPagesChanged: () => void;
-    /** Review this page and everything under it, in the review dialog. */
-    onReviewSection: (rootPageId: string, title: string) => void;
     /** A review found a page that should exist: start writing it under this one. */
     onWriteNewPage: (finding: BranchFinding) => void;
   };
 
-  let {
-    activeSpace,
-    page,
-    loading,
-    error,
-    onSelectPage,
-    onPagePurged,
-    onPagesChanged,
-    onReviewSection,
-    onWriteNewPage,
-  }: Props = $props();
+  let { activeSpace, page, loading, error, onSelectPage, onPagePurged, onPagesChanged, onWriteNewPage }: Props =
+    $props();
   let tab = $state<Tab>('read');
   // A page with sub-pages is asked about together with them unless the person chooses the page alone.
   let scope = $state<AiScope>('branch');
   let purging = $state(false);
-  // A review of this page that the header opened, shown on the Improve tab.
-  let openRunId = $state<string | undefined>(undefined);
 
   // What the view needs beyond the page itself: whether it is excluded from AI, its AI summary, and how
   // many pages sit under it. Cleared at once on a new page, so one page's facts never show on another.
@@ -113,13 +96,12 @@
 
   const current = (): string | undefined => detail?.id;
 
-  // The header opened a review of this page: show it on the Improve tab.
+  // The header opened edits staged from this page's chat: show the chat.
   $effect(() => {
     const wanted = jobs.requested;
-    if (wanted?.source?.kind !== 'page' || wanted.source.rootPageId !== detail?.id) return;
+    if (!wanted?.sessionId || wanted.rootPageId !== detail?.id) return;
     jobs.requested = null;
-    openRunId = wanted.jobId;
-    tab = 'improve';
+    tab = 'ai';
   });
   const setMetadata = (pageId: string, m: PageMetadata | null): void =>
     forPage(pageId, current, (v: PageMetadata | null) => (metadata = v))(m);
@@ -180,15 +162,6 @@
         </nav>
       </div>
       <div class="toolbar-buttons">
-        {#if descendantCount > 0 && !excluded}
-          <button
-            class="btn btn-secondary btn-sm"
-            onclick={() => onReviewSection(detail.id, detail.title)}
-            title="Review this page and everything under it"
-          >
-            <FolderTree size={13} /> Review section ({descendantCount + 1} pages)
-          </button>
-        {/if}
         {#if detail.webUrl}
           <a
             href={detail.webUrl}
@@ -261,20 +234,9 @@
         onScopeChange={(s) => (scope = s)}
         active={tab === 'ai'}
         {onSelectPage}
+        onPushed={onPagesChanged}
+        {onWriteNewPage}
       />
-    </div>
-    <div class="tab-pane" hidden={tab !== 'improve'}>
-      {#key detail.id}
-        <ImprovePanel
-          {page}
-          {spaceKey}
-          {excluded}
-          {openRunId}
-          onOpenPage={onSelectPage}
-          onPushed={onPagesChanged}
-          {onWriteNewPage}
-        />
-      {/key}
     </div>
     <div class="tab-pane" hidden={tab !== 'details'}>
       <DetailsPanel

@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-// Section reviews against the real Confluence Data Center test environment: edits are staged only
+// Changes from a chat against the real Confluence Data Center test environment: edits are staged only
 // from the suggestions chosen, only accepted pages are written, and a page a colleague changed after
 // its edit was made is never written over.
 
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { BranchRun } from '../../src/api/types.js';
+import type { AiSessionView, BranchRun } from '../../src/api/types.js';
 import type { GuardedPayload } from '../../src/ai/guard.js';
 import { loadTestEnv, SKIP_REASON, startApp } from './testEnv.js';
 
@@ -66,24 +66,22 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   };
-  /** Reviews the Interviews section, then stages edits from a suggestion that names both of its visible pages. */
+  /** A chat on the Interviews directory reviews it, then queues edits from a suggestion naming both visible pages. */
   const improve = async (): Promise<BranchRun> => {
-    const review = await settled(
-      (
-        await call<BranchRun>('POST', '/branches/runs', {
-          spaceKey: 'PEOPLE',
-          source: { kind: 'section', rootPageId: id('Interviews') },
-          pageIds: [id('Interviews'), id('Interview Guide')],
-        })
-      ).id,
+    const chat = await call<AiSessionView>('POST', '/ai/sessions', {
+      scope: { kind: 'branch', spaceKey: 'PEOPLE', pageId: id('Interviews') },
+    });
+    const reviewed = await call<AiSessionView>('POST', `/ai/sessions/${chat.id}/suggest`, { kind: 'review' });
+    const turn = reviewed.turns.length - 1;
+    return settled(
+      (await call<BranchRun>('POST', `/ai/sessions/${chat.id}/turns/${turn}/queue`, { findings: [0] })).id,
     );
-    return settled((await call<BranchRun>('POST', `/branches/runs/${review.id}/apply`, { findings: [0] })).id);
   };
 
   beforeAll(async () => {
     const reply = (payload: GuardedPayload): Promise<string> => {
       const text = [payload.system, ...payload.messages.map((m) => m.content)].join('\n');
-      if (text.includes('"findings"'))
+      if (!text.includes('<<<PROPOSED_MARKDOWN>>>'))
         return Promise.resolve(
           JSON.stringify({
             findings: [

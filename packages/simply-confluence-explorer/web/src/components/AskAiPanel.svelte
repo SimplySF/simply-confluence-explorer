@@ -4,7 +4,7 @@
 
 <script lang="ts">
   import { Bot, FileText, Lightbulb, ListOrdered, RotateCcw, ShieldCheck, ShieldOff, UserCheck } from '@lucide/svelte';
-  import type { PageDetail } from '../../../src/api/types.js';
+  import type { BranchFinding, PageDetail } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import ChatThread from './ChatThread.svelte';
@@ -22,9 +22,23 @@
     /** The tab is showing: the conversation scrolls to its newest answer. */
     active: boolean;
     onSelectPage: (pageId: string) => void;
+    /** Pages were written from a queue, so the tree and the page reload. */
+    onPushed: () => void;
+    onWriteNewPage: (finding: BranchFinding) => void;
   };
 
-  let { detail, spaceKey, excluded, descendantCount, scope, onScopeChange, active, onSelectPage }: Props = $props();
+  let {
+    detail,
+    spaceKey,
+    excluded,
+    descendantCount,
+    scope,
+    onScopeChange,
+    active,
+    onSelectPage,
+    onPushed,
+    onWriteNewPage,
+  }: Props = $props();
 
   const QUICK = [
     {
@@ -135,7 +149,16 @@
     {/each}
   </div>
 
-  <ChatThread {chat} {subject} {blocked} {active} {onSelectPage}>
+  <ChatThread
+    {chat}
+    {subject}
+    {blocked}
+    {active}
+    {onSelectPage}
+    {onPushed}
+    {onWriteNewPage}
+    reviewLabel={effective === 'branch' ? 'Review for problems' : 'Suggest improvements'}
+  >
     {#snippet empty()}
       <Bot size={32} />
       <strong>Ask about {subject}</strong>

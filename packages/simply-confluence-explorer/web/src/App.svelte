@@ -7,12 +7,10 @@
     ConnectionView,
     PageResponse,
     PageTreeNode,
-    ReviewSource,
   } from '../../src/api/types.js';
   import JobsBar from './components/JobsBar.svelte';
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
-  import ReviewDialog from './components/ReviewDialog.svelte';
   import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
@@ -70,14 +68,6 @@
   let sidebarWidth = $state(Math.max(260, Math.min(850, Number(remembered('sidebar_width')) || 340)));
   let resizing = $state(false);
   let dialog = $state<'settings' | 'snippet' | 'new-page' | null>(null);
-  // The review dialog, for a section or a tag; a page's own review is on its Improve tab.
-  let reviewing = $state<{
-    spaceKey: string;
-    source: ReviewSource;
-    title: string;
-    openRunId?: string;
-    candidates?: Array<{ id: string; title: string; path?: string }>;
-  } | null>(null);
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
   let view = $state<'page' | 'chat'>('page');
   let chatSeed = $state<ChatSeed | null>(null);
@@ -223,20 +213,17 @@
 
   function openJob(job: Job): void {
     chooseSpace(job.spaceKey);
+    if (job.kind !== 'review') {
+      if (job.rootPageId) openPage(job.rootPageId);
+      return;
+    }
+    // Edits are shown in the chat they came from: a page's Chat tab, or Space chat.
+    jobs.requested = job;
     if (job.rootPageId) openPage(job.rootPageId);
-    if (job.kind !== 'review' || !job.source) return;
-    if (job.source.kind === 'page') jobs.requested = job;
-    else
-      reviewing = {
-        spaceKey: job.spaceKey,
-        source: job.source,
-        title: job.label.replace(/^\w+: /, ''),
-        openRunId: job.jobId,
-      };
+    else view = 'chat';
   }
 
   function writeNewPage(finding: BranchFinding): void {
-    reviewing = null;
     newPageNotes = [finding.detail, finding.suggestion].filter(Boolean).join('\n\n');
     dialog = 'new-page';
   }
@@ -342,13 +329,6 @@
         loading={treeLoading}
         error={treeError}
         onTreeChanged={reloadTree}
-        onReviewTag={(t) =>
-          (reviewing = {
-            spaceKey: activeSpace,
-            source: { kind: 'tag', tag: t.tag },
-            title: `#${t.tag}`,
-            candidates: t.pages,
-          })}
       />
     </div>
     <!-- A drag handle for the mouse; the sidebar's width is not something the keyboard needs to set. -->
@@ -380,8 +360,6 @@
           selectedPageId = null;
           page = null;
         }}
-        onReviewSection={(rootPageId, title) =>
-          (reviewing = { spaceKey: activeSpace, source: { kind: 'section', rootPageId }, title })}
         onWriteNewPage={writeNewPage}
       />
     </div>
@@ -394,6 +372,11 @@
           onSeeded={() => (chatSeed = null)}
           active={view === 'chat'}
           onSelectPage={openPage}
+          onPushed={() => {
+            reloadTree();
+            pageRev++;
+          }}
+          onWriteNewPage={writeNewPage}
         />
       </div>
     {/if}
@@ -418,21 +401,6 @@
         selectedPageId = id;
       }}
       onCreated={reloadTree}
-    />
-  {/if}
-  {#if reviewing}
-    <ReviewDialog
-      {...reviewing}
-      onClose={() => (reviewing = null)}
-      onOpenPage={(id) => {
-        reviewing = null;
-        openPage(id);
-      }}
-      onPushed={() => {
-        reloadTree();
-        pageRev++;
-      }}
-      onWriteNewPage={writeNewPage}
     />
   {/if}
   <Toasts />

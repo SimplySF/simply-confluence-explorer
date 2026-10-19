@@ -36,8 +36,6 @@
     error: string | null;
     /** The synced copy changed (a sync, a purge): reload the tree. */
     onTreeChanged: () => void;
-    /** Review the pages that carry a tag. */
-    onReviewTag: (tag: TaggedPages) => void;
     /** Ask about the pages that carry a tag, in Space chat. */
     onAskTag: (tag: TaggedPages) => void;
     chatOpen: boolean;
@@ -55,7 +53,6 @@
     loading,
     error,
     onTreeChanged,
-    onReviewTag,
     onAskTag,
     chatOpen,
     onOpenChat,
@@ -381,14 +378,7 @@
   </div>
 
   {#if view === 'tags'}
-    <TagsView
-      spaceKey={selectedSpace}
-      synced={!!manifest}
-      {selectedPageId}
-      {onSelectPage}
-      onReview={onReviewTag}
-      onAsk={onAskTag}
-    />
+    <TagsView spaceKey={selectedSpace} synced={!!manifest} {selectedPageId} {onSelectPage} onAsk={onAskTag} />
   {/if}
   <div
     hidden={view !== 'pages'}

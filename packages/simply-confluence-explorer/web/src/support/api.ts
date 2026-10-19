@@ -34,9 +34,6 @@ import type {
   PurgeResult,
   RedundancyDecision,
   ResolveResponse,
-  ReviewAspect,
-  ReviewSource,
-  SectionPage,
   SessionScope,
   SpaceTocNode,
   SyncedSpace,
@@ -65,7 +62,6 @@ async function call<T>(url: string, method = 'GET', body?: unknown, signal?: Abo
   return parsed as T;
 }
 
-export type BranchRunSummary = Omit<BranchRun, 'items' | 'findings' | 'reportText'> & { pages: number };
 export type Descendants = { count: number; descendantIds: string[]; titles: string[] };
 export type DraftSummary = AiSessionView & { turnCount: number };
 
@@ -133,8 +129,6 @@ export const api = {
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
   tags: (spaceKey: string) => call<{ tags: TaggedPages[] }>(`/space-cache/${key(spaceKey)}/tags`).then((r) => r.tags),
-  section: (spaceKey: string, pageId: string) =>
-    call<{ pages: SectionPage[] }>(`/space-cache/${key(spaceKey)}/pages/${key(pageId)}/section`).then((r) => r.pages),
 };
 
 const SESSIONS = '/ai/sessions';
@@ -156,6 +150,10 @@ export const sessions = {
     call<{ sessions: DraftSummary[] }>(`${SESSIONS}?${new URLSearchParams({ kind: 'space,pages', spaceKey })}`).then(
       (r) => r.sessions,
     ),
+  suggest: (id: string, kind: 'review' | 'changes', signal?: AbortSignal) =>
+    call<AiSessionView>(`${SESSIONS}/${key(id)}/suggest`, 'POST', { kind }, signal),
+  queue: (id: string, turn: number, findings: number[]) =>
+    call<BranchRun>(`${SESSIONS}/${key(id)}/turns/${turn}/queue`, 'POST', { findings }),
   update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
@@ -178,18 +176,6 @@ export const sessions = {
 const RUNS = '/branches/runs';
 
 export const branches = {
-  start: (body: {
-    spaceKey: string;
-    source: ReviewSource;
-    pageIds: string[];
-    aspects: ReviewAspect[];
-    instructions?: string;
-  }) => call<BranchRun>(RUNS, 'POST', body),
-  apply: (id: string, findings: number[]) => call<BranchRun>(`${RUNS}/${key(id)}/apply`, 'POST', { findings }),
-  list: (spaceKey: string, source: ReviewSource) =>
-    call<{ runs: BranchRunSummary[] }>(
-      `${RUNS}?${new URLSearchParams({ spaceKey, source: source.kind, ...(source.kind === 'tag' ? { tag: source.tag } : { pageId: source.rootPageId }) })}`,
-    ).then((r) => r.runs),
   get: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}`),
   cancel: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/cancel`, 'POST'),
   decide: (id: string, pageId: string, decision: 'accept' | 'reject' | 'reset', proposed?: string) =>

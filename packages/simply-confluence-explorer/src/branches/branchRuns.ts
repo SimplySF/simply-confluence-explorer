@@ -23,7 +23,6 @@ import type {
   BranchItem,
   BranchRun,
   PageDetail,
-  PageTreeNode,
   ReviewAspect,
   ReviewSource,
 } from '../api/types.js';
@@ -33,8 +32,7 @@ import { applyPrompt, parseRecommendationResponse } from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { CONTEXT_CHAR_LIMIT, contextCollector } from '../spaces/branchContext.js';
-import { tagsOf } from '../spaces/tags.js';
+import { contextCollector } from '../spaces/branchContext.js';
 import { errorMessage } from '../util/errors.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
@@ -156,17 +154,6 @@ export class BranchRunStore {
     return readJsonOrEmpty<BranchRun>(file);
   }
 
-  /** The runs in a space, newest first, optionally only those whose pages were chosen the same way. */
-  public list(spaceKey?: string, source?: ReviewSource): BranchRun[] {
-    if (!fs.existsSync(this.dir)) return [];
-    return fs
-      .readdirSync(this.dir)
-      .filter((f) => RUN_ID.test(f.slice(0, -5)))
-      .map((f) => readJsonOrEmpty<BranchRun>(path.join(this.dir, f)))
-      .filter((r) => (!spaceKey || r.spaceKey === spaceKey) && (!source || sameSource(sourceOf(r), source)))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
   private file(id: string): string {
     if (!RUN_ID.test(id)) throw new HttpError(400, 'invalid run id');
     return within(this.dir, `${id}.json`);
@@ -174,13 +161,6 @@ export class BranchRunStore {
 }
 
 type ReviewPage = { id: string; title: string; version: number; lastModified: string; markdown: string };
-
-/** How a run's pages were chosen; a run saved before reviews had a source reviewed a whole section. */
-export const sourceOf = (run: BranchRun): ReviewSource => run.source ?? { kind: 'section', rootPageId: run.rootPageId };
-
-const sameSource = (a: ReviewSource, b: ReviewSource): boolean =>
-  a.kind === b.kind &&
-  (a.kind === 'tag' ? a.tag === (b as { tag: string }).tag : a.rootPageId === (b as { rootPageId: string }).rootPageId);
 
 /** Suggestions the server stored, ready to be staged as edits. */
 export type StagedOrigin = {
@@ -194,14 +174,6 @@ export type StagedOrigin = {
   pageIds: Record<string, string>;
   fromRunId?: string;
   fromSessionId?: string;
-};
-
-export type ReviewInput = {
-  spaceKey: string;
-  source: ReviewSource;
-  pageIds: string[];
-  aspects: ReviewAspect[];
-  instructions?: string;
 };
 
 export class BranchRunner {
@@ -219,83 +191,6 @@ export class BranchRunner {
 
   public get(id: string): BranchRun {
     return this.live.get(id) ?? this.store.get(id);
-  }
-
-  /**
-   * Starts a review of the chosen pages, read together in one request. It returns at once. Every page
-   * must belong to the source it was chosen from and pass the exclusion rules; a page holding a
-   * secret, or beyond the size limit, is left out and named.
-   */
-  public async startReview(input: ReviewInput): Promise<BranchRun> {
-    await this.checkMembership(input);
-    const { pages, leftOut } = await this.pagesFor(input.spaceKey, input.pageIds, CONTEXT_CHAR_LIMIT);
-    if (pages.length === 0) throw new HttpError(422, `None of the chosen pages could be sent: ${leftOut.join(', ')}.`);
-    const { source } = input;
-    const rootPageId = source.kind === 'tag' ? '' : source.rootPageId;
-    const title =
-      source.kind === 'tag' ? `#${source.tag}` : (pages.find((p) => p.id === rootPageId)?.title ?? pages[0].title);
-    const run = newRun('review', input.spaceKey, rootPageId, title, {
-      source: input.source,
-      aspects: input.aspects,
-      instructions: input.instructions,
-      total: 1,
-      leftOut,
-      pageIds: Object.fromEntries(pages.map((p) => [p.title, p.id])),
-    });
-    this.store.save(run);
-    const signal = this.begin(run);
-    const context = pages
-      .map(
-        (p) =>
-          `## [Page: ${p.title}] (version ${p.version}, last updated ${p.lastModified.slice(0, 10) || 'unknown'})\n${p.markdown}`,
-      )
-      .join('\n\n---\n\n');
-    const prompt = reviewPrompt(input.aspects, pages.length, input.instructions);
-    void this.deps.ai
-      .analyzeDocument(context, prompt, title, { spaceKey: input.spaceKey, signal })
-      .then((answer) => {
-        const findings = parseFindings(answer.text);
-        if (findings) run.findings = findings;
-        else run.reportText = answer.text;
-        run.status = 'ready';
-      })
-      .catch((error: unknown) => {
-        // A stopped review keeps nothing: the engine refuses even an answer that arrives afterwards.
-        if (this.cancelled.has(run.id)) return;
-        run.status = 'failed';
-        run.error = errorMessage(error);
-      })
-      .finally(() => {
-        if (run.status !== 'cancelled') run.processed = 1;
-        this.store.save(run);
-        this.end(run);
-      });
-    return run;
-  }
-
-  /**
-   * Stages edits from a finished review's suggestions.
-   *
-   * @param reviewId The review whose suggestions to apply.
-   * @param chosen The indexes of the chosen suggestions in the review's findings.
-   */
-  public apply(reviewId: string, chosen: number[]): Promise<BranchRun> {
-    const review = this.get(reviewId);
-    if (review.kind !== 'review' || review.status !== 'ready' || !review.findings)
-      throw new HttpError(409, 'only a finished review with suggestions can be applied');
-    return this.stageEdits(
-      {
-        spaceKey: review.spaceKey,
-        rootPageId: review.rootPageId,
-        rootTitle: review.rootTitle,
-        source: sourceOf(review),
-        instructions: review.instructions,
-        findings: review.findings,
-        pageIds: review.pageIds ?? {},
-        fromRunId: review.id,
-      },
-      chosen,
-    );
   }
 
   /**
@@ -395,31 +290,6 @@ export class BranchRunner {
   /** Writes every accepted page. A page that was not accepted is never written. */
   public push(id: string): Promise<BranchRun> {
     return this.eachAccepted(id, false);
-  }
-
-  /** Refuses a page that the source it was chosen from does not hold. */
-  private async checkMembership({ spaceKey, source, pageIds }: ReviewInput): Promise<void> {
-    if (source.kind === 'page') {
-      if (pageIds.length !== 1 || pageIds[0] !== source.rootPageId)
-        throw new HttpError(400, 'a page review reads only its own page');
-      return;
-    }
-    if (source.kind !== 'tag') {
-      // The synced copy when the section is on disk, otherwise Confluence's own tree.
-      const flat = (nodes: PageTreeNode[]): PageTreeNode[] => nodes.flatMap((n) => [n, ...flat(n.children)]);
-      const below = this.deps.store.readPage(spaceKey, source.rootPageId)
-        ? this.deps.store.descendants(spaceKey, source.rootPageId)
-        : flat((await this.deps.client().getPageTree(spaceKey, source.rootPageId))[0]?.children ?? []);
-      const section = new Set([source.rootPageId, ...below.map((n) => n.id)]);
-      if (pageIds.some((id) => !section.has(id))) throw new HttpError(400, 'a chosen page is not in the section');
-      return;
-    }
-    const { tag } = source;
-    for (const id of pageIds) {
-      const page = this.deps.store.readPage(spaceKey, id);
-      if (!page || !tagsOf(page, this.deps.store.readMetadata(spaceKey, id)).includes(tag))
-        throw new HttpError(400, `a chosen page does not carry the tag ${tag}, as synced`);
-    }
   }
 
   /**

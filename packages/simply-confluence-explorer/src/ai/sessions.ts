@@ -204,6 +204,16 @@ export class SessionStore {
     return viewOf(s);
   }
 
+  /** Records a queue of edits staged from the suggestions of one answer. */
+  public addRun(id: string, turn: number, runId: string): AiSessionView {
+    const s = this.load(id);
+    const t = s?.turns[turn];
+    if (!s || !t) throw new Error('no such turn');
+    t.runIds = [...(t.runIds ?? []), runId];
+    this.save(s);
+    return viewOf(s);
+  }
+
   public guardState(id: string): Array<[string, string]> {
     return this.load(id)?.guardState ?? [];
   }

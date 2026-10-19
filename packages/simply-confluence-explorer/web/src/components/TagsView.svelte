@@ -12,11 +12,10 @@
     synced: boolean;
     selectedPageId: string | null;
     onSelectPage: (pageId: string) => void;
-    onReview: (tag: TaggedPages) => void;
     onAsk: (tag: TaggedPages) => void;
   };
 
-  let { spaceKey, synced, selectedPageId, onSelectPage, onReview, onAsk }: Props = $props();
+  let { spaceKey, synced, selectedPageId, onSelectPage, onAsk }: Props = $props();
   let tags = $state<TaggedPages[]>([]);
   let filter = $state('');
   let chosen = $state<string | null>(null);
@@ -63,14 +62,11 @@
       <strong class="tags-title"><Tag size={13} /> {current.tag}</strong>
       <button
         type="button"
-        class="btn btn-secondary btn-sm"
+        class="btn btn-primary btn-sm"
         onclick={() => onAsk(current)}
         title="Open a chat that reads these pages"
       >
-        <MessagesSquare size={13} /> Chat
-      </button>
-      <button type="button" class="btn btn-primary btn-sm" onclick={() => onReview(current)}>
-        <Search size={13} /> Review {current.pages.length}
+        <MessagesSquare size={13} /> Chat about {current.pages.length}
       </button>
     </div>
     <ul class="tags-pages">

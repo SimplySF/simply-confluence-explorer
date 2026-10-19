@@ -18,7 +18,7 @@ import type { AiSessionView, SessionScope, SessionTurn } from '../api/types.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
-import { MAX_REVIEW_PAGES } from '../branches/branchRuns.js';
+import { MAX_REVIEW_PAGES, parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
@@ -28,6 +28,12 @@ import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
 const KINDS = new Set(['page', 'branch', 'pages', 'space']);
+
+const CHANGES_PROMPT = `Turn what this conversation has found or agreed into concrete changes to the pages provided.
+Reply with JSON only, in this shape:
+{"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to change"}]}
+Kinds: "incorrect", "redundant", "stale", "clarity", "depth", "structure", "operations", "placement" (move, split or merge a page) or "gap" (a page that should exist).
+Use exact page titles, and name every page a change is about. An empty list is a valid answer.`;
 
 const idOf = (value: unknown): unknown => (typeof value === 'number' ? String(value) : value);
 
@@ -73,7 +79,7 @@ type TurnContext = {
  * @param services What the routes share.
  */
 export function addSessionRoutes(router: Router, services: Services): Router {
-  const { ai, sessions, store, exclusions, dataDir, index } = services;
+  const { ai, sessions, store, exclusions, dataDir, index, branches } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
   const found = (id: string): AiSessionView => {
     const session = sessions.get(id);
@@ -135,7 +141,12 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
       if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
       const root = parsePage(gate.page).markdown;
-      ctx = { context: `## [Page: ${gate.page.title}]\n${root}`, withheld: [], note: '' };
+      ctx = {
+        context: `## [Page: ${gate.page.title}]\n${root}`,
+        withheld: [],
+        note: '',
+        matchedPages: [{ id: gate.page.id, title: gate.page.title, score: 1 }],
+      };
       if (scope.kind === 'branch') {
         const branch = await collectBranch(
           scope.pageId!,
@@ -147,11 +158,66 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         ctx.context += branch.pages.map((p) => `\n\n---\n\n## [Page: ${p.page.title}]\n${p.markdown}`).join('');
         ctx.withheld = branch.withheld;
         ctx.note = leftOutNote(branch);
+        ctx.matchedPages = [
+          ...(ctx.matchedPages ?? []),
+          ...branch.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
+        ];
       }
     }
     const files = sessions.filesContext(session.id);
     if (files) ctx.context += `\n\n---\n\n# Files added to this conversation\n\n${files}`;
     return ctx;
+  };
+
+  /** A conversation that questions can be asked in; a draft is written through its own routes. */
+  const chat = (id: string): AiSessionView => {
+    const session = found(id);
+    if (session.scope.kind === 'draft') {
+      throw new HttpError(400, 'a draft is written through /api/drafts/:sessionId/messages');
+    }
+    return session;
+  };
+
+  /**
+   * Asks one question and records it with its answer. With `suggestions`, the answer is read as a
+   * list of suggestions and stored with the turn, together with the pages it read by title.
+   */
+  const answer = async (
+    session: AiSessionView,
+    prompt: { shown: string; sent: string },
+    signal: AbortSignal,
+    suggestions = false,
+  ): Promise<AiSessionView> => {
+    const ctx = await contextFor(session, prompt.sent, signal);
+    const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
+    const reply = await ai.chat(
+      { context: ctx.context, history: historyToSend(session.turns), prompt: prompt.sent },
+      { spaceKey: session.scope.spaceKey, guard, signal },
+    );
+    const report = withWithheld(reply.guard, ctx.withheld);
+    const findings = suggestions ? parseFindings(reply.text) : null;
+    const now = new Date().toISOString();
+    return sessions.addTurns(
+      session.id,
+      [
+        { role: 'user', text: prompt.shown, at: now },
+        {
+          role: 'assistant',
+          text: findings
+            ? `${findings.length} suggestion${findings.length === 1 ? '' : 's'}. Tick the ones to queue as edits.`
+            : reply.text,
+          at: now,
+          guardSummary: report.summary + ctx.note,
+          engine: ai.getEngine(),
+          matchedPages: ctx.matchedPages,
+          ...(ctx.considered ? { considered: ctx.considered } : {}),
+          ...(findings
+            ? { findings, pageIds: Object.fromEntries((ctx.matchedPages ?? []).map((p) => [p.title, p.id])) }
+            : {}),
+        },
+      ],
+      guard.exportState(),
+    );
   };
 
   return (
@@ -205,40 +271,49 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         sessions.removeFile(params.sessionId, params.fileId);
         return found(params.sessionId);
       })
-      .add('POST', '/api/ai/sessions/:sessionId/messages', async ({ params, body, signal }) => {
-        const session = found(params.sessionId);
-        if (session.scope.kind === 'draft') {
-          throw new HttpError(400, 'a draft is written through /api/drafts/:sessionId/messages');
-        }
+      .add('POST', '/api/ai/sessions/:sessionId/messages', ({ params, body, signal }) => {
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
-        const ctx = await contextFor(session, prompt, signal);
-        const guard = new OutboundGuard(
-          loadGuardRules(dataDir, session.scope.spaceKey),
-          sessions.guardState(session.id),
+        return answer(chat(params.sessionId), { shown: prompt, sent: prompt }, signal);
+      })
+      // Asks for suggestions the person can tick and queue: a review of what the chat reads, or the
+      // changes the conversation so far has agreed. The answer's suggestions are stored with the turn.
+      .add('POST', '/api/ai/sessions/:sessionId/suggest', ({ params, body, signal }) => {
+        const session = chat(params.sessionId);
+        const fields = fieldsOf(body);
+        const notes = optionalString(body, 'notes')?.trim().slice(0, 2000);
+        if (fields.kind === 'changes') {
+          if (session.turns.length === 0) throw new HttpError(400, 'there is no conversation to turn into changes yet');
+          return answer(session, { shown: 'Turn this conversation into changes', sent: CHANGES_PROMPT }, signal, true);
+        }
+        if (fields.kind !== 'review') throw new HttpError(400, 'kind must be review or changes');
+        const several = session.scope.kind !== 'page';
+        const prompt = reviewPrompt(REVIEW_ASPECTS, several ? 2 : 1, notes);
+        const shown = several ? 'Review these pages for problems' : 'Suggest improvements to this page';
+        return answer(session, { shown: notes ? `${shown}: ${notes}` : shown, sent: prompt }, signal, true);
+      })
+      // Stages an edit of each page the chosen suggestions of one answer name (ADR-049).
+      .add('POST', '/api/ai/sessions/:sessionId/turns/:turn/queue', async ({ params, body }) => {
+        const session = chat(params.sessionId);
+        const turnIndex = Number(params.turn);
+        const turn = session.turns[turnIndex];
+        if (turn?.role !== 'assistant' || !turn.findings) throw new HttpError(404, 'that answer has no suggestions');
+        const chosen = fieldsOf(body).findings;
+        if (!Array.isArray(chosen) || chosen.some((i) => typeof i !== 'number'))
+          throw new HttpError(400, 'findings must be a list of suggestion numbers');
+        const run = await branches.stageEdits(
+          {
+            spaceKey: session.scope.spaceKey,
+            rootPageId: session.scope.pageId ?? '',
+            rootTitle: session.title,
+            findings: turn.findings,
+            pageIds: turn.pageIds ?? {},
+            fromSessionId: session.id,
+          },
+          chosen as number[],
         );
-        const answer = await ai.chat(
-          { context: ctx.context, history: historyToSend(session.turns), prompt },
-          { spaceKey: session.scope.spaceKey, guard, signal },
-        );
-        const report = withWithheld(answer.guard, ctx.withheld);
-        const now = new Date().toISOString();
-        return sessions.addTurns(
-          session.id,
-          [
-            { role: 'user', text: prompt, at: now },
-            {
-              role: 'assistant',
-              text: answer.text,
-              at: now,
-              guardSummary: report.summary + ctx.note,
-              engine: ai.getEngine(),
-              matchedPages: ctx.matchedPages,
-              ...(ctx.considered ? { considered: ctx.considered } : {}),
-            },
-          ],
-          guard.exportState(),
-        );
+        sessions.addRun(session.id, turnIndex, run.id);
+        return run;
       })
   );
 }

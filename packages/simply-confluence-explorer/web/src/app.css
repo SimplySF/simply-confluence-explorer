@@ -2379,3 +2379,18 @@ div.disclosure-body {
   margin: 0.3rem 0 0;
   padding-left: 1.1rem;
 }
+
+/* A chat's actions that ask for suggestions, and the queues staged from them */
+.chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.change-queue {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}

@@ -1,12 +1,31 @@
 <script lang="ts">
-  import { Check, Clock, Code2, Copy, Paperclip, Send, ShieldCheck, Sparkles, Square, X } from '@lucide/svelte';
-  import type { Snippet } from 'svelte';
+  import {
+    Check,
+    Clock,
+    Code2,
+    Copy,
+    ListChecks,
+    Paperclip,
+    Search,
+    Send,
+    ShieldCheck,
+    Sparkles,
+    Square,
+    Wand2,
+    X,
+  } from '@lucide/svelte';
+  import { tick, type Snippet } from 'svelte';
+  import type { BranchFinding } from '../../../src/api/types.js';
   import type { AiChat } from '../support/chat.svelte.js';
-  import { toast } from '../support/toast.svelte.js';
+  import { messageOf, toast } from '../support/toast.svelte.js';
+  import ChangeQueue from './ChangeQueue.svelte';
+  import FindingsList from './FindingsList.svelte';
   import Markdown from './ui/Markdown.svelte';
 
   // A conversation with the AI: its turns, the files added to it, and the box to ask the next question,
-  // with Stop while an answer is coming (ADR-047). Ask AI and Space chat both show one.
+  // with Stop while an answer is coming (ADR-047). An answer can hold suggestions, which the person
+  // ticks and queues as edits, reviewed and pushed below it (ADR-049). The page's Chat tab and Space
+  // chat both show one.
   type Props = {
     chat: AiChat;
     /** What the conversation is about, as the thinking note and the question box name it. */
@@ -19,9 +38,43 @@
     placeholder?: string;
     /** Shown before the first question. */
     empty?: Snippet;
+    /** The label of the review this chat offers, such as "Review for problems"; none hides it. */
+    reviewLabel?: string;
+    /** Pages were written from a queue, so the tree and the page reload. */
+    onPushed: () => void;
+    /** A suggestion for a page that does not exist yet: start writing it. */
+    onWriteNewPage?: (finding: BranchFinding) => void;
   };
 
-  let { chat, subject, blocked, active, onSelectPage, placeholder, empty }: Props = $props();
+  let {
+    chat,
+    subject,
+    blocked,
+    active,
+    onSelectPage,
+    placeholder,
+    empty,
+    reviewLabel,
+    onPushed,
+    onWriteNewPage,
+  }: Props = $props();
+  // The suggestions ticked on each answer, by the answer's place in the conversation.
+  let chosen = $state<Record<number, Set<number>>>({});
+  let queueing = $state<number | null>(null);
+
+  async function queue(turn: number): Promise<void> {
+    queueing = turn;
+    try {
+      await chat.queue(turn, [...(chosen[turn] ?? [])]);
+      chosen[turn] = new Set();
+      await tick();
+      bottom.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    } catch (e) {
+      toast(`Nothing was queued: ${messageOf(e)}`, 'error');
+    } finally {
+      queueing = null;
+    }
+  }
   const UPLOAD_TYPES = '.pdf,.md,.markdown,.txt,.csv,.tsv,.json,.yaml,.yml,.log,.xml,.html,.htm';
 
   let input = $state('');
@@ -120,6 +173,31 @@
         {:else}
           <Markdown source={t.text} extraClass="ai-response-rendered" />
         {/if}
+        {#if t.findings?.length}
+          <div class="branch-findings">
+            <FindingsList
+              findings={t.findings}
+              pageIds={t.pageIds ?? {}}
+              chosen={chosen[i] ?? new Set()}
+              onChange={(c) => (chosen[i] = c)}
+              onOpenPage={onSelectPage}
+              {onWriteNewPage}
+            />
+            <div class="review-footer">
+              <span class="branch-note">Each page the ticked suggestions name gets an edit carrying only those.</span>
+              <button
+                class="btn btn-primary btn-sm"
+                disabled={!chosen[i]?.size || queueing !== null}
+                onclick={() => queue(i)}
+              >
+                <ListChecks size={13} /> Queue selected ({chosen[i]?.size ?? 0})
+              </button>
+            </div>
+          </div>
+        {/if}
+        {#each t.runIds ?? [] as runId (runId)}
+          <ChangeQueue {runId} {onPushed} />
+        {/each}
       </div>
     {/if}
   {/each}
@@ -136,6 +214,32 @@
   {#if chat.error}<div class="alert alert-error">Not answered: {chat.error}</div>{/if}
   <div bind:this={bottom}></div>
 </div>
+
+{#if !blocked && (reviewLabel || turns.length > 0)}
+  <div class="chat-actions">
+    {#if reviewLabel}
+      <button
+        class="btn btn-secondary btn-sm"
+        disabled={chat.sending}
+        onclick={() => chat.suggest('review', reviewLabel)}
+        title="Suggestions you can tick and queue as edits"
+      >
+        <Search size={13} />
+        {reviewLabel}
+      </button>
+    {/if}
+    {#if turns.length > 0}
+      <button
+        class="btn btn-secondary btn-sm"
+        disabled={chat.sending}
+        onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
+        title="List the changes this conversation found or agreed, to tick and queue as edits"
+      >
+        <Wand2 size={13} /> Turn this into changes
+      </button>
+    {/if}
+  </div>
+{/if}
 
 {#if attached.length > 0}
   <div class="chat-files">

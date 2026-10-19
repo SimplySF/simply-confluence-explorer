@@ -268,6 +268,12 @@ export type SessionTurn = {
   matchedPages?: Array<{ id: string; title: string; score: number; why?: string }>;
   /** For a whole-space answer: how many candidate pages were looked at. */
   considered?: number;
+  /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
+  findings?: BranchFinding[];
+  /** The pages the answer read, by title, so a suggestion's pages can be found. */
+  pageIds?: Record<string, string>;
+  /** The queues of edits staged from this answer's suggestions. */
+  runIds?: string[];
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
 };
@@ -403,9 +409,6 @@ export type TaggedPages = {
   tag: string;
   pages: Array<{ id: string; title: string; path: string; summary?: string }>;
 };
-
-/** A page a review can offer to read, with how far below the section's page it sits. */
-export type SectionPage = { id: string; title: string; depth: number };
 
 /** What a review looks for, each ticked by the person. */
 export type ReviewAspect = 'accuracy' | 'repetition' | 'staleness' | 'clarity' | 'depth' | 'structure' | 'operations';

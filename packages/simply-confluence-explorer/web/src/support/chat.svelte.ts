@@ -46,14 +46,34 @@ export class AiChat {
     );
   }
 
-  public async send(prompt: string): Promise<void> {
+  public send(prompt: string): Promise<void> {
+    return this.ask(prompt, (id, signal) => sessions.send(id, prompt, signal));
+  }
+
+  /**
+   * Asks for suggestions the person can tick and queue as edits: a review of what the chat reads, or
+   * the changes the conversation so far has agreed (ADR-049).
+   */
+  public suggest(kind: 'review' | 'changes', shown: string): Promise<void> {
+    return this.ask(shown, (id, signal) => sessions.suggest(id, kind, signal));
+  }
+
+  /** Stages edits from the chosen suggestions of one answer, and shows the answer with its new queue. */
+  public async queue(turn: number, findings: number[]): Promise<void> {
+    if (!this.session) return;
+    const { id } = this.session;
+    await sessions.queue(id, turn, findings);
+    this.session = await sessions.get(id);
+  }
+
+  private async ask(shown: string, call: (id: string, signal: AbortSignal) => Promise<AiSessionView>): Promise<void> {
     this.error = null;
-    this.pending = prompt;
+    this.pending = shown;
     const stopper = new AbortController();
     this.stopper = stopper;
     try {
       const s = await this.ensure();
-      this.session = await sessions.send(s.id, prompt, stopper.signal);
+      this.session = await call(s.id, stopper.signal);
     } catch (e) {
       // A stopped question is not an error: the person is about to ask it again.
       if (!stopper.signal.aborted) this.error = messageOf(e);

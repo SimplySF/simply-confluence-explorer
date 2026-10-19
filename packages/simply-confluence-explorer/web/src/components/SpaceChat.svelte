@@ -1,6 +1,7 @@
 <script lang="ts">
   import { MessagesSquare, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
-  import type { SessionScope } from '../../../src/api/types.js';
+  import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
+  import { jobs } from '../support/jobs.svelte.js';
   import { sessions, type DraftSummary } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
@@ -20,9 +21,12 @@
     onSeeded: () => void;
     active: boolean;
     onSelectPage: (pageId: string) => void;
+    /** Pages were written from a queue, so the tree and the page reload. */
+    onPushed: () => void;
+    onWriteNewPage: (finding: BranchFinding) => void;
   };
 
-  let { spaceKey, pages, seed, onSeeded, active, onSelectPage }: Props = $props();
+  let { spaceKey, pages, seed, onSeeded, active, onSelectPage, onPushed, onWriteNewPage }: Props = $props();
   const chat = new AiChat();
   let list = $state<DraftSummary[]>([]);
   let search = $state('');
@@ -64,6 +68,14 @@
         toast(`The conversation was not started: ${messageOf(e)}`, 'error');
       }
     })();
+  });
+
+  // The header opened edits staged from one of this space's chats: show that chat.
+  $effect(() => {
+    const wanted = jobs.requested;
+    if (!wanted?.sessionId || wanted.rootPageId || wanted.spaceKey !== spaceKey) return;
+    jobs.requested = null;
+    void open(wanted.sessionId);
   });
 
   async function open(id: string): Promise<void> {
@@ -174,6 +186,9 @@
       {active}
       {onSelectPage}
       placeholder="Ask anything about {spaceKey}…"
+      reviewLabel={(chat.session?.scope ?? scope).kind === 'pages' ? 'Review for problems' : undefined}
+      {onPushed}
+      {onWriteNewPage}
     >
       {#snippet empty()}
         <MessagesSquare size={32} />
