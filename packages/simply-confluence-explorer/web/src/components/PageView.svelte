@@ -64,7 +64,8 @@
     onWriteNewPage,
   }: Props = $props();
   let tab = $state<Tab>('read');
-  let scope = $state<AiScope>('page');
+  // A page with sub-pages is asked about together with them unless the person chooses the page alone.
+  let scope = $state<AiScope>('branch');
   let purging = $state(false);
   // A review of this page that the header opened, shown on the Improve tab.
   let openRunId = $state<string | undefined>(undefined);

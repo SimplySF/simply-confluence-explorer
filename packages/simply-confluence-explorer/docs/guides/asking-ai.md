@@ -48,9 +48,12 @@ Open a page and choose the **Ask AI** tab.
 ![An AI summary of a page, with the leak guard note above the answer](../images/ask-ai.webp)
 
 1. Choose what to ask about:
-   - **This page**: the page you are looking at.
-   - **With sub-pages**: the page and every page under it, if the space is synced.
-   - **Whole space**: the most relevant pages of the synced space (see below).
+   - **With sub-pages**: the page and every page under it, if the space is synced. This is chosen
+     whenever the page has sub-pages.
+   - **This page**: the page you are looking at, on its own.
+
+   A question about the whole space is asked in **Space chat** instead (see below).
+
 2. Click one of the quick questions (**Summary**, **Action items & decisions**, **Technical
    review**, **Runbook checklist**, **Explain simply**), or type your own and click **Send**.
 
@@ -63,7 +66,7 @@ The provider may already have received it, so the app's AI log records it as sto
 
 The app sends its own copy of the page, the one it checked against the exclusion rules, never text
 from the browser. A page excluded from AI shows a notice instead of the question box; you can still
-ask about the whole space, which leaves the excluded page out.
+ask about the whole space in Space chat, which leaves the excluded page out.
 
 ### Conversations
 

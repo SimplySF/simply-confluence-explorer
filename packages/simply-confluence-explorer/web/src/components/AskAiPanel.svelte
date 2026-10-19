@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type AiScope = 'page' | 'branch' | 'space';
+  export type AiScope = 'page' | 'branch';
 </script>
 
 <script lang="ts">
@@ -29,7 +29,8 @@
   import Markdown from './ui/Markdown.svelte';
   import Segmented from './ui/Segmented.svelte';
 
-  // One conversation with the AI about a page, the page and everything under it, or the whole space.
+  // One conversation with the AI about a page, or the page and everything under it. A question about
+  // the whole space is asked in Space chat (ADR-046).
   type Props = {
     detail: PageDetail;
     spaceKey: string;
@@ -88,21 +89,13 @@
 
   const effective = $derived<AiScope>(scope === 'branch' && descendantCount === 0 ? 'page' : scope);
   // The server refuses an excluded page on every route; saying so here saves a round trip.
-  const blocked = $derived(excluded && effective !== 'space');
+  const blocked = $derived(excluded);
   const subject = $derived(
-    effective === 'space'
-      ? `space ${spaceKey}`
-      : effective === 'branch'
-        ? `“${detail.title}” and its ${descendantCount} sub-pages`
-        : `“${detail.title}”`,
+    effective === 'branch' ? `“${detail.title}” and its ${descendantCount} sub-pages` : `“${detail.title}”`,
   );
 
   $effect(() => {
-    chat.open(
-      effective === 'space'
-        ? { kind: 'space', spaceKey, title: `Space ${spaceKey}` }
-        : { kind: effective, spaceKey, pageId: detail.id, title: detail.title },
-    );
+    chat.open({ kind: effective, spaceKey, pageId: detail.id, title: detail.title });
   });
 
   $effect(() => {
@@ -155,14 +148,13 @@
       value={effective}
       onChange={onScopeChange}
       options={[
-        { value: 'page', label: 'This page' },
         {
           value: 'branch',
           label: `With sub-pages${descendantCount ? ` (${descendantCount})` : ''}`,
           disabled: descendantCount === 0,
           title: descendantCount ? 'This page and everything under it' : 'This page has no sub-pages',
         },
-        { value: 'space', label: 'Whole space', title: 'The most relevant pages of the synced space' },
+        { value: 'page', label: 'This page' },
       ]}
     />
     <span class="pill pill-plain" title="Choose the AI provider in Settings">
@@ -185,7 +177,7 @@
   {#if blocked}
     <div class="alert alert-warning">
       <ShieldOff size={14} /> This page is excluded by <code>.confluenceignore</code>, so it is never sent to an AI. Ask
-      about the whole space instead, or change the space's rules.
+      about the whole space in Space chat instead, or change the space's rules.
     </div>
   {/if}
 

@@ -73,7 +73,7 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
   the line it names. Remove it from the page, exclude the page, or, if it is not really a secret, add
   an `allow:` rule; see [What leaves your computer](/guides/data-safety/).
 - **"This page is excluded from AI"**: the space's rules exclude the page. Ask about the whole space
-  instead, or change the rules.
+  in Space chat instead, or change the rules.
 - **A file is refused**: files can be up to 10 MB, a PDF must contain text rather than scanned images,
   and only text-like formats are accepted.
 
