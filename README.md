@@ -31,10 +31,9 @@ Your Confluence token and AI keys stay on your computer and never reach the brow
 are never sent to an AI, and everything that is sent passes a leak guard that stops secrets and
 replaces personal data first.
 
-> **Status:** every feature in the [design docs](docs/design/README.md) is built. Every merge to
-> `main` publishes a beta to npm under the `beta` tag (`.github/workflows/release.yml`). A stable
-> release is published under `latest` once a second person approves the pull request that releases
-> it (ADR-044). The AI features have so far run only against a stand-in for each provider, not with real
+> **Status:** every feature in the [design docs](docs/design/README.md) is built. A release is
+> published to npm once a second person approves the pull request that releases it
+> (`.github/workflows/release.yml`, ADR-044). The AI features have so far run only against a stand-in for each provider, not with real
 > provider keys.
 
 **Maintenance:** maintained by the team that uses it against its Confluence, for as long as it does.

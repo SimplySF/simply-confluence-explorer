@@ -8,8 +8,8 @@ monorepo.
 
 ![Confluence Explorer showing a page, with the space's page tree on the left](docs/images/overview-light.webp)
 
-> **Status:** every feature below is built, in the server and in the browser. Stable releases are
-> published under npm's `latest` tag, and every merge in between as a beta under `beta`. The AI features have so far run
+> **Status:** every feature below is built, in the server and in the browser. Each release is
+> published to npm once a second person has approved it. The AI features have so far run
 > only against a stand-in for each provider, not with real provider keys.
 
 The [guides](https://simplysf.github.io/simply-confluence-explorer/) explain each feature in full, with screenshots. This README is the reference:

@@ -38,9 +38,7 @@ Confluence Explorer is running at http://127.0.0.1:4280/
 
 Open that address in your browser. The app keeps running until you press Ctrl+C in the terminal.
 
-This runs the latest stable release. Every change merged into the project is also published as a
-beta, which you can try with `npx @simplysf/simply-confluence-explorer@beta`; a beta has not yet
-had the review a stable release gets.
+This runs the latest release. Each release is reviewed by a second person before it is published.
 
 ## Check your setup
 

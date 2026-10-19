@@ -141,27 +141,24 @@ If your change only affects one package, scope the commit to it, e.g. `feat(simp
 Versioning uses Lerna's independent mode — each package has its own version and releases separately,
 with versions and changelogs derived from Conventional Commits.
 
-`release.yml` publishes in two ways (ADR-039, ADR-044):
+`release.yml` publishes only releases, and every release is a pull request (ADR-044, ADR-045). A
+merge to `main` that is not a release publishes nothing.
 
-- **Every merge to `main` publishes a beta.** Lerna works out the next version from the commits
-  since the last release, commits it with a changelog, tags it, creates a GitHub release, and
-  publishes it to npm under the `beta` tag. Any change inside `packages/simply-confluence-explorer`
-  produces a new beta, whatever its commit type; a merge that changes only files outside it, such as
-  the root docs or the workflows, produces none.
-- **A stable release is a pull request.** Run the workflow from the Actions tab with **stable**
-  ticked. It works out the version the current beta graduates to, writes it and its changelog on a
-  branch named `release/<version>`, and opens a pull request that lists the load-bearing surfaces
-  for its reviewer. Someone other than the person who opened it approves it, and merging it
-  publishes the version to npm as `latest`. Before tagging, the workflow runs
-  `node scripts/release-gate.mjs check <version> <commit>`, which refuses the release unless the
-  merged pull request came from `release/<version>` and its last commit was approved by someone
-  other than its author. Merge other pull requests before opening the release one, not while it is
-  open: each merge to `main` changes the version and changelog that the release pull request also
-  changes.
+Run the workflow from the Actions tab with **stable** ticked. Lerna works out the next version from
+the commits since the last release, and the workflow writes it and its changelog on a branch named
+`release/<version>` and opens a pull request. Its description tells the reviewer what the app is and
+links each load-bearing file to read. Someone other than the person who opened it approves it, and
+merging it publishes the version to npm as `latest`. Before tagging, the workflow runs
+`node scripts/release-gate.mjs check <version> <commit>`, which refuses the release unless the
+merged pull request came from `release/<version>` and its last commit was approved by someone other
+than its author.
 
-Running the workflow by hand without **stable** ticked publishes any version that is committed to
-`main` but missing from npm, which finishes a run whose publish step failed. A stable version goes
-through the same approval check first.
+Do not merge other pull requests while a release pull request is open. Whatever is on `main` when
+it merges is what gets published, and its reviewer read the code as it was when it was opened.
+
+Running the workflow by hand without **stable** ticked publishes a merged release that is missing
+from npm, which finishes a run whose publish step failed. It goes through the same approval check
+first.
 
 The workflow pushes its version commits and tags, and opens the release pull request, with the
 `PERSONAL_ACCESS_TOKEN` secret, which belongs to an account allowed to bypass the branch rules and
@@ -170,12 +167,12 @@ publishing, so no npm token is stored in the repository.
 
 ## CI
 
-| Workflow      | Trigger                                   | What it does                                                                                                   |
-| ------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `test.yml`    | Push to non-main branches                 | Runs `pnpm run build` + `pnpm test` on Linux and Windows (lts/\*, lts/-1)                                      |
-| `e2e.yml`     | Pull requests, or by hand                 | Starts the Confluence test environment and runs `pnpm run test:e2e` against it (ADR-038)                       |
-| `release.yml` | Push to `main`, or by hand                | Publishes a beta on every merge; opens a stable release's pull request, and publishes it when merged (ADR-044) |
-| `docs.yml`    | Changes to `site/` or the guides; by hand | Builds the documentation site, checks its links, and on `main` deploys it to GitHub Pages (ADR-043)            |
+| Workflow      | Trigger                                   | What it does                                                                                           |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `test.yml`    | Push to non-main branches                 | Runs `pnpm run build` + `pnpm test` on Linux and Windows (lts/\*, lts/-1)                              |
+| `e2e.yml`     | Pull requests, or by hand                 | Starts the Confluence test environment and runs `pnpm run test:e2e` against it (ADR-038)               |
+| `release.yml` | Push to `main`, or by hand                | Opens a release's pull request by hand, and publishes the release when it is merged (ADR-044, ADR-045) |
+| `docs.yml`    | Changes to `site/` or the guides; by hand | Builds the documentation site, checks its links, and on `main` deploys it to GitHub Pages (ADR-043)    |
 
 ## Git Hooks
 

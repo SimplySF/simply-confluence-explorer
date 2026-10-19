@@ -1106,7 +1106,8 @@ Confluence.
 ## ADR-039 — Every merge to main publishes a beta, and a stable release is published only after the review packet for its version is answered
 
 **Status:** accepted, 2026-10-16. Implements ADR-001's release gate; it does not amend it. The
-stable-release half is superseded by ADR-044; betas are still published as this record describes.
+stable-release half is superseded by ADR-044, and the beta half by ADR-045, so no part of it is
+in force.
 
 Releases come from `.github/workflows/release.yml`, which follows the release workflow of the
 simply-atlassian repository: Lerna works out each version from the Conventional Commits since the
@@ -1332,3 +1333,28 @@ and says so here rather than lowering its declared stakes, which ADR-001 refused
 maintainer accepted this because the reviewer is a member of the team who reviews SimplySF's other
 releases the same way, and a written packet asked the reviewer to repeat in a document what a pull
 request review already records. `docs/review/` stays, for any written review a release does get.
+
+---
+
+## ADR-045 — A merge to main publishes nothing; only an approved release pull request publishes, and there are no betas
+
+**Status:** accepted, 2026-10-19. Supersedes the beta half of ADR-039.
+
+ADR-039 published a beta to npm on every merge to `main`, because no second reviewer had been named
+and stable releases were blocked; betas let the team try the app in the meantime. A reviewer has
+since been named, 0.1.0 has shipped as a stable release (ADR-044), and the maintainer decided the
+betas no longer serve a purpose.
+
+`release.yml` now publishes only when a merge to `main` leaves a stable version that npm does not
+have yet, which only a release pull request does, and only after `scripts/release-gate.mjs` has
+found it approved. Every other merge runs the build and tests and stops. A release pull request
+takes its version from the commits since the last release (`lerna version --conventional-commits`),
+since there is no beta to graduate. The install instructions name no tag, because `latest` is the
+only one.
+
+**The argument against:** without betas, nobody outside the repository can try a change before it
+is in a stable release, so the first time a change meets other people's Confluence is in a version
+a plain `npx` installs. That is accepted because a release now gets a second person's review and
+the end-to-end suite runs against a real Confluence on every pull request, and because in practice
+no beta was ever tried: the eight that were versioned never reached npm. Someone who wants to try `main` can still
+build and run it from a checkout.

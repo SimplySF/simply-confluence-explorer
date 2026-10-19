@@ -1,8 +1,8 @@
 name: docs
 
 # Builds the documentation site from site/ and the guides in packages/simply-confluence-explorer/docs/,
-# checks every internal link, and on main deploys it to GitHub Pages (ADR-043). Every merge to main
-# also publishes a beta (ADR-039), so the site always describes the newest beta.
+# checks every internal link, and on main deploys it to GitHub Pages (ADR-043). The site describes
+# main, which can be ahead of the latest release (ADR-045).
 on:
   push:
     branches:
