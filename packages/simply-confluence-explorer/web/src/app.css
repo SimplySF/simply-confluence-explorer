@@ -2365,3 +2365,17 @@ div.disclosure-body {
     max-height: 30vh;
   }
 }
+
+/* What an answer read, and why */
+.chat-read {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0;
+}
+.chat-read summary {
+  cursor: pointer;
+}
+.chat-read ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}

@@ -264,7 +264,10 @@ export type SessionTurn = {
   /** On an answer: what the outbound guard removed, and which pages were left out of the context. */
   guardSummary?: string;
   engine?: string;
-  matchedPages?: Array<{ id: string; title: string; score: number }>;
+  /** The pages an answer read, each with why it was chosen when the AI chose it (ADR-048). */
+  matchedPages?: Array<{ id: string; title: string; score: number; why?: string }>;
+  /** For a whole-space answer: how many candidate pages were looked at. */
+  considered?: number;
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
 };

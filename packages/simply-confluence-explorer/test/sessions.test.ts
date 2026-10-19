@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, test } from 'vitest';
 import type { AiSessionView } from '../src/api/types.js';
+import type { GuardedPayload } from '../src/ai/guard.js';
 import { extractText, historyToSend, SessionStore } from '../src/ai/sessions.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
@@ -270,7 +271,7 @@ test('Space chat fills the context up to its limit and names what did not fit', 
     const exclusions = new ExclusionManager(app.dataDir, () => undefined);
     const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
     const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
-    const small = retrieveSpaceContext('PEOPLE', { question: 'policy remote travel economy' }, deps, 700);
+    const small = await retrieveSpaceContext('PEOPLE', { question: 'policy remote travel economy' }, deps, 700);
     assert.ok(small.overflow.length > 0, 'something did not fit');
     assert.ok(small.contextMarkdown.length <= 800, `${small.contextMarkdown.length}`);
   });
@@ -345,13 +346,97 @@ test('a follow-up finds its pages through the question before it, and through th
     const exclusions = new ExclusionManager(app.dataDir, () => undefined);
     const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
     const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
-    const titles = (q: Parameters<typeof retrieveSpaceContext>[1]): string[] =>
-      retrieveSpaceContext('PEOPLE', q, deps).selectedPages.map((p) => p.title);
+    const titles = async (q: Parameters<typeof retrieveSpaceContext>[1]): Promise<string[]> =>
+      (await retrieveSpaceContext('PEOPLE', q, deps)).selectedPages.map((p) => p.title);
     const vague = 'and who signs it off';
-    assert.ok(!titles({ question: vague }).includes('Travel Policy'));
+    assert.ok(!(await titles({ question: vague })).includes('Travel Policy'));
     assert.ok(
-      titles({ question: vague, previous: 'Which flights can be booked in economy?' }).includes('Travel Policy'),
+      (await titles({ question: vague, previous: 'Which flights can be booked in economy?' })).includes(
+        'Travel Policy',
+      ),
     );
-    assert.ok(titles({ question: vague, keep: [fake.page('PEOPLE', 'Travel Policy').id] }).includes('Travel Policy'));
+    assert.ok(
+      (await titles({ question: vague, keep: [fake.page('PEOPLE', 'Travel Policy').id] })).includes('Travel Policy'),
+    );
+  });
+});
+
+// The context engine (ADR-048): with summaries, the AI chooses what to read from metadata alone.
+
+async function summarise(app: TestApp, spaceKey: string): Promise<void> {
+  const { body } = await app.call<{ jobId: string }>('POST', `/space-cache/${spaceKey}/metadata/generate`, {});
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+    const { body: p } = await app.call<{ status: string }>('GET', `/space-cache/metadata/status/${body.jobId}`);
+    if (p.status !== 'running' && p.status !== 'pending') return;
+    // eslint-disable-next-line no-await-in-loop -- as above
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+const choosing = (p: GuardedPayload): boolean => p.system.includes('choosing which Confluence pages to read');
+const textOf = (p: GuardedPayload): string => [p.system, ...p.messages.map((m) => m.content)].join('\n');
+
+test('a whole-space question lets the AI choose its pages from their summaries, never their text', async () => {
+  let choice = '';
+  const app = await startTestApp(fake, (payload) => {
+    if (payload.system.includes('return a JSON object')) {
+      const title = /# Document Title: (.+)/.exec(payload.messages[0].content)?.[1] ?? '';
+      const summary = title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
+      return JSON.stringify({ summary, tags: [], documentType: 'policy', systemsMentioned: [] });
+    }
+    if (choosing(payload)) return choice;
+    return 'an answer';
+  });
+  try {
+    await syncSpace(app, 'PEOPLE');
+    await summarise(app, 'PEOPLE');
+    const travel = fake.page('PEOPLE', 'Travel Policy').id;
+    const remote = fake.page('PEOPLE', 'Remote Work Policy').id;
+    // Interview Guide matches nothing in the question, so it is not offered, and choosing it reads nothing.
+    const guide = fake.page('PEOPLE', 'Interview Guide').id;
+    choice = JSON.stringify({
+      pages: [
+        { id: remote, why: 'remote rules' },
+        { id: guide, why: 'not offered' },
+      ],
+    });
+    const c = await spaceChat(app);
+    const before = app.sent.length;
+    const answered = await ask(app, c.id, 'What are the travel and remote work policies?');
+    const asked = app.sent.slice(before).filter(choosing);
+    assert.equal(asked.length, 1, 'one request chooses the pages');
+    assert.match(textOf(asked[0]), /Rules for travel and remote work\./);
+    assert.match(textOf(asked[0]), new RegExp(travel));
+    assert.doesNotMatch(textOf(asked[0]), new RegExp(`${guide} \\|`));
+    assert.doesNotMatch(textOf(asked[0]), /Flights over 6h|Up to 5 days remote/, 'no page text is sent to choose');
+    const turn = answered.turns.at(-1)!;
+    assert.deepEqual(
+      turn.matchedPages?.map((p) => [p.title, p.why]),
+      [['Remote Work Policy', 'remote rules']],
+      'only offered pages are read',
+    );
+    assert.ok((turn.considered ?? 0) >= 2);
+
+    choice = 'I would read the travel policy.';
+    const fallback = await ask(app, c.id, 'Which flights can be booked in economy?');
+    assert.ok(sources(fallback).includes('Travel Policy'), 'an unreadable choice falls back to the search');
+
+    await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
+    const later = app.sent.length;
+    await ask(app, c.id, 'And business class flights?');
+    for (const p of app.sent.slice(later).filter(choosing)) assert.doesNotMatch(textOf(p), /Travel Policy/);
+  } finally {
+    await app.close();
+  }
+});
+
+test('without summaries, a whole-space question reads the top search results and asks nothing first', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const before = app.sent.length;
+    await ask(app, c.id, 'Which flights can be booked in economy?');
+    assert.equal(app.sent.slice(before).filter(choosing).length, 0);
   });
 });

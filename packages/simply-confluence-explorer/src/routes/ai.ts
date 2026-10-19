@@ -155,11 +155,18 @@ export function addAiRoutes(router: Router, services: Services): Router {
           engine: ai.getEngine(),
         };
       })
-      .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body }): Promise<AnalyzeResponse> => {
+      .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body, signal }): Promise<AnalyzeResponse> => {
         const prompt = requiredPrompt(body);
         const key = params.spaceKey.toUpperCase();
-        const context = retrieveSpaceContext(key, { question: prompt }, { store, exclusions, dataDir, index });
-        const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, { spaceKey: key });
+        const context = await retrieveSpaceContext(
+          key,
+          { question: prompt },
+          { store, exclusions, dataDir, index, ai, signal },
+        );
+        const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, {
+          spaceKey: key,
+          signal,
+        });
         return {
           answer: answer.text,
           guard: withWithheld(answer.guard, context.withheld),

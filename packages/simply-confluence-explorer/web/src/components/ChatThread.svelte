@@ -99,13 +99,21 @@
           </div>
         {/if}
         {#if t.matchedPages?.length}
-          <div class="chip-row">
-            <span class="muted">Pages used:</span>
-            {#each t.matchedPages as p (p.id)}
-              <button class="pill pill-link" onclick={() => onSelectPage(p.id)} title="Open this page">{p.title}</button
-              >
-            {/each}
-          </div>
+          <details class="chat-read">
+            <summary>
+              Read {t.matchedPages.length} page{t.matchedPages.length === 1 ? '' : 's'}{t.considered
+                ? ` · looked at ${t.considered}`
+                : ''}
+            </summary>
+            <ul>
+              {#each t.matchedPages as p (p.id)}
+                <li>
+                  <button class="link-btn" onclick={() => onSelectPage(p.id)} title="Open this page">{p.title}</button>
+                  {#if p.why}<span class="muted">: {p.why}</span>{/if}
+                </li>
+              {/each}
+            </ul>
+          </details>
         {/if}
         {#if raw[i]}
           <pre class="code-viewer-box">{t.text}</pre>

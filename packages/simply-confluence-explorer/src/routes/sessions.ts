@@ -56,7 +56,13 @@ function scopeFrom(value: unknown): SessionScope {
   return { kind: kind as SessionScope['kind'], spaceKey, pageId, title };
 }
 
-type TurnContext = { context: string; withheld: string[]; note: string; matchedPages?: SessionTurn['matchedPages'] };
+type TurnContext = {
+  context: string;
+  withheld: string[];
+  note: string;
+  matchedPages?: SessionTurn['matchedPages'];
+  considered?: number;
+};
 
 /**
  * Adds the routes for conversations with the AI (ADR-023). Each turn rebuilds its context from the
@@ -87,7 +93,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     return scope;
   };
 
-  const contextFor = async (session: AiSessionView, prompt: string): Promise<TurnContext> => {
+  const contextFor = async (session: AiSessionView, prompt: string, signal: AbortSignal): Promise<TurnContext> => {
     const { scope } = session;
     let ctx: TurnContext;
     if (scope.kind === 'pages') {
@@ -113,16 +119,17 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         .filter((t) => t.role === 'assistant')
         .slice(-2)
         .flatMap((t) => (t.matchedPages ?? []).map((p) => p.id));
-      const r = retrieveSpaceContext(
+      const r = await retrieveSpaceContext(
         scope.spaceKey,
         { question: prompt, previous, keep },
-        { store, exclusions, dataDir, index },
+        { store, exclusions, dataDir, index, ai, signal },
       );
       ctx = {
         context: r.contextMarkdown,
         withheld: r.withheld,
         note: leftOutNote(r),
         matchedPages: r.selectedPages,
+        considered: r.considered,
       };
     } else {
       const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
@@ -205,7 +212,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         }
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
-        const ctx = await contextFor(session, prompt);
+        const ctx = await contextFor(session, prompt, signal);
         const guard = new OutboundGuard(
           loadGuardRules(dataDir, session.scope.spaceKey),
           sessions.guardState(session.id),
@@ -227,6 +234,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
               guardSummary: report.summary + ctx.note,
               engine: ai.getEngine(),
               matchedPages: ctx.matchedPages,
+              ...(ctx.considered ? { considered: ctx.considered } : {}),
             },
           ],
           guard.exportState(),
