@@ -26,6 +26,7 @@ import type {
   ConfluenceSpace,
   ConnectionUpdate,
   ConnectionView,
+  GitLabView,
   IgnoreRules,
   MetadataProgress,
   PageMetadata,
@@ -122,6 +123,10 @@ export const api = {
     call<{ pages: number; missing: number }>(`/space-cache/${key(spaceKey)}/metadata/coverage`, 'POST', body),
   cancelMetadata: (jobId: string) => call(`/space-cache/metadata/cancel/${key(jobId)}`, 'POST'),
 
+  gitlab: () => call<GitLabView>('/gitlab'),
+  saveGitlab: (update: { baseUrl?: string; token?: string }) => call<GitLabView>('/gitlab', 'PUT', update),
+  testGitlab: (candidate: { baseUrl?: string; token?: string }) =>
+    call<{ ok: boolean; user?: { username: string; name: string }; error?: string }>('/gitlab/test', 'POST', candidate),
   aiSettings: () => call<AiSettingsView>('/ai/settings'),
   saveAiSettings: (update: Record<string, unknown>) => call<AiSettingsView>('/ai/settings', 'PUT', update),
   aiModels: (provider: string) => call<{ models: string[] }>(`/ai/models/${key(provider)}`).then((r) => r.models),

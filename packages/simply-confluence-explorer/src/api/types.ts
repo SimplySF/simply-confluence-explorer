@@ -406,6 +406,9 @@ export type BranchFinding = {
   suggestion?: string;
 };
 
+/** The GitLab connection, as a browser may see it: never the token (ADR-050). */
+export type GitLabView = { baseUrl: string; tokenSet: boolean };
+
 /** A tag and the pages that carry it, each with where it sits in the space. */
 export type TaggedPages = {
   tag: string;

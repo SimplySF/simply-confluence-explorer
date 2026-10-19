@@ -87,13 +87,35 @@ export const REVIEW_GUIDE = [
     ],
   },
   {
+    surface: 'HTTP to GitLab',
+    about: 'The only module that talks to GitLab, to read a repository for a new page.',
+    items: [
+      {
+        file: `${SRC}/gitlab/client.ts`,
+        symbol: 'parseRepoLink',
+        check:
+          'A link on any host other than the configured GitLab is refused, so a request cannot choose where the server fetches from.',
+      },
+      {
+        file: `${SRC}/gitlab/client.ts`,
+        symbol: 'GitLabClient',
+        check: 'Only the README, docs, API files and manifest are read, within the file and character limits.',
+      },
+    ],
+  },
+  {
     surface: 'Tokens',
-    about: "The user's Confluence token.",
+    about: "The user's Confluence and GitLab tokens.",
     items: [
       {
         file: `${SRC}/confluence/connection.ts`,
         symbol: 'publicView',
         check: '`publicView` is all the browser ever gets, and it must not include the token.',
+      },
+      {
+        file: `${SRC}/gitlab/client.ts`,
+        symbol: 'GitLabStore',
+        check: 'The GitLab token is never in `publicView`, and a new address without a new token drops the old one.',
       },
       {
         file: `${SRC}/util/privateFile.ts`,

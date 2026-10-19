@@ -125,7 +125,8 @@ relative to `packages/simply-confluence-explorer/src/`.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts`                            |
 | HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)                                  |
-| Tokens                          | `confluence/connection.ts` (the Confluence token), `util/privateFile.ts`                                                        |
+| HTTP to GitLab                  | `gitlab/client.ts`, the only module besides the Confluence client that reaches the network (ADR-050)                            |
+| Tokens                          | `confluence/connection.ts` (the Confluence token), `gitlab/client.ts` (the GitLab token), `util/privateFile.ts`                 |
 | Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                                              |
 | The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022)                                                             |
 | AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                                                       |
