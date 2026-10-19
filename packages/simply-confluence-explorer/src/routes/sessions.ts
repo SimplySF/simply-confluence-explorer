@@ -22,28 +22,38 @@ import { MAX_REVIEW_PAGES } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
+import { collectBranch, CONTEXT_CHAR_LIMIT, contextCollector, leftOutNote } from '../spaces/branchContext.js';
 import { retrieveSpaceContext } from '../spaces/contextRetriever.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
-const KINDS = new Set(['page', 'branch', 'space']);
+const KINDS = new Set(['page', 'branch', 'pages', 'space']);
 
-function scopeFrom(body: unknown): SessionScope {
-  const scope = fieldsOf(fieldsOf(body).scope);
+const idOf = (value: unknown): unknown => (typeof value === 'number' ? String(value) : value);
+
+/** What a chat reads, from a request. Chosen pages are checked against the space and its rules separately. */
+function scopeFrom(value: unknown): SessionScope {
+  const scope = fieldsOf(value);
   const kind = scope.kind;
   if (typeof kind !== 'string' || !KINDS.has(kind) || !isValidSpaceKey(scope.spaceKey)) {
-    throw new HttpError(400, 'a scope with a kind (page, branch for a section, or space) and a spaceKey is required');
+    throw new HttpError(400, 'a scope with a kind (page, branch, pages or space) and a spaceKey is required');
   }
-  const pageId =
-    typeof scope.pageId === 'string' || typeof scope.pageId === 'number' ? String(scope.pageId) : undefined;
-  if (kind !== 'space' && !isValidPageId(pageId)) throw new HttpError(400, 'a page or section scope needs a pageId');
-  return {
-    kind: kind as SessionScope['kind'],
-    spaceKey: scope.spaceKey.toUpperCase(),
-    pageId,
-    title: typeof scope.title === 'string' ? scope.title.slice(0, 200) : undefined,
-  };
+  const spaceKey = scope.spaceKey.toUpperCase();
+  const title = typeof scope.title === 'string' ? scope.title.slice(0, 200) : undefined;
+  if (kind === 'space') return { kind, spaceKey, title };
+  if (kind === 'pages') {
+    const raw: unknown[] = Array.isArray(scope.pageIds) ? scope.pageIds : [];
+    const pageIds = raw.map(idOf);
+    if (pageIds.length === 0 || pageIds.length > MAX_REVIEW_PAGES || !pageIds.every(isValidPageId))
+      throw new HttpError(400, `chosen pages are between 1 and ${MAX_REVIEW_PAGES} page ids`);
+    const tags = Array.isArray(scope.tags)
+      ? scope.tags.filter((t): t is string => typeof t === 'string').map((t) => t.slice(0, 100))
+      : undefined;
+    return { kind, spaceKey, pageIds: [...new Set(pageIds)], ...(tags?.length ? { tags } : {}), title };
+  }
+  const pageId = idOf(scope.pageId);
+  if (!isValidPageId(pageId)) throw new HttpError(400, 'a page or section scope needs a pageId');
+  return { kind: kind as SessionScope['kind'], spaceKey, pageId, title };
 }
 
 type TurnContext = { context: string; withheld: string[]; note: string; matchedPages?: SessionTurn['matchedPages'] };
@@ -65,10 +75,37 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     return session;
   };
 
+  /** Refuses chosen pages that are in another space or excluded, so a chat never starts on one. */
+  const checkedScope = async (scope: SessionScope): Promise<SessionScope> => {
+    for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
+      // eslint-disable-next-line no-await-in-loop -- each page is checked in turn, and the first refusal stops it
+      const gate = await gatePageForAi(id, scope.spaceKey, deps);
+      if (gate.page && gate.page.spaceKey.toUpperCase() !== scope.spaceKey)
+        throw new HttpError(400, `a chosen page is not in ${scope.spaceKey}`);
+      if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'A chosen page cannot be sent to an AI.');
+    }
+    return scope;
+  };
+
   const contextFor = async (session: AiSessionView, prompt: string): Promise<TurnContext> => {
     const { scope } = session;
     let ctx: TurnContext;
-    if (scope.kind === 'space') {
+    if (scope.kind === 'pages') {
+      // Each chosen page is read again and checked on every turn (contextCollector applies the rules),
+      // so a rule added since it was chosen applies.
+      const { consider, result } = contextCollector(scope.spaceKey, deps, dataDir);
+      for (const id of scope.pageIds ?? []) {
+        // eslint-disable-next-line no-await-in-loop -- pages are read in the order they were chosen
+        const gate = await gatePageForAi(id, scope.spaceKey, deps);
+        if (gate.page?.spaceKey.toUpperCase() === scope.spaceKey) consider(gate.page);
+      }
+      ctx = {
+        context: result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n'),
+        withheld: result.withheld,
+        note: leftOutNote(result),
+        matchedPages: result.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
+      };
+    } else if (scope.kind === 'space') {
       // The question before this one, and the pages the last two answers used, carry the conversation.
       const earlier = session.turns;
       const previous = earlier.filter((t) => t.role === 'user').at(-1)?.text;
@@ -78,7 +115,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         .flatMap((t) => (t.matchedPages ?? []).map((p) => p.id));
       const r = retrieveSpaceContext(
         scope.spaceKey,
-        { question: prompt, previous, keep, pinned: session.pinned, pinnedOnly: session.pinnedOnly },
+        { question: prompt, previous, keep },
         { store, exclusions, dataDir, index },
       );
       ctx = {
@@ -112,46 +149,36 @@ export function addSessionRoutes(router: Router, services: Services): Router {
 
   return (
     router
-      .add('POST', '/api/ai/sessions', ({ body }) => sessions.create(scopeFrom(body)))
+      .add('POST', '/api/ai/sessions', async ({ body }) =>
+        sessions.create(await checkedScope(scopeFrom(fieldsOf(body).scope))),
+      )
       .add('GET', '/api/ai/sessions', ({ query }) => {
-        const kind = query.get('kind') ?? undefined;
-        const list = sessions.list({
-          kind: kind && KINDS.has(kind) ? (kind as SessionScope['kind']) : undefined,
-          spaceKey: query.get('spaceKey')?.toUpperCase(),
-          pageId: query.get('pageId') ?? undefined,
-        });
+        // `kind` may name several kinds, such as space,pages for Space chat's list.
+        const kinds = (query.get('kind') ?? '').split(',').filter((k) => KINDS.has(k)) as Array<SessionScope['kind']>;
+        const list = sessions.list(
+          { spaceKey: query.get('spaceKey')?.toUpperCase(), pageId: query.get('pageId') ?? undefined },
+          kinds.length ? kinds : undefined,
+        );
         return { sessions: list.map(({ turns, ...summary }) => ({ ...summary, turnCount: turns.length })) };
       })
       .add('GET', '/api/ai/sessions/:sessionId', ({ params }) => found(params.sessionId))
       .add('DELETE', '/api/ai/sessions/:sessionId', ({ params }) => ({ deleted: sessions.delete(params.sessionId) }))
-      // Renames a conversation, or pins pages to a Space chat. A pinned page must be in the
-      // conversation's space and allowed by its exclusion rules, as it is checked again on every turn.
+      // Renames a conversation, or changes a Space chat between the whole space and chosen pages.
       .add('PATCH', '/api/ai/sessions/:sessionId', async ({ params, body }) => {
         const session = found(params.sessionId);
         const fields = fieldsOf(body);
-        const patch: { title?: string; pinned?: string[]; pinnedOnly?: boolean } = {};
+        const patch: { title?: string; scope?: SessionScope } = {};
         if (fields.title !== undefined) {
           const title = typeof fields.title === 'string' ? fields.title.trim() : '';
           if (!title || title.length > 80) throw new HttpError(400, 'a title is 1 to 80 characters');
           patch.title = title;
         }
-        if (fields.pinned !== undefined || fields.pinnedOnly !== undefined) {
-          if (session.scope.kind !== 'space') throw new HttpError(400, 'only a Space chat can pin pages');
-          if (fields.pinnedOnly !== undefined) patch.pinnedOnly = fields.pinnedOnly === true;
-        }
-        if (fields.pinned !== undefined) {
-          const raw: unknown[] = Array.isArray(fields.pinned) ? fields.pinned : [];
-          const ids = raw.map((v) => (typeof v === 'number' ? String(v) : v));
-          if (!Array.isArray(fields.pinned) || ids.length > MAX_REVIEW_PAGES || !ids.every(isValidPageId))
-            throw new HttpError(400, `pinned is a list of up to ${MAX_REVIEW_PAGES} page ids`);
-          for (const id of ids) {
-            // eslint-disable-next-line no-await-in-loop -- each page is checked in turn, and the first refusal stops it
-            const gate = await gatePageForAi(id, session.scope.spaceKey, deps);
-            if (gate.page && gate.page.spaceKey.toUpperCase() !== session.scope.spaceKey)
-              throw new HttpError(400, `a pinned page is not in ${session.scope.spaceKey}`);
-            if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'A pinned page cannot be sent to an AI.');
-          }
-          patch.pinned = [...new Set(ids)];
+        if (fields.scope !== undefined) {
+          const next = scopeFrom({ ...fieldsOf(fields.scope), spaceKey: session.scope.spaceKey });
+          const switchable = new Set(['space', 'pages']);
+          if (!switchable.has(session.scope.kind) || !switchable.has(next.kind))
+            throw new HttpError(400, 'only a Space chat changes between the whole space and chosen pages');
+          patch.scope = await checkedScope(next);
         }
         return sessions.update(session.id, patch);
       })

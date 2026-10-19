@@ -114,8 +114,8 @@ export class SessionStore {
     return s ? viewOf(s) : null;
   }
 
-  /** Newest first. A scope given narrows it to conversations about that page or space. */
-  public list(scope?: Partial<SessionScope>): AiSessionView[] {
+  /** Newest first. A scope given narrows it to conversations about that page or space, of any of `kinds`. */
+  public list(scope?: Partial<SessionScope>, kinds?: Array<SessionScope['kind']>): AiSessionView[] {
     if (!fs.existsSync(this.dir)) return [];
     return fs
       .readdirSync(this.dir)
@@ -125,6 +125,7 @@ export class SessionStore {
         (s) =>
           !scope ||
           ((!scope.kind || s.scope.kind === scope.kind) &&
+            (!kinds || kinds.includes(s.scope.kind)) &&
             (!scope.spaceKey || s.scope.spaceKey === scope.spaceKey) &&
             (!scope.pageId || s.scope.pageId === scope.pageId)),
       )
@@ -190,16 +191,15 @@ export class SessionStore {
     return viewOf(s);
   }
 
-  /** Renames a conversation, or changes the pages pinned to it. */
-  public update(id: string, patch: { title?: string; pinned?: string[]; pinnedOnly?: boolean }): AiSessionView {
+  /** Renames a conversation, or changes what it reads. */
+  public update(id: string, patch: { title?: string; scope?: SessionScope }): AiSessionView {
     const s = this.load(id);
     if (!s) throw new Error('no such session');
     if (patch.title !== undefined) {
       s.title = patch.title;
       s.named = true;
     }
-    if (patch.pinned !== undefined) s.pinned = patch.pinned;
-    if (patch.pinnedOnly !== undefined) s.pinnedOnly = patch.pinnedOnly;
+    if (patch.scope) s.scope = patch.scope;
     this.save(s);
     return viewOf(s);
   }
@@ -241,16 +241,6 @@ export class SessionStore {
 }
 
 function viewOf(s: Stored): AiSessionView {
-  const { id, scope, title, createdAt, updatedAt, turns, files, draft, pinned, pinnedOnly } = s;
-  return {
-    id,
-    scope,
-    title,
-    createdAt,
-    updatedAt,
-    turns,
-    files,
-    ...(draft ? { draft } : {}),
-    ...(pinned?.length ? { pinned, pinnedOnly: pinnedOnly === true } : {}),
-  };
+  const { id, scope, title, createdAt, updatedAt, turns, files, draft } = s;
+  return { id, scope, title, createdAt, updatedAt, turns, files, ...(draft ? { draft } : {}) };
 }

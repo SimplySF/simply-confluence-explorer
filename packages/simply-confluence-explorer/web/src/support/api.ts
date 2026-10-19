@@ -153,10 +153,10 @@ export const sessions = {
   create: (scope: SessionScope) => call<AiSessionView>(SESSIONS, 'POST', { scope }),
   /** A space's conversations, newest first, without their turns. */
   inSpace: (spaceKey: string) =>
-    call<{ sessions: DraftSummary[] }>(`${SESSIONS}?${new URLSearchParams({ kind: 'space', spaceKey })}`).then(
+    call<{ sessions: DraftSummary[] }>(`${SESSIONS}?${new URLSearchParams({ kind: 'space,pages', spaceKey })}`).then(
       (r) => r.sessions,
     ),
-  update: (id: string, patch: { title?: string; pinned?: string[]; pinnedOnly?: boolean }) =>
+  update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
   send: (id: string, prompt: string, signal?: AbortSignal) =>

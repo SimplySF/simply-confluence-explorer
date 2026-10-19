@@ -242,10 +242,18 @@ export type MetadataProgress = {
 
 /** What a conversation is about: one page, a page and everything below it, or a whole space. */
 export type SessionScope = {
-  /** A draft is the conversation behind a new page, started through `/api/drafts`. */
-  kind: 'page' | 'branch' | 'space' | 'draft';
+  /**
+   * What a chat reads: one page, a page and everything under it (`branch`), pages the person chose
+   * (`pages`), or the whole space. A draft is the conversation behind a new page, started through
+   * `/api/drafts`.
+   */
+  kind: 'page' | 'branch' | 'pages' | 'space' | 'draft';
   spaceKey: string;
   pageId?: string;
+  /** For chosen pages: their ids, at most 50. */
+  pageIds?: string[];
+  /** For chosen pages: the tags they were chosen by, to name the chat's context. */
+  tags?: string[];
   title?: string;
 };
 
@@ -281,10 +289,6 @@ export type AiSessionView = {
   files: SessionFileInfo[];
   /** On a draft conversation: the page being written. */
   draft?: DraftState;
-  /** In Space chat: pages sent on every turn, chosen by the person. */
-  pinned?: string[];
-  /** In Space chat: answer from the pinned pages alone, without searching the space. */
-  pinnedOnly?: boolean;
 };
 
 /** An existing page that may already say what a new page is meant to. */

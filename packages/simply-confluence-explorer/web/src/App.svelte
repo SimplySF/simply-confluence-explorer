@@ -328,7 +328,15 @@
         chatOpen={view === 'chat'}
         onOpenChat={() => (view = 'chat')}
         onAskTag={(t) => {
-          chatSeed = { title: `#${t.tag}`, pinned: t.pages.slice(0, 50).map((p) => p.id) };
+          chatSeed = {
+            title: `#${t.tag}`,
+            scope: {
+              kind: 'pages',
+              spaceKey: activeSpace,
+              pageIds: t.pages.slice(0, 50).map((p) => p.id),
+              tags: [t.tag],
+            },
+          };
           view = 'chat';
         }}
         loading={treeLoading}

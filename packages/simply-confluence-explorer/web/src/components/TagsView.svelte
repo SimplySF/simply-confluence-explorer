@@ -65,9 +65,9 @@
         type="button"
         class="btn btn-secondary btn-sm"
         onclick={() => onAsk(current)}
-        title="Ask about these pages in Space chat"
+        title="Open a chat that reads these pages"
       >
-        <MessagesSquare size={13} /> Ask
+        <MessagesSquare size={13} /> Chat
       </button>
       <button type="button" class="btn btn-primary btn-sm" onclick={() => onReview(current)}>
         <Search size={13} /> Review {current.pages.length}

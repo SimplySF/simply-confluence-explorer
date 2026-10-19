@@ -36,10 +36,6 @@ export type SpaceQuery = {
   previous?: string;
   /** Pages earlier turns used, kept so a conversation does not lose what it was reading. */
   keep?: string[];
-  /** Pages the person pinned to the conversation, sent on every turn. */
-  pinned?: string[];
-  /** Answer from the pinned pages alone, without searching the space. */
-  pinnedOnly?: boolean;
 };
 
 /** How many pages a search adds, before the size limit decides how many of them fit. */
@@ -47,8 +43,7 @@ const SEARCH_LIMIT = 12;
 
 /**
  * Builds the context an AI receives for a question about a whole space: an outline of the space, then
- * the full text of the pages that matter, in this order: the pages the person pinned, the pages
- * earlier turns used, and the pages the search index ranks highest for the question (BM25 over titles,
+ * the full text of the pages that matter, in this order: the pages earlier turns used, and the pages the search index ranks highest for the question (BM25 over titles,
  * tags, summaries and text). Each page is checked against the exclusion rules and the secrets check,
  * and pages are added until the size limit is reached. The outline is checked against the current
  * rules rather than trusted as written, because the table of contents on disk may predate a rule.
@@ -90,14 +85,11 @@ export function retrieveSpaceContext(
     scores.set(id, score);
     order.push(id);
   };
-  for (const id of query.pinned ?? []) add(id, 1);
-  if (!query.pinnedOnly) {
-    for (const id of query.keep ?? []) add(id, 1);
-    const text = [query.question, query.previous].filter(Boolean).join(' ');
-    for (const hit of deps.index.search(key, text, SEARCH_LIMIT)) add(hit.pageId, Math.round(hit.score * 100) / 100);
-    // A question that matches nothing still gets an answer from a few pages, rather than none.
-    if (order.length === 0) for (const page of deps.store.visiblePages(key).slice(0, 3)) add(page.id, 0);
-  }
+  for (const id of query.keep ?? []) add(id, 1);
+  const text = [query.question, query.previous].filter(Boolean).join(' ');
+  for (const hit of deps.index.search(key, text, SEARCH_LIMIT)) add(hit.pageId, Math.round(hit.score * 100) / 100);
+  // A question that matches nothing still gets an answer from a few pages, rather than none.
+  if (order.length === 0) for (const page of deps.store.visiblePages(key).slice(0, 3)) add(page.id, 0);
 
   const { consider, result } = contextCollector(key, deps, deps.dataDir, budget - outline.length);
   for (const id of order) {

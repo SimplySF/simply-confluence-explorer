@@ -276,23 +276,49 @@ test('Space chat fills the context up to its limit and names what did not fit', 
   });
 });
 
-test('pinned pages are sent on every turn, and alone when asked; a pinned page must be allowed and in the space', async () => {
+test('a chat on chosen pages reads only them; each must be allowed, in the space, and at most 50', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const id = (title: string): string => fake.page('PEOPLE', title).id;
+    const create = (pageIds: unknown): Promise<{ status: number; body: AiSessionView }> =>
+      app.call<AiSessionView>('POST', '/ai/sessions', { scope: { kind: 'pages', spaceKey: 'PEOPLE', pageIds } });
+    assert.equal((await create([id('Salary Bands')])).status, 403);
+    assert.equal((await create([fake.page('OPS', 'On-Call Handbook').id])).status, 400);
+    assert.equal((await create(['../x'])).status, 400);
+    assert.equal((await create([])).status, 400);
+    assert.equal((await create(Array.from({ length: 51 }, (_, i) => `${i + 1}`))).status, 400);
+    const chosen = await create([id('Benefits Overview'), id('Travel Policy')]);
+    assert.equal(chosen.status, 200);
+    const answered = await ask(app, chosen.body.id, 'Which flights can be booked in economy?');
+    assert.deepEqual(sources(answered), ['Benefits Overview', 'Travel Policy']);
+    assert.doesNotMatch(app.sentText(), /Up to 5 days remote/);
+    // A page excluded after it was chosen is no longer read.
+    await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
+    assert.deepEqual(sources(await ask(app, chosen.body.id, 'And business class?')), ['Benefits Overview']);
+  });
+});
+
+test('a Space chat changes between the whole space and chosen pages, with the same checks', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');
     const c = await spaceChat(app);
-    const pin = (body: unknown): Promise<{ status: number; body: AiSessionView }> =>
-      app.call<AiSessionView>('PATCH', `/ai/sessions/${c.id}`, body);
-    assert.equal((await pin({ pinned: [fake.page('PEOPLE', 'Salary Bands').id] })).status, 403);
-    assert.equal((await pin({ pinned: [fake.page('OPS', 'On-Call Handbook').id] })).status, 400);
-    assert.equal((await pin({ pinned: ['../x'] })).status, 400);
+    const change = (scope: unknown): Promise<{ status: number; body: AiSessionView }> =>
+      app.call<AiSessionView>('PATCH', `/ai/sessions/${c.id}`, { scope });
     const benefits = fake.page('PEOPLE', 'Benefits Overview').id;
-    const pinned = await pin({ pinned: [benefits], pinnedOnly: true, title: '#benefits' });
-    assert.deepEqual(pinned.body.pinned, [benefits]);
-    const answered = await ask(app, c.id, 'Which flights can be booked in economy?');
-    assert.deepEqual(sources(answered), ['Benefits Overview']);
-    assert.equal(answered.title, '#benefits', 'a named conversation keeps its name');
+    assert.equal((await change({ kind: 'pages', pageIds: [fake.page('PEOPLE', 'Salary Bands').id] })).status, 403);
+    const narrowed = await change({ kind: 'pages', pageIds: [benefits], tags: ['benefits'] });
+    assert.deepEqual(narrowed.body.scope, {
+      kind: 'pages',
+      spaceKey: 'PEOPLE',
+      pageIds: [benefits],
+      tags: ['benefits'],
+    });
+    assert.deepEqual(sources(await ask(app, c.id, 'Which flights can be booked in economy?')), ['Benefits Overview']);
+    assert.equal((await change({ kind: 'space' })).body.scope.kind, 'space');
     const page = await app.call<AiSessionView>('POST', '/ai/sessions', pageScope());
-    assert.equal((await app.call('PATCH', `/ai/sessions/${page.body.id}`, { pinned: [] })).status, 400);
+    assert.equal((await app.call('PATCH', `/ai/sessions/${page.body.id}`, { scope: { kind: 'space' } })).status, 400);
+    const named = await app.call<AiSessionView>('PATCH', `/ai/sessions/${c.id}`, { title: '#benefits' });
+    assert.equal(named.body.title, '#benefits');
   });
 });
 

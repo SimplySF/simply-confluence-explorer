@@ -32,7 +32,7 @@
   type Tab = 'read' | 'ai' | 'improve' | 'details';
   const TABS = [
     { id: 'read', label: 'Read', icon: BookOpen },
-    { id: 'ai', label: 'Ask AI', icon: Sparkles },
+    { id: 'ai', label: 'Chat', icon: Sparkles },
     { id: 'improve', label: 'Improve', icon: Wand2 },
     { id: 'details', label: 'Details', icon: Info },
   ] as const;
