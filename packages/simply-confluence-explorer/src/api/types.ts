@@ -320,16 +320,6 @@ export type DraftState = {
   createdUrl?: string;
 };
 
-/** A proposed improvement to a page, and the version of the page it was made from. */
-export type RecommendationResponse = {
-  critique: string[];
-  changelog: string[];
-  improvedMarkdown: string;
-  guard: GuardReport;
-  /** The version the proposal was made from. A push must name it, and is refused if the page moved on. */
-  baseVersion: number;
-};
-
 /** What a push or a dry run did. */
 export type WriteResult = {
   pageId: string;
@@ -351,7 +341,15 @@ export type BranchItemStatus =
   | 'pushed'
   | 'push-failed';
 
-/** One page in a branch improvement run: its proposal, and the person's decision on it. */
+/** A suggestion an edit is asked to apply, with the other pages it names. */
+export type BranchFix = {
+  kind: BranchFinding['kind'];
+  detail: string;
+  suggestion?: string;
+  otherPages: string[];
+};
+
+/** One page in a run of staged edits: its proposed edit, and the person's decision on it. */
 export type BranchItem = {
   pageId: string;
   title: string;
@@ -366,23 +364,54 @@ export type BranchItem = {
   message?: string;
   guardSummary?: string;
   pushedVersion?: number;
+  /** The suggestions this page's edit applies. */
+  fixes?: BranchFix[];
 };
 
-/** Something a review of a branch found that a maintainer should fix. */
+/** Something a review found that a maintainer should fix. */
 export type BranchFinding = {
-  kind: 'incorrect' | 'redundant' | 'stale' | 'structure' | 'gap';
+  kind:
+    | 'incorrect'
+    | 'redundant'
+    | 'stale'
+    | 'clarity'
+    | 'depth'
+    | 'structure'
+    | 'operations'
+    /** A page in the wrong place, or one to split or merge: no edit of one page does it. */
+    | 'placement'
+    /** A page that should exist and does not: no edit of an existing page does it. */
+    | 'gap';
   pages: string[];
   detail: string;
   suggestion?: string;
 };
 
-/** A review, or a set of improvement proposals, for a page and everything under it (ADR-024). */
+/** A page a review can offer to read, with how far below the section's page it sits. */
+export type SectionPage = { id: string; title: string; depth: number };
+
+/** What a review looks for, each ticked by the person. */
+export type ReviewAspect = 'accuracy' | 'repetition' | 'staleness' | 'clarity' | 'depth' | 'structure' | 'operations';
+
+/** How a review's pages were chosen: one page, a page and everything under it, or a tag (ADR-046). */
+export type ReviewSource = { kind: 'page' | 'section'; rootPageId: string } | { kind: 'tag'; tag: string };
+
+/**
+ * A review of a set of pages, or the edits staged from its suggestions (ADR-024, ADR-046). A run
+ * saved before reviews had a source has none, and is a review of a whole section.
+ */
 export type BranchRun = {
   id: string;
   kind: 'review' | 'improve';
   spaceKey: string;
+  /** The page the review started from; empty for a tag. */
   rootPageId: string;
+  /** What the run is about, for its heading: a page's title, or a tag as `#tag`. */
   rootTitle: string;
+  source?: ReviewSource;
+  aspects?: ReviewAspect[];
+  /** For staged edits, the review whose suggestions they apply. */
+  fromRunId?: string;
   focus?: string;
   instructions?: string;
   status: 'running' | 'ready' | 'failed' | 'cancelled';

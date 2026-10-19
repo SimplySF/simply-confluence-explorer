@@ -19,7 +19,7 @@
 
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { RecommendationResponse, WriteResult } from '../../src/api/types.js';
+import type { WriteResult } from '../../src/api/types.js';
 import { loadTestEnv, SKIP_REASON, startApp } from './testEnv.js';
 
 const env = loadTestEnv();
@@ -64,27 +64,22 @@ describe.skipIf(!env)(`writing a page to the test environment${env ? '' : ` (ski
   });
   afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  it('proposes from the current page, checks the change without writing, then writes it', async () => {
+  it('checks a change made from the current page without writing, then writes it', async () => {
     const before = await read();
-    const proposal = await post<RecommendationResponse>(`/pages/${pageId()}/recommend`, {
-      spaceKey: 'PEOPLE',
-      focusArea: 'polish',
-    });
-    expect(proposal.status).toBe(200);
-    expect(proposal.body.baseVersion).toBe(before.version.number);
+    const baseVersion = before.version.number;
 
     const marker = `Edited by a person during the end-to-end run ${Date.now()}.`;
     const markdown = `# Interview Guide\n\n${marker}\n\n- Prepare questions\n- Take **notes**`;
     const dry = await post<WriteResult>(`/pages/${pageId()}/dry-run`, {
       markdown,
-      baseVersion: proposal.body.baseVersion,
+      baseVersion,
     });
     expect(dry.status).toBe(200);
     expect((await read()).version.number, 'a dry run writes nothing').toBe(before.version.number);
 
     const pushed = await post<WriteResult>(`/pages/${pageId()}/push`, {
       markdown,
-      baseVersion: proposal.body.baseVersion,
+      baseVersion,
       spaceKey: 'PEOPLE',
     });
     expect(pushed.status, JSON.stringify(pushed.body)).toBe(200);
@@ -111,7 +106,7 @@ describe.skipIf(!env)(`writing a page to the test environment${env ? '' : ` (ski
   });
 
   it("refuses a push made from a version a colleague has since changed, and keeps the colleague's edit", async () => {
-    const proposal = await post<RecommendationResponse>(`/pages/${pageId()}/recommend`, { spaceKey: 'PEOPLE' });
+    const baseVersion = (await read()).version.number;
     const current = await read();
     const colleague = `${current.body.storage.value}<p>Added by a colleague.</p>`;
     await rest('PUT', `/rest/api/content/${pageId()}`, {
@@ -123,7 +118,7 @@ describe.skipIf(!env)(`writing a page to the test environment${env ? '' : ` (ski
 
     const pushed = await post<{ error: string }>(`/pages/${pageId()}/push`, {
       markdown: '# Overwrite',
-      baseVersion: proposal.body.baseVersion,
+      baseVersion,
     });
     expect(pushed.status).toBe(409);
     expect(pushed.body.error).toContain('changed in Confluence after the proposal was made');

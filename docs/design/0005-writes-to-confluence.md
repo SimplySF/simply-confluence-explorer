@@ -24,16 +24,16 @@ The app has three ways to write to Confluence, and all of them go through a sing
 
 ## Behavior
 
-| route                               | what it does                                                                                                                      |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/pages/:pageId/recommend` | Asks the AI for a proposed revision of the page, with a focus the person chooses.                                                 |
-| `POST /api/pages/:pageId/dry-run`   | Converts the proposal to Confluence's format without writing it, and reports anything the converter rejects.                      |
-| `POST /api/pages/:pageId/push`      | Writes the proposal to Confluence, stating which version of the page it was made from.                                            |
-| `/api/branches/runs/...`            | Reviews or improves a branch (a page and everything under it); accepts, edits or rejects each page; and pushes the accepted ones. |
-| `/api/drafts/...`                   | Creates a new page: runs the redundancy check, supports writing the page with the AI, and creates it.                             |
+| route                             | what it does                                                                                                            |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/branches/runs`         | Reviews a page, a section or a tag's pages; a person then chooses which suggestions to apply (ADR-046).                 |
+| `POST /api/pages/:pageId/dry-run` | Converts the proposal to Confluence's format without writing it, and reports anything the converter rejects.            |
+| `POST /api/pages/:pageId/push`    | Writes the proposal to Confluence, stating which version of the page it was made from.                                  |
+| `/api/branches/runs/...`          | Stages an edit per page from the chosen suggestions; accepts, edits or rejects each page; and pushes the accepted ones. |
+| `/api/drafts/...`                 | Creates a new page: runs the redundancy check, supports writing the page with the AI, and creates it.                   |
 
-- **A proposal is made from the server's own copy of the page**, after the exclusion check, as a
-  question is (ADR-037), and it returns the version it was made from, which the push then names.
+- **An edit is made from the server's own copy of the page**, after the exclusion check, as a
+  question is (ADR-037), and it keeps the version it was made from, which the push then names.
 - **A push states the version it was made from.** If the page has changed in Confluence since the
   proposal was made, the push is refused with a "changed since" message. The app never tries to
   merge the two versions, because a merge could quietly drop someone else's edit.

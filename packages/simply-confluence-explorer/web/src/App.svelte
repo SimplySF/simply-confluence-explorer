@@ -1,10 +1,18 @@
 <script lang="ts">
   import { FileCode, FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
   import { onMount, untrack } from 'svelte';
-  import type { ConfluenceSpace, ConnectionView, PageResponse, PageTreeNode } from '../../src/api/types.js';
+  import type {
+    BranchFinding,
+    ConfluenceSpace,
+    ConnectionView,
+    PageResponse,
+    PageTreeNode,
+    ReviewSource,
+  } from '../../src/api/types.js';
   import JobsBar from './components/JobsBar.svelte';
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
+  import ReviewDialog from './components/ReviewDialog.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import SnippetDialog from './components/SnippetDialog.svelte';
@@ -61,6 +69,10 @@
   let sidebarWidth = $state(Math.max(260, Math.min(850, Number(remembered('sidebar_width')) || 340)));
   let resizing = $state(false);
   let dialog = $state<'settings' | 'snippet' | 'new-page' | null>(null);
+  // The review dialog, for a section or a tag; a page's own review is on its Improve tab.
+  let reviewing = $state<{ spaceKey: string; source: ReviewSource; title: string; openRunId?: string } | null>(null);
+  // What a review said a new page should cover, to start the new-page dialog with.
+  let newPageNotes = $state('');
 
   onMount(() => {
     applyTheme();
@@ -193,7 +205,21 @@
   function openJob(job: Job): void {
     chooseSpace(job.spaceKey);
     if (job.rootPageId) selectedPageId = job.rootPageId;
-    if (job.kind === 'review') jobs.requested = job;
+    if (job.kind !== 'review' || !job.source) return;
+    if (job.source.kind === 'page') jobs.requested = job;
+    else
+      reviewing = {
+        spaceKey: job.spaceKey,
+        source: job.source,
+        title: job.label.replace(/^\w+: /, ''),
+        openRunId: job.jobId,
+      };
+  }
+
+  function writeNewPage(finding: BranchFinding): void {
+    reviewing = null;
+    newPageNotes = [finding.detail, finding.suggestion].filter(Boolean).join('\n\n');
+    dialog = 'new-page';
   }
 
   function chooseSpace(spaceKey: string): void {
@@ -313,6 +339,9 @@
         selectedPageId = null;
         page = null;
       }}
+      onReviewSection={(rootPageId, title) =>
+        (reviewing = { spaceKey: activeSpace, source: { kind: 'section', rootPageId }, title })}
+      onWriteNewPage={writeNewPage}
     />
   </div>
 
@@ -325,12 +354,31 @@
       spaceKey={(page.detail.spaceKey || activeSpace).toUpperCase()}
       parentId={page.detail.id}
       parentTitle={page.detail.title}
-      onClose={() => (dialog = null)}
+      notes={newPageNotes}
+      onClose={() => {
+        dialog = null;
+        newPageNotes = '';
+      }}
       onOpenPage={(id) => {
         dialog = null;
         selectedPageId = id;
       }}
       onCreated={reloadTree}
+    />
+  {/if}
+  {#if reviewing}
+    <ReviewDialog
+      {...reviewing}
+      onClose={() => (reviewing = null)}
+      onOpenPage={(id) => {
+        reviewing = null;
+        selectedPageId = id;
+      }}
+      onPushed={() => {
+        reloadTree();
+        pageRev++;
+      }}
+      onWriteNewPage={writeNewPage}
     />
   {/if}
   <Toasts />

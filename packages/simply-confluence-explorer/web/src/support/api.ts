@@ -32,14 +32,15 @@ import type {
   PageResponse,
   PageTreeResponse,
   PurgeResult,
-  RecommendationResponse,
   RedundancyDecision,
   ResolveResponse,
+  ReviewAspect,
+  ReviewSource,
+  SectionPage,
   SessionScope,
   SpaceTocNode,
   SyncedSpace,
   SyncProgress,
-  WriteResult,
 } from '../../../src/api/types.js';
 
 const key = encodeURIComponent;
@@ -130,12 +131,8 @@ export const api = {
   askSpace: (spaceKey: string, prompt: string) =>
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
-  recommend: (pageId: string, body: { spaceKey: string; focusArea: string; prompt?: string }) =>
-    call<RecommendationResponse>(`/pages/${key(pageId)}/recommend`, 'POST', body),
-  dryRun: (pageId: string, body: { markdown: string; spaceKey: string; baseVersion: number }) =>
-    call<WriteResult>(`/pages/${key(pageId)}/dry-run`, 'POST', body),
-  push: (pageId: string, body: { markdown: string; spaceKey: string; baseVersion: number }) =>
-    call<WriteResult>(`/pages/${key(pageId)}/push`, 'POST', body),
+  section: (spaceKey: string, pageId: string) =>
+    call<{ pages: SectionPage[] }>(`/space-cache/${key(spaceKey)}/pages/${key(pageId)}/section`).then((r) => r.pages),
 };
 
 const SESSIONS = '/ai/sessions';
@@ -172,14 +169,17 @@ const RUNS = '/branches/runs';
 
 export const branches = {
   start: (body: {
-    kind: 'review' | 'improve';
     spaceKey: string;
-    pageId: string;
-    focus?: string;
+    source: ReviewSource;
+    pageIds: string[];
+    aspects: ReviewAspect[];
     instructions?: string;
   }) => call<BranchRun>(RUNS, 'POST', body),
-  list: (spaceKey: string, pageId: string) =>
-    call<{ runs: BranchRunSummary[] }>(`${RUNS}?${new URLSearchParams({ spaceKey, pageId })}`).then((r) => r.runs),
+  apply: (id: string, findings: number[]) => call<BranchRun>(`${RUNS}/${key(id)}/apply`, 'POST', { findings }),
+  list: (spaceKey: string, source: ReviewSource) =>
+    call<{ runs: BranchRunSummary[] }>(
+      `${RUNS}?${new URLSearchParams({ spaceKey, source: source.kind, ...(source.kind === 'tag' ? { tag: source.tag } : { pageId: source.rootPageId }) })}`,
+    ).then((r) => r.runs),
   get: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}`),
   cancel: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/cancel`, 'POST'),
   decide: (id: string, pageId: string, decision: 'accept' | 'reject' | 'reset', proposed?: string) =>

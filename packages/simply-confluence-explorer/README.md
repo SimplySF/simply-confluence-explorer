@@ -128,7 +128,7 @@ title already used in the space is refused with the reason (`test/drafts.test.ts
 | [Asking an AI](https://simplysf.github.io/simply-confluence-explorer/guides/asking-ai/)                  | Providers, questions about a page, a section or a space, files, summaries   |
 | [What leaves your computer](https://simplysf.github.io/simply-confluence-explorer/guides/data-safety/)   | Excluded pages, the leak guard and its rules, the audit log, network access |
 | [Improving a page](https://simplysf.github.io/simply-confluence-explorer/guides/improving-pages/)        | Proposals, dry runs, pushing, and the pages that cannot be pushed           |
-| [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/) | Reviewing a page and everything under it, and the queue of proposals        |
+| [Reviewing a section](https://simplysf.github.io/simply-confluence-explorer/guides/reviewing-a-section/) | Reviewing a page and everything under it, choosing suggestions, and edits   |
 | [Writing a new page](https://simplysf.github.io/simply-confluence-explorer/guides/new-pages/)            | The check for existing pages, writing with an AI, creating the page         |
 | [Troubleshooting](https://simplysf.github.io/simply-confluence-explorer/guides/troubleshooting/)         | The doctor's checks, and the messages you are most likely to see            |
 
@@ -181,6 +181,7 @@ readable only by your user account where the operating system allows it (`test/u
 | `GET /api/space-cache/cached`                             | The spaces synced to this machine                                                                                                               |
 | `POST /api/space-cache/sync`                              | Starts syncing `{ spaceKey, rootPageId? }` to disk; poll `GET /api/space-cache/sync/status/:jobId`                                              |
 | `GET /api/space-cache/:spaceKey/toc`                      | The synced space's table of contents                                                                                                            |
+| `GET /api/space-cache/:spaceKey/pages/:pageId/section`    | The pages a section review can offer, with their depth, without excluded pages                                                                  |
 | `GET /api/space-cache/:spaceKey/zip`                      | The synced space as a ZIP of Markdown and attachments, without excluded pages                                                                   |
 | `POST /api/space-cache/:spaceKey/pages/:pageId/purge`     | Removes a synced page, optionally with what is below it and a rule to keep it away                                                              |
 | `POST /api/space-cache/:spaceKey/cache/purge`             | Removes synced copies that are excluded, or whose Markdown was deleted from the folder                                                          |
@@ -191,12 +192,12 @@ readable only by your user account where the operating system allows it (`test/u
 | `POST /api/space-cache/:spaceKey/ai/ask`                  | One question about a synced space, answered from its best-matching pages                                                                        |
 | `/api/ai/sessions/...`                                    | Conversations: create, list, read, delete, upload a file, send a message                                                                        |
 | `POST /api/space-cache/:spaceKey/metadata/generate`       | Starts AI summaries for a synced space; poll `GET /api/space-cache/metadata/status/:jobId`                                                      |
-| `POST /api/pages/:pageId/recommend`                       | A proposed revision of the page, made from the server's own copy, with the version it was made from                                             |
 | `POST /api/pages/:pageId/dry-run`                         | Converts a change as a push would, and reports anything Confluence would refuse, without writing                                                |
 | `POST /api/pages/:pageId/push`                            | Writes `{ markdown, baseVersion }`; refused with a `409` if the page has changed since `baseVersion`                                            |
-| `POST /api/branches/runs`                                 | Starts a review, or an improvement proposal for every page, of `{ spaceKey, pageId }` and everything under it                                   |
-| `GET /api/branches/runs`, `GET /api/branches/runs/:runId` | Branch runs, and one run with its proposals or findings                                                                                         |
-| `PATCH /api/branches/runs/:runId/items/:pageId`           | Accepts (optionally with edits), rejects or resets one page's proposal                                                                          |
+| `POST /api/branches/runs`                                 | Starts a review of `{ spaceKey, source, pageIds, aspects?, instructions? }`: up to 50 pages chosen from one page or a section                   |
+| `POST /api/branches/runs/:runId/apply`                    | Stages an edit of each page that the chosen suggestions `{ findings: [indexes] }` name, carrying only those suggestions                         |
+| `GET /api/branches/runs`, `GET /api/branches/runs/:runId` | Reviews and staged edits, and one run with its suggestions or edits                                                                             |
+| `PATCH /api/branches/runs/:runId/items/:pageId`           | Accepts (optionally with edits), rejects or resets one page's staged edit                                                                       |
 | `POST /api/branches/runs/:runId/check`, `.../push`        | Dry-runs, or writes, every accepted page, one at a time, each against its own base version                                                      |
 | `POST /api/drafts`                                        | Starts a draft of `{ spaceKey, parentId, title, notes }` and checks the space for pages that already cover it                                   |
 | `POST /api/drafts/:sessionId/recheck`                     | Runs the check for similar pages again                                                                                                          |

@@ -18,7 +18,7 @@
 // component that started it, so opening another page does not lose its progress, and the header can
 // show it and lead back to it.
 
-import type { BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
+import type { BranchRun, MetadataProgress, ReviewSource, SyncProgress } from '../../../src/api/types.js';
 import { api, branches } from './api.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
@@ -31,6 +31,8 @@ export type Job = {
   spaceKey: string;
   /** The page the work started from, which the header opens; absent for a whole space. */
   rootPageId?: string;
+  /** For a review, how its pages were chosen, so the header can open it in the same place. */
+  source?: ReviewSource;
   label: string;
   /** How far it has got; a total of 0 means it cannot say, as when one request is being answered. */
   processed: number;
@@ -42,6 +44,9 @@ type Finished = (job: Job, status: string) => void;
 
 const running = (status: string): boolean => status === 'running' || status === 'pending';
 
+/** One string per way of choosing pages, so two sources can be compared. */
+export const sourceKey = (s: ReviewSource): string => (s.kind === 'tag' ? `tag:${s.tag}` : `${s.kind}:${s.rootPageId}`);
+
 class Jobs {
   public list = $state<Job[]>([]);
   /** A review the header asked to open; the page view opens it once its page is on screen. */
@@ -49,9 +54,12 @@ class Jobs {
   private readonly stops = new Map<string, () => void>();
   private readonly listeners = new Set<Finished>();
 
-  /** The review running on a page, if any. */
-  public review(spaceKey: string, rootPageId: string): Job | undefined {
-    return this.list.find((j) => j.kind === 'review' && j.spaceKey === spaceKey && j.rootPageId === rootPageId);
+  /** The review running for pages chosen this way, if any. */
+  public review(spaceKey: string, source: ReviewSource): Job | undefined {
+    const key = sourceKey(source);
+    return this.list.find(
+      (j) => j.kind === 'review' && j.spaceKey === spaceKey && j.source && sourceKey(j.source) === key,
+    );
   }
 
   /** Follows a review run, so the header shows it while its dialog is closed. */
@@ -61,8 +69,9 @@ class Jobs {
       kind: 'review',
       jobId: r.id,
       spaceKey: r.spaceKey,
-      rootPageId: r.rootPageId,
-      label: `${r.kind === 'review' ? 'Review' : 'Proposals'}: ${r.rootTitle}`,
+      rootPageId: r.rootPageId || undefined,
+      source: r.source ?? { kind: 'section', rootPageId: r.rootPageId },
+      label: `${r.kind === 'review' ? 'Review' : 'Edits'}: ${r.rootTitle}`,
       processed: r.processed,
       total: r.kind === 'review' ? 0 : r.total,
       current: r.items.find((i) => i.status === 'working')?.title,

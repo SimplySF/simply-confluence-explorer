@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-// Branch runs against the real Confluence Data Center test environment: only accepted pages are
-// written, and a page a colleague changed after its proposal is never written over.
+// Section reviews against the real Confluence Data Center test environment: edits are staged only
+// from the suggestions chosen, only accepted pages are written, and a page a colleague changed after
+// its edit was made is never written over.
 
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -65,30 +66,41 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   };
-  const improve = async (): Promise<BranchRun> =>
-    settled(
+  /** Reviews the Interviews section, then stages edits from a suggestion that names both of its visible pages. */
+  const improve = async (): Promise<BranchRun> => {
+    const review = await settled(
       (
         await call<BranchRun>('POST', '/branches/runs', {
-          kind: 'improve',
           spaceKey: 'PEOPLE',
-          pageId: id('Interviews'),
-          focus: 'polish',
+          source: { kind: 'section', rootPageId: id('Interviews') },
+          pageIds: [id('Interviews'), id('Interview Guide')],
         })
       ).id,
     );
+    return settled((await call<BranchRun>('POST', `/branches/runs/${review.id}/apply`, { findings: [0] })).id);
+  };
 
   beforeAll(async () => {
     const reply = (payload: GuardedPayload): Promise<string> => {
-      const title = /^# Document Title: (.+)$/m.exec(payload.messages[0].content)?.[1] ?? 'Page';
+      const text = [payload.system, ...payload.messages.map((m) => m.content)].join('\n');
+      if (text.includes('"findings"'))
+        return Promise.resolve(
+          JSON.stringify({
+            findings: [
+              { kind: 'redundant', pages: ['Interviews', 'Interview Guide'], detail: 'Both describe the loop' },
+            ],
+          }),
+        );
+      const title = /^# Document Title: (.+)$/m.exec(text)?.[1] ?? 'Page';
       return Promise.resolve(
-        `<<<CRITIQUE>>>\n- Thin\n<<<CHANGELOG>>>\n- Expanded\n<<<PROPOSED_MARKDOWN>>>\n# ${title}\n\nProposed body.`,
+        `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Applied\n<<<PROPOSED_MARKDOWN>>>\n# ${title}\n\nProposed body.`,
       );
     };
     ({ server, api } = await startApp(env!, reply));
   });
   afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  it('improves only the visible pages, and writes exactly the page accepted', async () => {
+  it('stages edits for the visible pages a suggestion names, and writes exactly the page accepted', async () => {
     const run = await improve();
     expect(run.items.map((i) => i.title)).toEqual(['Interviews', 'Interview Guide']);
     const before = await read(id('Interview Guide'));

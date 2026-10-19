@@ -19,7 +19,7 @@
 // Confluence.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { PageResponse, RecommendationResponse, SyncProgress, WriteResult } from '../src/api/types.js';
+import type { PageResponse, SyncProgress, WriteResult } from '../src/api/types.js';
 import { parseRecommendationResponse } from '../src/ai/improve.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
@@ -41,29 +41,6 @@ beforeEach(async () => {
 
 const post = <T>(route: string, body: unknown): Promise<{ status: number; body: T }> =>
   app.call<T>('POST', route, body);
-
-describe('a proposal', () => {
-  it("is made from the server's own copy of the page, and names the version it was made from", async () => {
-    const page = fake.page('OPS', 'On-Call Handbook');
-    const res = await post<RecommendationResponse>(`/pages/${page.id}/recommend`, {
-      spaceKey: 'OPS',
-      focusArea: 'polish',
-      markdown: 'text from somewhere else',
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.baseVersion).toBe(page.version);
-    expect(res.body.improvedMarkdown).toBe('# Better\n\nProposed body.');
-    expect(res.body.critique).toEqual(['Thin']);
-    expect(app.sentText()).not.toContain('text from somewhere else');
-    expect(app.sentText()).toContain('# Document Title: On-Call Handbook');
-  });
-
-  it('is refused for an excluded page, and nothing is sent', async () => {
-    const res = await post(`/pages/${fake.page('PEOPLE', 'Salary Bands').id}/recommend`, { spaceKey: 'PEOPLE' });
-    expect(res.status).toBe(403);
-    expect(app.sent).toHaveLength(0);
-  });
-});
 
 describe('a dry run', () => {
   it('converts the change and writes nothing', async () => {

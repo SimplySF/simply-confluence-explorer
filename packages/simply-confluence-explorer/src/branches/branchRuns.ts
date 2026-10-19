@@ -17,23 +17,31 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { BranchFinding, BranchItem, BranchRun } from '../api/types.js';
+import type {
+  BranchFinding,
+  BranchFix,
+  BranchItem,
+  BranchRun,
+  PageDetail,
+  PageTreeNode,
+  ReviewAspect,
+  ReviewSource,
+} from '../api/types.js';
 import { AiStopped, type AiEngine } from '../ai/engine.js';
 import { GuardBlockedError } from '../ai/guard.js';
-import { improvePrompt, parseRecommendationResponse } from '../ai/improve.js';
+import { applyPrompt, parseRecommendationResponse } from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
-import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { collectBranch, CONTEXT_CHAR_LIMIT } from '../spaces/branchContext.js';
+import { CONTEXT_CHAR_LIMIT, contextCollector } from '../spaces/branchContext.js';
 import { errorMessage } from '../util/errors.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
 
-// Work on a page and everything under it (ADR-024). A run is kept as a file in data/branch-runs/, so
-// a review queue survives a restart. Nothing is written to Confluence except a page the person
-// accepted, and each write goes through the one write path, checked against the version its
-// proposal was made from.
+// Reviews of a set of pages, and the edits staged from the suggestions a person chose (ADR-024,
+// ADR-046). A run is kept as a file in data/branch-runs/, so a queue survives a restart. Nothing is
+// written to Confluence except a page the person accepted, and each write goes through the one write
+// path, checked against the version its edit was made from.
 
 export type BranchDeps = GateDeps & {
   ai: AiEngine;
@@ -41,18 +49,60 @@ export type BranchDeps = GateDeps & {
   log: (message: string) => void;
 };
 
-const REVIEW_PROMPT = `Review this section of Confluence documentation as a whole: the pages that follow belong together.
-Find what a maintainer should fix:
-- "incorrect": statements that contradict another page or look wrong
-- "redundant": the same content in more than one page
-- "stale": content that looks out of date (old versions, dates, retired systems)
-- "structure": pages in the wrong place, or that should be split or merged
-- "gap": something the section clearly needs and does not have
+/** What each aspect a person can tick asks the review to find, as the finding kind it reports. */
+const ASPECTS: Record<ReviewAspect, string> = {
+  accuracy: '"incorrect": statements that are wrong, or that contradict another page',
+  repetition: '"redundant": the same content in more than one place',
+  staleness: '"stale": content that looks out of date, such as old versions, dates or retired systems',
+  clarity: '"clarity": writing that is hard to follow, ambiguous or badly worded',
+  depth: '"depth": missing prerequisites, steps, context, commands or expected results',
+  structure: '"structure": headings, order or formatting within a page that should change',
+  operations: '"operations": procedures without pre-checks, rollback, escalation or a way to verify them',
+};
+export const REVIEW_ASPECTS = Object.keys(ASPECTS) as ReviewAspect[];
+
+/** Kinds that no edit of one existing page can fix: they are shown, never applied. */
+export const NOT_EDITABLE = new Set<BranchFinding['kind']>(['placement', 'gap']);
+
+/**
+ * The instruction for a review of one page, or of several read together.
+ *
+ * @param aspects What to look for.
+ * @param pageCount How many pages are sent.
+ * @param instructions The person's own notes, if any.
+ */
+export function reviewPrompt(aspects: ReviewAspect[], pageCount: number, instructions?: string): string {
+  const kinds = aspects.map((a) => `- ${ASPECTS[a]}`);
+  if (pageCount > 1)
+    kinds.push(
+      '- "placement": a page in the wrong place, or one that should be split or merged with another',
+      '- "gap": a page these pages clearly need that does not exist',
+    );
+  const what =
+    pageCount > 1
+      ? 'the Confluence pages that follow as a set: they are meant to be read together'
+      : 'the Confluence page that follows';
+  return `Review ${what}.
+Find what a maintainer should fix, of these kinds only:
+${kinds.join('\n')}
 Reply with JSON only, in this shape:
 {"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do"}]}
-Use exact page titles. Report nothing you are not confident of; an empty list is a valid answer.`;
+Use exact page titles, and name every page a finding is about. Report nothing you are not confident of; an empty list is a valid answer.${instructions ? `\nAlso: ${instructions}` : ''}`;
+}
 
-const KINDS = new Set(['incorrect', 'redundant', 'stale', 'structure', 'gap']);
+const KINDS = new Set<string>([
+  'incorrect',
+  'redundant',
+  'stale',
+  'clarity',
+  'depth',
+  'structure',
+  'operations',
+  'placement',
+  'gap',
+]);
+/** How many pages one review may read: enough for a section or a tag, few enough to stay within one request. */
+export const MAX_REVIEW_PAGES = 50;
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIDABLE = new Set(['proposed', 'accepted', 'rejected', 'checked', 'check-failed', 'push-failed']);
 
@@ -105,13 +155,14 @@ export class BranchRunStore {
     return readJsonOrEmpty<BranchRun>(file);
   }
 
-  public list(spaceKey?: string, rootPageId?: string): BranchRun[] {
+  /** The runs in a space, newest first, optionally only those whose pages were chosen the same way. */
+  public list(spaceKey?: string, source?: ReviewSource): BranchRun[] {
     if (!fs.existsSync(this.dir)) return [];
     return fs
       .readdirSync(this.dir)
       .filter((f) => RUN_ID.test(f.slice(0, -5)))
       .map((f) => readJsonOrEmpty<BranchRun>(path.join(this.dir, f)))
-      .filter((r) => (!spaceKey || r.spaceKey === spaceKey) && (!rootPageId || r.rootPageId === rootPageId))
+      .filter((r) => (!spaceKey || r.spaceKey === spaceKey) && (!source || sameSource(sourceOf(r), source)))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
@@ -121,10 +172,21 @@ export class BranchRunStore {
   }
 }
 
-type BranchPages = {
+type ReviewPage = { id: string; title: string; version: number; lastModified: string; markdown: string };
+
+/** How a run's pages were chosen; a run saved before reviews had a source reviewed a whole section. */
+export const sourceOf = (run: BranchRun): ReviewSource => run.source ?? { kind: 'section', rootPageId: run.rootPageId };
+
+const sameSource = (a: ReviewSource, b: ReviewSource): boolean =>
+  a.kind === b.kind &&
+  (a.kind === 'tag' ? a.tag === (b as { tag: string }).tag : a.rootPageId === (b as { rootPageId: string }).rootPageId);
+
+export type ReviewInput = {
   spaceKey: string;
-  pages: Array<{ id: string; title: string; version: number; lastModified: string; markdown: string }>;
-  leftOut: string[];
+  source: ReviewSource;
+  pageIds: string[];
+  aspects: ReviewAspect[];
+  instructions?: string;
 };
 
 export class BranchRunner {
@@ -144,43 +206,26 @@ export class BranchRunner {
     return this.live.get(id) ?? this.store.get(id);
   }
 
-  /** Starts a proposal for every page in the branch. It returns at once, and the run fills as it goes. */
-  public async startImprove(input: {
-    spaceKey: string;
-    rootPageId: string;
-    focus?: string;
-    instructions?: string;
-  }): Promise<BranchRun> {
-    // Each page is sent on its own, so the branch as a whole has no size limit.
-    const { spaceKey, pages, leftOut } = await this.pagesOf(input.spaceKey, input.rootPageId, Number.MAX_SAFE_INTEGER);
-    const run = newRun('improve', spaceKey, input.rootPageId, pages[0].title, {
-      focus: input.focus,
-      instructions: input.instructions,
-      total: pages.length,
-      leftOut,
-      items: pages.map((p): BranchItem => ({
-        pageId: p.id,
-        title: p.title,
-        baseVersion: p.version,
-        status: 'pending',
-        original: p.markdown,
-      })),
-    });
-    this.store.save(run);
-    const signal = this.begin(run);
-    void this.propose(run, signal).finally(() => this.end(run));
-    return run;
-  }
-
-  /** Starts a review of the branch as a whole. It returns at once. */
-  public async startReview(input: { spaceKey: string; rootPageId: string; instructions?: string }): Promise<BranchRun> {
-    const { spaceKey, pages, leftOut } = await this.pagesOf(input.spaceKey, input.rootPageId, CONTEXT_CHAR_LIMIT);
-    const pageIds = Object.fromEntries(pages.map((p) => [p.title, p.id]));
-    const run = newRun('review', spaceKey, input.rootPageId, pages[0].title, {
+  /**
+   * Starts a review of the chosen pages, read together in one request. It returns at once. Every page
+   * must belong to the source it was chosen from and pass the exclusion rules; a page holding a
+   * secret, or beyond the size limit, is left out and named.
+   */
+  public async startReview(input: ReviewInput): Promise<BranchRun> {
+    await this.checkMembership(input);
+    const { pages, leftOut } = await this.pagesFor(input.spaceKey, input.pageIds, CONTEXT_CHAR_LIMIT);
+    if (pages.length === 0) throw new HttpError(422, `None of the chosen pages could be sent: ${leftOut.join(', ')}.`);
+    const { source } = input;
+    const rootPageId = source.kind === 'tag' ? '' : source.rootPageId;
+    const title =
+      source.kind === 'tag' ? `#${source.tag}` : (pages.find((p) => p.id === rootPageId)?.title ?? pages[0].title);
+    const run = newRun('review', input.spaceKey, rootPageId, title, {
+      source: input.source,
+      aspects: input.aspects,
       instructions: input.instructions,
       total: 1,
       leftOut,
-      pageIds,
+      pageIds: Object.fromEntries(pages.map((p) => [p.title, p.id])),
     });
     this.store.save(run);
     const signal = this.begin(run);
@@ -190,9 +235,9 @@ export class BranchRunner {
           `## [Page: ${p.title}] (version ${p.version}, last updated ${p.lastModified.slice(0, 10) || 'unknown'})\n${p.markdown}`,
       )
       .join('\n\n---\n\n');
-    const prompt = input.instructions ? `${REVIEW_PROMPT}\nAlso: ${input.instructions}` : REVIEW_PROMPT;
+    const prompt = reviewPrompt(input.aspects, pages.length, input.instructions);
     void this.deps.ai
-      .analyzeDocument(context, prompt, `Section: ${run.rootTitle}`, { spaceKey, signal })
+      .analyzeDocument(context, prompt, title, { spaceKey: input.spaceKey, signal })
       .then((answer) => {
         const findings = parseFindings(answer.text);
         if (findings) run.findings = findings;
@@ -210,6 +255,69 @@ export class BranchRunner {
         this.store.save(run);
         this.end(run);
       });
+    return run;
+  }
+
+  /**
+   * Stages an edit of each page the chosen suggestions name, carrying only those suggestions. The
+   * suggestions are read from the saved review, never from the browser, and each page is checked
+   * again and edited from its current version. It returns at once, and the run fills as it goes.
+   *
+   * @param reviewId The review whose suggestions to apply.
+   * @param chosen The indexes of the chosen suggestions in the review's findings.
+   */
+  public async apply(reviewId: string, chosen: number[]): Promise<BranchRun> {
+    const review = this.get(reviewId);
+    if (review.kind !== 'review' || review.status !== 'ready' || !review.findings)
+      throw new HttpError(409, 'only a finished review with suggestions can be applied');
+    const findings = review.findings;
+    if (chosen.length === 0 || chosen.some((i) => !Number.isInteger(i) || i < 0 || i >= findings.length))
+      throw new HttpError(400, 'choose suggestions from the review');
+    const picked = [...new Set(chosen)].map((i) => findings[i]);
+    if (picked.some((f) => NOT_EDITABLE.has(f.kind)))
+      throw new HttpError(400, 'a suggestion to move, split, merge or write a page cannot be applied as an edit');
+    const ids = review.pageIds ?? {};
+    const fixesFor = new Map<string, BranchFix[]>();
+    for (const f of picked) {
+      for (const title of f.pages) {
+        const id = ids[title];
+        if (!id) continue;
+        const fix = {
+          kind: f.kind,
+          detail: f.detail,
+          suggestion: f.suggestion,
+          otherPages: f.pages.filter((p) => p !== title),
+        };
+        fixesFor.set(id, [...(fixesFor.get(id) ?? []), fix]);
+      }
+    }
+    if (fixesFor.size === 0) throw new HttpError(400, 'the chosen suggestions name no page the review read');
+    // Each page is sent on its own, so the pages as a whole have no size limit.
+    const { pages, leftOut } = await this.pagesFor(
+      review.spaceKey,
+      [...fixesFor.keys()],
+      Number.MAX_SAFE_INTEGER,
+      true,
+    );
+    if (pages.length === 0) throw new HttpError(422, `None of the pages can be edited: ${leftOut.join(', ')}.`);
+    const run = newRun('improve', review.spaceKey, review.rootPageId, review.rootTitle, {
+      source: sourceOf(review),
+      fromRunId: review.id,
+      instructions: review.instructions,
+      total: pages.length,
+      leftOut,
+      items: pages.map((p): BranchItem => ({
+        pageId: p.id,
+        title: p.title,
+        baseVersion: p.version,
+        status: 'pending',
+        original: p.markdown,
+        fixes: fixesFor.get(p.id),
+      })),
+    });
+    this.store.save(run);
+    const signal = this.begin(run);
+    void this.propose(run, signal).finally(() => this.end(run));
     return run;
   }
 
@@ -251,25 +359,67 @@ export class BranchRunner {
     return this.eachAccepted(id, false);
   }
 
-  private async pagesOf(spaceKey: string, rootPageId: string, budget: number): Promise<BranchPages> {
-    const gate = await gatePageForAi(rootPageId, spaceKey, this.deps);
-    if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
-    const root = { ...gate.page, markdown: parsePage(gate.page).markdown };
-    const branch = await collectBranch(
-      rootPageId,
-      gate.spaceKey,
-      this.deps,
-      this.deps.dataDir,
-      budget - root.markdown.length,
-    );
-    const leftOut = [
-      ...branch.withheld.map((t) => `${t} (contains a secret)`),
-      ...branch.overflow.map((t) => `${t} (over the size limit)`),
-    ];
+  /** Refuses a page that the source it was chosen from does not hold. */
+  private async checkMembership({ spaceKey, source, pageIds }: ReviewInput): Promise<void> {
+    if (source.kind === 'page') {
+      if (pageIds.length !== 1 || pageIds[0] !== source.rootPageId)
+        throw new HttpError(400, 'a page review reads only its own page');
+      return;
+    }
+    if (source.kind === 'section') {
+      // The synced copy when the section is on disk, otherwise Confluence's own tree.
+      const flat = (nodes: PageTreeNode[]): PageTreeNode[] => nodes.flatMap((n) => [n, ...flat(n.children)]);
+      const below = this.deps.store.readPage(spaceKey, source.rootPageId)
+        ? this.deps.store.descendants(spaceKey, source.rootPageId)
+        : flat((await this.deps.client().getPageTree(spaceKey, source.rootPageId))[0]?.children ?? []);
+      const section = new Set([source.rootPageId, ...below.map((n) => n.id)]);
+      if (pageIds.some((id) => !section.has(id))) throw new HttpError(400, 'a chosen page is not in the section');
+      return;
+    }
+    throw new HttpError(400, 'unknown review source');
+  }
+
+  /**
+   * The chosen pages that may be sent, each checked against the exclusion rules. A page the browser
+   * could not have been offered, because it is excluded or in another space, refuses the whole run;
+   * a page holding a secret or beyond the size limit is left out and named.
+   *
+   * @param spaceKey The space every page must be in.
+   * @param ids The chosen pages.
+   * @param budget How many characters the pages may take together.
+   * @param skipExcluded Leave out, without naming, a page excluded since it was chosen, rather than refusing.
+   */
+  private async pagesFor(
+    spaceKey: string,
+    ids: string[],
+    budget: number,
+    skipExcluded = false,
+  ): Promise<{ pages: ReviewPage[]; leftOut: string[] }> {
+    const { consider, result } = contextCollector(spaceKey, this.deps, this.deps.dataDir, budget);
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop -- pages are checked in the order they were chosen
+      const gate = await gatePageForAi(id, spaceKey, this.deps);
+      if (gate.page && gate.page.spaceKey.toUpperCase() !== spaceKey)
+        throw new HttpError(400, `a chosen page is not in ${spaceKey}`);
+      if (!gate.allowed || !gate.page) {
+        if (skipExcluded && gate.page) continue;
+        throw new HttpError(403, gate.reason ?? 'A chosen page cannot be sent to an AI.');
+      }
+      consider(gate.page);
+    }
+    const page = (p: PageDetail, markdown: string): ReviewPage => ({
+      id: p.id,
+      title: p.title,
+      version: p.version,
+      lastModified: p.lastModified,
+      markdown,
+    });
     return {
-      spaceKey: gate.spaceKey,
-      pages: [root, ...branch.pages.map((p) => ({ ...p.page, markdown: p.markdown }))],
-      leftOut,
+      pages: result.pages.map((p) => page(p.page, p.markdown)),
+      leftOut: [
+        ...result.withheld.map((title) => `${title} (contains a secret)`),
+        ...result.overflow.map((title) => `${title} (over the size limit)`),
+      ],
     };
   }
 
@@ -286,13 +436,13 @@ export class BranchRunner {
   }
 
   private async propose(run: BranchRun, signal: AbortSignal): Promise<void> {
-    const prompt = improvePrompt(run.focus, run.instructions);
-    // One page at a time: a branch can be large, and providers limit request rates.
+    // One page at a time: a section can be large, and providers limit request rates.
     for (const item of run.items) {
       if (this.cancelled.has(run.id)) break;
       item.status = 'working';
       this.store.save(run);
       try {
+        const prompt = applyPrompt(item.fixes ?? [], run.instructions);
         // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
         const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
           spaceKey: run.spaceKey,

@@ -17,13 +17,12 @@
     User,
     Wand2,
   } from '@lucide/svelte';
-  import type { PageMetadata, PageResponse } from '../../../src/api/types.js';
+  import type { BranchFinding, PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { forPage } from '../support/pageResult.js';
   import { toast } from '../support/toast.svelte.js';
   import AskAiPanel, { type AiScope } from './AskAiPanel.svelte';
-  import BranchWorkspace from './BranchWorkspace.svelte';
   import DetailsPanel from './DetailsPanel.svelte';
   import ImprovePanel from './ImprovePanel.svelte';
   import PurgePageDialog from './PurgePageDialog.svelte';
@@ -47,13 +46,28 @@
     onPagePurged: () => void;
     /** Pages were written to Confluence: reload the tree and this page. */
     onPagesChanged: () => void;
+    /** Review this page and everything under it, in the review dialog. */
+    onReviewSection: (rootPageId: string, title: string) => void;
+    /** A review found a page that should exist: start writing it under this one. */
+    onWriteNewPage: (finding: BranchFinding) => void;
   };
 
-  let { activeSpace, page, loading, error, onSelectPage, onPagePurged, onPagesChanged }: Props = $props();
+  let {
+    activeSpace,
+    page,
+    loading,
+    error,
+    onSelectPage,
+    onPagePurged,
+    onPagesChanged,
+    onReviewSection,
+    onWriteNewPage,
+  }: Props = $props();
   let tab = $state<Tab>('read');
   let scope = $state<AiScope>('page');
   let purging = $state(false);
-  let branchOpen = $state(false);
+  // A review of this page that the header opened, shown on the Improve tab.
+  let openRunId = $state<string | undefined>(undefined);
 
   // What the view needs beyond the page itself: whether it is excluded from AI, its AI summary, and how
   // many pages sit under it. Cleared at once on a new page, so one page's facts never show on another.
@@ -98,9 +112,13 @@
 
   const current = (): string | undefined => detail?.id;
 
-  // The header opened a review that started on this page: show it.
+  // The header opened a review of this page: show it on the Improve tab.
   $effect(() => {
-    if (jobs.requested?.kind === 'review' && jobs.requested.rootPageId === detail?.id) branchOpen = true;
+    const wanted = jobs.requested;
+    if (wanted?.source?.kind !== 'page' || wanted.source.rootPageId !== detail?.id) return;
+    jobs.requested = null;
+    openRunId = wanted.jobId;
+    tab = 'improve';
   });
   const setMetadata = (pageId: string, m: PageMetadata | null): void =>
     forPage(pageId, current, (v: PageMetadata | null) => (metadata = v))(m);
@@ -164,7 +182,7 @@
         {#if descendantCount > 0 && !excluded}
           <button
             class="btn btn-secondary btn-sm"
-            onclick={() => (branchOpen = true)}
+            onclick={() => onReviewSection(detail.id, detail.title)}
             title="Review this page and everything under it"
           >
             <FolderTree size={13} /> Review section ({descendantCount + 1} pages)
@@ -246,7 +264,15 @@
     </div>
     <div class="tab-pane" hidden={tab !== 'improve'}>
       {#key detail.id}
-        <ImprovePanel {page} {spaceKey} {excluded} onPushed={onPagesChanged} />
+        <ImprovePanel
+          {page}
+          {spaceKey}
+          {excluded}
+          {openRunId}
+          onOpenPage={onSelectPage}
+          onPushed={onPagesChanged}
+          {onWriteNewPage}
+        />
       {/key}
     </div>
     <div class="tab-pane" hidden={tab !== 'details'}>
@@ -271,20 +297,6 @@
         onPurged={() => {
           purging = false;
           onPagePurged();
-        }}
-      />
-    {/if}
-    {#if branchOpen}
-      <BranchWorkspace
-        {spaceKey}
-        pageId={detail.id}
-        title={detail.title}
-        {descendantCount}
-        onClose={() => (branchOpen = false)}
-        onPushed={onPagesChanged}
-        onOpenPage={(id) => {
-          branchOpen = false;
-          onSelectPage(id);
         }}
       />
     {/if}

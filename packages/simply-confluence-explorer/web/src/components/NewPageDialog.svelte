@@ -13,6 +13,7 @@
     Square,
     Upload,
   } from '@lucide/svelte';
+  import { untrack } from 'svelte';
   import type { AiSessionView, RedundancyDecision } from '../../../src/api/types.js';
   import { drafts, sessions, type DraftSummary } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
@@ -27,20 +28,22 @@
     spaceKey: string;
     parentId: string;
     parentTitle: string;
+    /** What the page should cover, when a review suggested it. */
+    notes?: string;
     onClose: () => void;
     /** The author chose to work on an existing page instead, or opens the new one. */
     onOpenPage: (pageId: string) => void;
     onCreated: () => void;
   };
 
-  let { spaceKey, parentId, parentTitle, onClose, onOpenPage, onCreated }: Props = $props();
+  let { spaceKey, parentId, parentTitle, notes: suggested = '', onClose, onOpenPage, onCreated }: Props = $props();
   const OVERLAP_LABEL = { high: 'Already covers this', some: 'Covers part of it', low: 'Little overlap' } as const;
   const UPLOAD_TYPES = '.pdf,.md,.markdown,.txt,.csv,.tsv,.json,.yaml,.yml,.log,.xml,.html,.htm';
 
   let session = $state<AiSessionView | null>(null);
   let unfinished = $state<DraftSummary[]>([]);
   let title = $state('');
-  let notes = $state('');
+  let notes = $state(untrack(() => suggested));
   let linked = $state<string[]>([]);
   let markdown = $state('');
   let preview = $state(false);
