@@ -728,3 +728,35 @@ test('an answer built on pages that share few words with the question says its m
     assert.equal(strong.turns.at(-1)?.weakMatch, undefined);
   }, RETRIEVING);
 });
+
+test('a question being answered reports the step it is on, and none once answered', async () => {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const app = await startTestApp(
+    fake,
+    async (payload) => {
+      if (!payload.system.includes('choosing which sections')) await held;
+      return 'an answer';
+    },
+    {},
+    { contextChars: RETRIEVING },
+  );
+  try {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const asked = ask(app, c.id, 'Which flights can be booked in economy?');
+    let activity: { step: string | null } = { step: null };
+    for (let i = 0; i < 50 && activity.step !== 'Writing the answer'; i++) {
+      // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // eslint-disable-next-line no-await-in-loop -- as above
+      activity = (await app.call<{ step: string | null }>('GET', `/ai/sessions/${c.id}/activity`)).body;
+    }
+    assert.equal(activity.step, 'Writing the answer');
+    release();
+    await asked;
+    assert.deepEqual((await app.call('GET', `/ai/sessions/${c.id}/activity`)).body, { step: null });
+  } finally {
+    await app.close();
+  }
+});

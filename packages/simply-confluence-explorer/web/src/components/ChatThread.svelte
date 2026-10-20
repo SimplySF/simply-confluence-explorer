@@ -107,6 +107,25 @@
     return () => clearInterval(t);
   });
 
+  // While a question is answered, the step it is on, so a long wait shows what it is waiting for.
+  let step = $state<string | null>(null);
+  $effect(() => {
+    const id = chat.session?.id;
+    if (!chat.sending || !id) {
+      step = null;
+      return;
+    }
+    const ask = (): void => {
+      sessions.activity(id).then(
+        (a) => (step = a.step),
+        () => undefined, // The step is a hint; the answer, or its error, arrives either way.
+      );
+    };
+    const timer = setInterval(ask, 1000);
+    ask();
+    return () => clearInterval(timer);
+  });
+
   $effect(() => {
     void chat.session?.turns.length;
     void chat.sending;
@@ -279,7 +298,7 @@
   {#if chat.sending}
     <div class="ai-thinking-card">
       <div class="ai-thinking-header">
-        <span><Sparkles size={15} class="spin" /> Thinking about {subject}…</span>
+        <span><Sparkles size={15} class="spin" /> {step ? `${step}…` : `Thinking about ${subject}…`}</span>
         <span class="muted"><Clock size={12} /> {seconds.toFixed(1)}s</span>
       </div>
       <div class="ai-thinking-shimmer"></div>

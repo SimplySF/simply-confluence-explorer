@@ -216,6 +216,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       // A directory chat refuses an excluded directory page outright, as a page chat does.
       if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' }, new ManifestBuilder());
       // Waits for the search index without holding up the server, if the space is still being indexed.
+      const building = index.building().find((b) => b.spaceKey === scope.spaceKey);
+      if (building) step(session.id, `Waiting for the search index (${building.done} of ${building.total} pages)`);
       await index.ready(scope.spaceKey);
       const corpus = corpusPages(store, exclusions, scope);
       await pause();
@@ -232,7 +234,16 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           scope.spaceKey,
           corpus,
           { question: prompt, previous, keep: keptSections(session) },
-          { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
+          {
+            store,
+            exclusions,
+            dataDir,
+            index,
+            vectors: services.vectors,
+            ai,
+            signal,
+            onStep: (text) => step(session.id, text),
+          },
           { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );
         span.set({
@@ -287,6 +298,12 @@ export function addSessionRoutes(router: Router, services: Services): Router {
    * Asks one question and records it with its answer. With `suggestions`, the answer is read as a
    * list of suggestions and stored with the turn, together with the pages it read by title.
    */
+  // The step each conversation's question is on, while it is being answered (design doc 0008).
+  const activity = new Map<string, { step: string; since: number }>();
+  const step = (sessionId: string, text: string): void => {
+    activity.set(sessionId, { step: text, since: activity.get(sessionId)?.since ?? Date.now() });
+  };
+
   const answer = async (
     session: AiSessionView,
     prompt: { shown: string; sent: string },
@@ -297,7 +314,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       'chat',
       suggestions ? 'suggestions' : 'question',
       { sessionId: session.id, scope: session.scope.kind, spaceKey: session.scope.spaceKey },
-      (span) => answerTraced(session, prompt, signal, suggestions, span.traceId),
+      (span) =>
+        answerTraced(session, prompt, signal, suggestions, span.traceId).finally(() => activity.delete(session.id)),
     );
 
   const answerTraced = async (
@@ -307,11 +325,13 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     suggestions: boolean,
     traceId: string,
   ): Promise<AiSessionView> => {
+    step(session.id, 'Gathering what this chat reads');
     const ctx = await contextFor(session, prompt.sent, signal);
     const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
     const history = historyToSend(session.turns);
     recordHistory(ctx.manifest, session, history);
     const manifest = ctx.manifest.build();
+    step(session.id, 'Writing the answer');
     const reply = await ai.chat(
       { context: ctx.context, history, prompt: prompt.sent, manifest },
       { spaceKey: session.scope.spaceKey, guard, signal },
@@ -360,6 +380,11 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         return { sessions: list.map(({ turns, ...summary }) => ({ ...summary, turnCount: turns.length })) };
       })
       .add('GET', '/api/ai/sessions/:sessionId', ({ params }) => found(params.sessionId))
+      // The step a question is on while it is being answered, or none.
+      .add('GET', '/api/ai/sessions/:sessionId/activity', ({ params }) => {
+        const now = activity.get(found(params.sessionId).id);
+        return now ? { step: now.step, ms: Date.now() - now.since } : { step: null };
+      })
       .add('DELETE', '/api/ai/sessions/:sessionId', ({ params }) => ({ deleted: sessions.delete(params.sessionId) }))
       // Renames a conversation, or changes a Space chat between the whole space and chosen pages.
       .add('PATCH', '/api/ai/sessions/:sessionId', async ({ params, body }) => {

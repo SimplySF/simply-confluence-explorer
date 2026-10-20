@@ -71,6 +71,8 @@ export type RetrieverDeps = {
   vectors?: VectorIndex;
   ai?: Pick<AiEngine, 'analyzeDocument' | 'embed' | 'embeddingModel'>;
   signal?: AbortSignal;
+  /** Told each step as it starts, so the person waiting can see how far the question has got. */
+  onStep?: (step: string) => void;
 };
 
 /** How many candidate sections the search offers the AI to choose from. */
@@ -221,6 +223,7 @@ async function choose(
   deps: RetrieverDeps,
 ): Promise<Chosen | null> {
   if (!deps.ai || !candidates.some((c) => c.summary)) return null;
+  deps.onStep?.(`Choosing among ${candidates.length} sections`);
   const asked = `Question: ${query.question}${query.previous ? `\nThe question before it: ${query.previous}` : ''}`;
   const answer = await deps.ai.analyzeDocument(
     `${asked}\n\nCandidate sections:\n${candidates.map((c) => c.line).join('\n')}`,
@@ -267,6 +270,7 @@ export async function retrieveContext(
 
   await pause();
   const byId = new Map(pages.map((p) => [p.id, p]));
+  deps.onStep?.(`Searching ${pages.length.toLocaleString('en-US')} pages`);
   const { candidates, weak } = await candidatesFor(
     key,
     byId,
@@ -291,6 +295,7 @@ export async function retrieveContext(
   await pause();
   const outlined = options.outline ? outlineOf(key, deps) : '';
   const outline = outlined.length <= budget / 4 ? outlined : '';
+  deps.onStep?.('Reading the chosen sections');
   const read = readSections(
     key,
     byId,

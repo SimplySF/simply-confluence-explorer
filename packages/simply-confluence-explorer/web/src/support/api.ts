@@ -201,6 +201,8 @@ export const sessions = {
   suggest: (id: string, kind: 'review' | 'changes', signal?: AbortSignal) =>
     call<AiSessionView & { batch?: BatchProgress }>(`${SESSIONS}/${key(id)}/suggest`, 'POST', { kind }, signal),
   batch: (id: string) => call<{ batch: BatchProgress | null }>(`${SESSIONS}/${key(id)}/batch`),
+  /** The step a question is on while it is being answered. */
+  activity: (id: string) => call<{ step: string | null; ms?: number }>(`${SESSIONS}/${key(id)}/activity`),
   queue: (id: string, turn: number, findings: number[]) =>
     call<BranchRun>(`${SESSIONS}/${key(id)}/turns/${turn}/queue`, 'POST', { findings }),
   update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
