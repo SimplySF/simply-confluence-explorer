@@ -622,7 +622,7 @@ runs as, and each conversation can be deleted.
 
 ## ADR-024 — Branch work goes through a review queue: nothing is written that a person did not accept, page by page
 
-**Status:** accepted, 2026-10-15. Amended by ADR-041, ADR-046 and ADR-047.
+**Status:** accepted, 2026-10-15. Amended by ADR-041, ADR-046, ADR-047 and ADR-059.
 
 "Work on branch" acts on a page and everything under it (`server/src/branches/branchRuns.ts`). Each
 piece of work is a run, saved in `data/branch-runs/`. There are two kinds of run:
@@ -1185,7 +1185,7 @@ its own record.
 
 ## ADR-041 — A page that holds parts Markdown cannot carry is never written from Markdown; the write is refused instead of losing them
 
-**Status:** accepted, 2026-10-16. Amends ADR-024.
+**Status:** accepted, 2026-10-16. Amends ADR-024. Amended by ADR-058.
 
 The app edits pages as Markdown. Converting a page to Markdown turns the parts Markdown has no form
 for into placeholder text: an image becomes `[image: chart.png]`, a macro becomes `[macro: jira]` or
@@ -1648,3 +1648,76 @@ wait was under 75 ms.
 only if someone runs the scale check. This is accepted because a check that fails at random teaches
 people to ignore it, which is worse; the code that reads whole spaces goes through `mapChunked` in
 `src/util/pause.ts`, and the scale check is named in AGENTS.md beside the other suites.
+
+---
+
+## ADR-058 — A page that holds parts Markdown cannot carry is changed through markers that keep each part exactly, instead of being refused
+
+**Status:** accepted, 2026-10-20. Amends ADR-041.
+
+ADR-041 refused any change to a page holding an image, a macro, a link to another page, a mention,
+a task list or a layout, because a push replaced the whole body with storage converted from
+Markdown, and each of those parts would have become text. Most real pages hold at least one, often
+a table of contents, so most pages could not be changed at all. ADR-041 named the fix and deferred
+it; this record makes it.
+
+A page is now edited through its **edit form** (`src/parser/editForm.ts`, design doc 0009):
+
+- **Each part Markdown has no form for becomes a numbered marker** in the text, such as `⟦1 toc⟧`
+  or `⟦4 status: LIVE⟧`, and its storage is kept on the server. A panel, an expand section or a
+  layout column becomes a pair of markers around its text, so that text can still be edited. A
+  block whose text cannot be written back without changing it, such as a table with merged cells,
+  becomes one marker and is kept exactly as it is.
+- **A push builds the storage from the edit form.** A block the change leaves alone is written as
+  Confluence holds it, byte for byte. A changed block is converted from Markdown, and each marker
+  is replaced by the part it stands for.
+- **The model is told to keep every marker**, and it may move or remove one only when a suggestion
+  asks for it. A marker the page does not have, a marker used twice, and a container's markers out
+  of order each refuse the write and are named.
+- **Nothing is lost without a decision.** Every part of the page must be in what is written, unless
+  the person accepted a change that removes it (ADR-059). As a backstop, the write counts each kind
+  of part in the page and in what it is about to send, and refuses the write if any are missing.
+  That count now also covers the parts the old check missed: links to anchors and attachments,
+  emoticons, inline comments, extensions and dates.
+
+The single-page push route has no review of changes, so a part missing from its text is refused
+there, as before, with the marker that names it.
+
+**The argument against:** the edit form is the app's own format, and a model may mangle a marker or
+put one where its part does not belong. That is accepted because every such mistake is caught
+before anything is written: an unknown or repeated marker is refused, a marker put inside code is
+counted as missing, and the person sees each change, including any removal, before accepting it.
+
+---
+
+## ADR-059 — An edit is reviewed change by change, keeps the AI's version to reset to, and is checked as part of the push
+
+**Status:** accepted, 2026-10-20. Amends ADR-024.
+
+A page's edit was accepted or rejected as a whole, even when it carried several suggestions. A
+person's own edits replaced the AI's version, so it could not be restored, and edits made in the
+editor were lost on switching to another view. Rejecting did nothing visible, and the dry run was a
+separate step whose failures dropped silently out of the push count.
+
+- **Each change is decided on its own.** A change is a run of blocks in which the working text
+  differs from the page; a rewritten paragraph is one change, and removing a part, such as a macro,
+  is a change of its own, labelled with what it removes (`src/branches/pageChanges.ts`). A push
+  writes the page with only the accepted changes, so a rejected or undecided change leaves that part
+  of the page exactly as it is.
+- **The AI's edit is kept** beside the working text. The person's edits are saved as they type and
+  show as changes of their own, and **Reset to the AI's edit** puts the text back and clears every
+  decision. A decision is kept by the change's content, so it survives an edit elsewhere, and a
+  change the person edits is asked about again.
+- **The check is part of the push.** **Check and push** checks every page that has accepted
+  changes, then lists the pages that will be written and the ones that failed, with why. A page
+  that changed in Confluence since its edit was made can be made again from the current page.
+
+**Declined: deciding each suggestion rather than each change.** The model applies a page's
+suggestions in one rewrite, so the text alone does not say which words came from which suggestion.
+Asking the model to apply each suggestion separately would cost a request per suggestion and could
+not show how they combine. A change is what the person can see and judge, so it is the unit of
+decision.
+
+**The argument against:** a page with many small changes asks for many decisions. That is accepted
+because **Accept all** and **Reject all** decide a page at once, and the north star requires that a
+person reads what changes before it is written.
