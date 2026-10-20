@@ -6,6 +6,7 @@ interface Pull {
   user: { login: string };
   head: { ref: string; sha: string };
   base?: { ref: string };
+  merged_by?: { login: string } | null;
 }
 
 interface Review {
@@ -34,11 +35,19 @@ export function pullRequestBody(
 ): string;
 
 /** What stops a merged release pull request from publishing its version; empty when nothing does. */
-export function approvalProblems(version: string, pull: Pull, reviews: Review[]): string[];
+export function approvalProblems(version: string, pull: Pull, reviews: Review[], maintainers?: string[]): string[];
+
+/** The GitHub logins in the RELEASE_MAINTAINERS repository variable, who may release alone before 1.0 (ADR-053). */
+export function maintainersFrom(value: string | undefined): string[];
 
 /** Finds the release pull request merged as `commit` and checks its approval. */
 export function releaseProblems(
   version: string,
   commit: string,
-  github: { repo: string; token: string; fetch: (url: string, init?: object) => Promise<Response> },
+  github: {
+    repo: string;
+    token: string;
+    fetch: (url: string, init?: object) => Promise<Response>;
+    maintainers?: string[];
+  },
 ): Promise<string[]>;

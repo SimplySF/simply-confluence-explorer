@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest';
 import {
   REVIEW_GUIDE,
   approvalProblems,
+  maintainersFrom,
   lineOf,
   pullRequestBody,
   releaseProblems,
@@ -129,6 +130,53 @@ describe('an approval', () => {
   });
 });
 
+describe('a release merged by a maintainer before 1.0 (ADR-053)', () => {
+  const merged = (login: string, version = '0.2.0') => ({
+    ...pull,
+    head: { ref: `release/${version}`, sha: 'last' },
+    merged_by: { login },
+  });
+
+  it('is allowed without an approval', () => {
+    expect(approvalProblems('0.2.0', merged('author'), [], ['author'])).toEqual([]);
+  });
+
+  it('still needs a second approval when merged by someone who is not a maintainer', () => {
+    expect(approvalProblems('0.2.0', merged('someone'), [], ['author'])).toHaveLength(1);
+  });
+
+  it('needs a second approval again from 1.0.0', () => {
+    expect(approvalProblems('1.0.0', merged('author', '1.0.0'), [], ['author'])).toHaveLength(1);
+  });
+
+  it('is still stopped by a request for changes', () => {
+    expect(approvalProblems('0.2.0', merged('author'), [review('other', 'CHANGES_REQUESTED')], ['author'])).toEqual([
+      'other requested changes on pull request #7',
+    ]);
+  });
+
+  it('reads the maintainers from the repository variable, and nobody when it is unset', () => {
+    expect(maintainersFrom('alice, bob carol')).toEqual(['alice', 'bob', 'carol']);
+    expect(maintainersFrom(undefined)).toEqual([]);
+  });
+
+  it('is found from the merged pull request itself, which says who merged it', async () => {
+    const answers: Record<string, unknown> = {
+      'commits/abc/pulls': [{ ...merged('author'), merged_by: undefined }],
+      'pulls/7': merged('author'),
+      'pulls/7/reviews?per_page=100&page=1': [],
+    };
+    const api = {
+      repo: 'owner/repo',
+      token: 'token',
+      maintainers: ['author'],
+      fetch: async (url: string) =>
+        new Response(JSON.stringify(answers[url.replace('https://api.github.com/repos/owner/repo/', '')])),
+    };
+    expect(await releaseProblems('0.2.0', 'abc', api)).toEqual([]);
+  });
+});
+
 describe('the gate for a commit on main', () => {
   /** A stand-in for GitHub's REST API that answers from a fixed table of paths. */
   function github(answers: Record<string, unknown>) {
@@ -145,6 +193,7 @@ describe('the gate for a commit on main', () => {
   it('allows a commit that merged an approved release pull request', async () => {
     const api = github({
       'commits/abc/pulls': [pull],
+      'pulls/7': pull,
       'pulls/7/reviews?per_page=100&page=1': [review('reviewer', 'APPROVED')],
     });
     expect(await releaseProblems('1.0.0', 'abc', api)).toEqual([]);
@@ -166,6 +215,7 @@ describe('the gate for a commit on main', () => {
     const approvals = Array.from({ length: 100 }, () => review('reviewer', 'APPROVED'));
     const api = github({
       'commits/abc/pulls': [pull],
+      'pulls/7': pull,
       'pulls/7/reviews?per_page=100&page=1': approvals,
       'pulls/7/reviews?per_page=100&page=2': [review('other', 'CHANGES_REQUESTED')],
     });

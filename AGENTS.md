@@ -118,7 +118,9 @@ without consent, or switch off one of the project's safeguards. Every change to 
 the pull request description and reviewed by a person. Because this project declares stakes `real`,
 a stable release also ships only after a second person, not the one who opened it, approves the
 pull request that releases it; that pull request lists these surfaces for its reviewer, and
-`scripts/release-gate.mjs` refuses to publish without the approval (ADR-044). The paths below are
+`scripts/release-gate.mjs` refuses to publish without the approval (ADR-044). Until 1.0.0, a
+maintainer named in the repository variable `RELEASE_MAINTAINERS` may merge a release pull request
+without that approval (ADR-053). The paths below are
 relative to `packages/simply-confluence-explorer/src/`.
 
 | surface                         | where                                                                                                                           |

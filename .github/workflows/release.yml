@@ -80,6 +80,8 @@ jobs:
           node scripts/release-gate.mjs check "$VERSION" "$commit"
         env:
           GH_TOKEN: ${{ github.token }}
+          # Who may release alone before 1.0 (ADR-053); kept in the repository's settings, not its files.
+          RELEASE_MAINTAINERS: ${{ vars.RELEASE_MAINTAINERS }}
           VERSION: ${{ steps.state.outputs.version }}
           TAG: ${{ steps.state.outputs.tag }}
           TAGGED: ${{ steps.state.outputs.tagged }}

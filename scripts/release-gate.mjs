@@ -271,7 +271,8 @@ export const REVIEW_GUIDE = [
       {
         file: 'scripts/release-gate.mjs',
         symbol: 'approvalProblems',
-        check: 'Refuses a release unless someone other than its author approved the last commit of its pull request.',
+        check:
+          'Refuses a release unless someone other than its author approved the last commit of its pull request, or, below 1.0.0, a maintainer merged it (ADR-053).',
       },
       {
         file: 'packages/simply-confluence-explorer/test/budgets.test.ts',
@@ -335,8 +336,9 @@ export function pullRequestBody(version, source) {
     '',
     'The app can change Confluence pages that other people read, and it holds Confluence tokens and AI',
     'keys. So a stable release ships only after someone other than its author has read the code that',
-    'carries that risk. **Your approval of this pull request is that review**, and the release workflow',
-    'will not publish without it.',
+    'carries that risk. **Your approval of this pull request is that review**, and from 1.0.0 the release',
+    'workflow will not publish without it. Before 1.0.0, a maintainer may also merge it without an',
+    'approval (ADR-053).',
     '',
     '## What to review',
     '',
@@ -361,9 +363,10 @@ export function pullRequestBody(version, source) {
  * @param {string} version The version about to be published.
  * @param {object} pull The pull request, as GitHub's REST API returns it.
  * @param {object[]} reviews Its reviews, oldest first.
+ * @param {string[]} maintainers GitHub logins that may release alone below 1.0.0 (ADR-053).
  * @returns {string[]} One sentence per problem; empty when the release may go ahead.
  */
-export function approvalProblems(version, pull, reviews) {
+export function approvalProblems(version, pull, reviews, maintainers = []) {
   if (!VERSION.test(version)) return [`"${version}" is not a stable version such as 1.0.0`];
   const problems = [];
   if (pull.head.ref !== `release/${version}`)
@@ -377,7 +380,9 @@ export function approvalProblems(version, pull, reviews) {
   const approved = decisions.some(
     (r) => r.state === 'APPROVED' && r.user.login !== pull.user.login && r.commit_id === pull.head.sha,
   );
-  if (!approved) {
+  // Before the first major version, a maintainer's merge stands in for a second approval (ADR-053).
+  const byMaintainer = version.startsWith('0.') && maintainers.includes(pull.merged_by?.login ?? '');
+  if (!approved && !byMaintainer) {
     problems.push(`pull request #${pull.number} has no approval of its last commit from anyone but its author`);
   }
   for (const r of decisions.filter((r) => r.state === 'CHANGES_REQUESTED')) {
@@ -391,7 +396,8 @@ export function approvalProblems(version, pull, reviews) {
  *
  * @param {string} version The version about to be published.
  * @param {string} commit The commit on main that holds the version.
- * @param {{ repo: string, token: string, fetch: typeof fetch }} github Where to ask, and how.
+ * @param {{ repo: string, token: string, fetch: typeof fetch, maintainers?: string[] }} github Where to ask,
+ *   how, and who may release alone below 1.0.0.
  * @returns {Promise<string[]>} The problems found; empty when the release may go ahead.
  */
 export async function releaseProblems(version, commit, github) {
@@ -404,15 +410,27 @@ export async function releaseProblems(version, commit, github) {
     return response.json();
   };
   const pulls = await get(`commits/${commit}/pulls`);
-  const pull = pulls.find((p) => p.merged_at && p.base.ref === 'main' && p.head.ref === `release/${version}`);
-  if (!pull) return [`${commit} is not the merge of a pull request from release/${version} into main`];
+  const found = pulls.find((p) => p.merged_at && p.base.ref === 'main' && p.head.ref === `release/${version}`);
+  if (!found) return [`${commit} is not the merge of a pull request from release/${version} into main`];
+  // The list above leaves out who merged it, which only the pull request itself says.
+  const pull = await get(`pulls/${found.number}`);
   const reviews = [];
   for (let page = 1; ; page++) {
     const batch = await get(`pulls/${pull.number}/reviews?per_page=100&page=${page}`);
     reviews.push(...batch);
     if (batch.length < 100) break;
   }
-  return approvalProblems(version, pull, reviews);
+  return approvalProblems(version, pull, reviews, github.maintainers);
+}
+
+/**
+ * The maintainers named in the `RELEASE_MAINTAINERS` repository variable, which the workflow passes in.
+ *
+ * @param {string | undefined} value A comma- or space-separated list of GitHub logins.
+ * @returns {string[]} The logins.
+ */
+export function maintainersFrom(value) {
+  return (value ?? '').split(/[\s,]+/).filter(Boolean);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -423,14 +441,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const read = (file) => readFileSync(new URL(file, root), 'utf8');
     console.log(pullRequestBody(version, { repoUrl, commit, read }));
   } else if (command === 'check') {
-    const github = { repo: process.env.GITHUB_REPOSITORY ?? '', token: process.env.GH_TOKEN ?? '', fetch };
+    const github = {
+      repo: process.env.GITHUB_REPOSITORY ?? '',
+      token: process.env.GH_TOKEN ?? '',
+      fetch,
+      maintainers: maintainersFrom(process.env.RELEASE_MAINTAINERS),
+    };
     const problems = await releaseProblems(version, commit, github);
     for (const problem of problems) console.error(`release gate: ${problem}`);
     if (problems.length > 0) {
-      console.error(`release gate: ${version} may not be published as a stable release (ADR-044)`);
+      console.error(`release gate: ${version} may not be published as a stable release (ADR-044, ADR-053)`);
       process.exitCode = 1;
     } else {
-      console.log(`release gate: ${version} was approved by a second person`);
+      console.log(`release gate: ${version} was approved by a second person, or merged by a maintainer before 1.0`);
     }
   } else {
     console.error('usage: release-gate.mjs check <version> <commit> | body <version> <commit>');
