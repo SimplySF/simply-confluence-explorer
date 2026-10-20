@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.2.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0...%40simplysf%2Fsimply-confluence-explorer%400.2.0) (2026-10-20)
+
+### Features
+
+- chat as the place to work: contexts, a context engine, a change queue, and new pages from GitLab ([#24](https://github.com/SimplySF/simply-confluence-explorer/issues/24)) ([fbe2940](https://github.com/SimplySF/simply-confluence-explorer/commit/fbe2940efeca7d24cf04775baad340d5f59e7186))
+- link each file a release reviewer reads, and publish only approved releases ([#23](https://github.com/SimplySF/simply-confluence-explorer/issues/23)) ([984b837](https://github.com/SimplySF/simply-confluence-explorer/commit/984b8375a0967ca67ee7b7e9cecb017e8ead4dc1))
+
 # [0.1.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0-beta.7...%40simplysf%2Fsimply-confluence-explorer%400.1.0) (2026-10-19)
 
 **Note:** Version bump only for package @simplysf/simply-confluence-explorer
