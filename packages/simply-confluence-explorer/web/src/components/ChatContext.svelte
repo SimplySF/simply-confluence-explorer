@@ -22,9 +22,20 @@
   let open = $state(false);
   let tags = $state<TaggedPages[]>([]);
   let query = $state('');
+  // The mode the person picked. Choosing pages starts with none chosen, and until one is, the chat
+  // still reads the whole space, so the mode is kept here as well as in the chat's scope.
+  let mode = $state<'space' | 'pages'>('space');
+  $effect(() => {
+    if (scope.kind === 'pages') mode = 'pages';
+  });
+
+  function pickMode(next: 'space' | 'pages'): void {
+    mode = next;
+    if (next === 'space' && scope.kind === 'pages') onChange({ kind: 'space' });
+  }
 
   $effect(() => {
-    if (!open || tags.length) return;
+    if (!open || mode !== 'pages' || tags.length) return;
     api.tags(spaceKey).then(
       (t) => (tags = t),
       () => (tags = []), // An unsynced space has no tags; choosing pages by name still works.
@@ -37,7 +48,9 @@
   const label = $derived(
     scope.kind === 'pages'
       ? `${chosenTags.length ? chosenTags.map((t) => `#${t}`).join(', ') + ' · ' : ''}${chosen.length} chosen page${chosen.length === 1 ? '' : 's'}`
-      : 'the whole space: each question finds its own pages',
+      : mode === 'pages'
+        ? 'no pages chosen yet, so the whole space'
+        : 'the whole space: each question finds its own pages',
   );
 
   const choose = (pageIds: string[], tagList: string[]): void =>
@@ -78,71 +91,81 @@
     <div class="chat-context-panel">
       <Segmented
         label="What this chat reads"
-        value={scope.kind === 'pages' ? 'pages' : 'space'}
-        onChange={(v) => v === 'space' && onChange({ kind: 'space' })}
+        value={mode}
+        onChange={pickMode}
         options={[
           { value: 'space', label: 'Whole space', title: 'Each question searches the space for the pages it needs' },
           { value: 'pages', label: 'Chosen pages', title: 'Only the pages chosen below, by tag or by name' },
         ]}
       />
-      <div class="chat-context-section">
-        <span class="muted">Choose by tag</span>
-        <div class="chip-row">
-          {#each tags as t (t.tag)}
-            <button
-              type="button"
-              class={['pill', 'chat-context-tag', chosenTags.includes(t.tag) && 'active']}
-              aria-pressed={chosenTags.includes(t.tag)}
-              onclick={() => toggleTag(t)}
-            >
-              <Tag size={11} />
-              {t.tag} <span class="muted">{t.pages.length}</span>
-            </button>
-          {:else}
-            <span class="muted">Sync the space to choose pages by tag.</span>
-          {/each}
-        </div>
-      </div>
-      <form
-        class="chat-context-section"
-        onsubmit={(e) => {
-          e.preventDefault();
-          addByName();
-        }}
-      >
-        <span class="muted">Add a page by name</span>
-        <input
-          class="form-input input-sm"
-          list="chat-context-pages"
-          placeholder="Start typing a page title"
-          aria-label="Add a page by name"
-          bind:value={query}
-          onchange={addByName}
-        />
-        <datalist id="chat-context-pages">
-          {#each pages as p (p.id)}<option value={p.title}></option>{/each}
-        </datalist>
-      </form>
-      {#if chosen.length}
-        <div class="chip-row">
-          {#each chosen as id (id)}
-            <span class="pill">
-              <button type="button" class="link-btn" onclick={() => onSelectPage(id)}>{titleOf(id)}</button>
+      {#if mode === 'space'}
+        <p class="muted">
+          For each question, the chat finds the pages it needs and says which it read and why. Choose
+          <strong>Chosen pages</strong> to read only the pages you pick.
+        </p>
+      {:else}
+        {#if !chosen.length}
+          <p class="muted">Tick tags or add pages below. Until you do, the chat reads the whole space.</p>
+        {/if}
+        <div class="chat-context-section">
+          <span class="muted">Choose by tag</span>
+          <div class="chip-row">
+            {#each tags as t (t.tag)}
               <button
                 type="button"
-                class="icon-btn"
-                aria-label="Remove {titleOf(id)}"
-                onclick={() =>
-                  choose(
-                    chosen.filter((p) => p !== id),
-                    chosenTags,
-                  )}
+                class={['pill', 'chat-context-tag', chosenTags.includes(t.tag) && 'active']}
+                aria-pressed={chosenTags.includes(t.tag)}
+                onclick={() => toggleTag(t)}
               >
-                <X size={11} />
+                <Tag size={11} />
+                {t.tag} <span class="muted">{t.pages.length}</span>
               </button>
-            </span>
-          {/each}
+            {:else}
+              <span class="muted">Sync the space to choose pages by tag.</span>
+            {/each}
+          </div>
         </div>
+        <form
+          class="chat-context-section"
+          onsubmit={(e) => {
+            e.preventDefault();
+            addByName();
+          }}
+        >
+          <span class="muted">Add a page by name</span>
+          <input
+            class="form-input input-sm"
+            list="chat-context-pages"
+            placeholder="Start typing a page title"
+            aria-label="Add a page by name"
+            bind:value={query}
+            onchange={addByName}
+          />
+          <datalist id="chat-context-pages">
+            {#each pages as p (p.id)}<option value={p.title}></option>{/each}
+          </datalist>
+        </form>
+        {#if chosen.length}
+          <div class="chip-row">
+            {#each chosen as id (id)}
+              <span class="pill">
+                <button type="button" class="link-btn" onclick={() => onSelectPage(id)}>{titleOf(id)}</button>
+                <button
+                  type="button"
+                  class="icon-btn"
+                  aria-label="Remove {titleOf(id)}"
+                  onclick={() =>
+                    choose(
+                      chosen.filter((p) => p !== id),
+                      chosenTags,
+                    )}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </div>
   {/if}

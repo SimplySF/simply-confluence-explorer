@@ -1,5 +1,6 @@
 <script lang="ts">
   import { MessagesSquare, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
+  import { untrack } from 'svelte';
   import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { sessions, type DraftSummary } from '../support/api.js';
@@ -32,6 +33,13 @@
   let search = $state('');
   let renaming = $state<string | null>(null);
   let deleting = $state<DraftSummary | null>(null);
+  // Counts the chats shown, so what a chat reads is reset when another chat is opened or started, but
+  // not when the chat on screen is first saved.
+  let shownChat = $state(0);
+  // Read without tracking, so an effect that shows a new chat does not run again because of it.
+  const nextChat = (): void => {
+    shownChat = untrack(() => shownChat) + 1;
+  };
 
   const scope = $derived<SessionScope>({ kind: 'space', spaceKey });
 
@@ -46,6 +54,7 @@
   $effect(() => {
     void spaceKey;
     chat.begin(scope);
+    nextChat();
     reload();
   });
 
@@ -60,6 +69,7 @@
     if (!wanted) return;
     onSeeded();
     chat.begin(wanted.scope);
+    nextChat();
     void (async () => {
       try {
         const s = await chat.ensure();
@@ -81,6 +91,7 @@
   async function open(id: string): Promise<void> {
     try {
       chat.show(await sessions.get(id), scope);
+      nextChat();
     } catch (e) {
       toast(messageOf(e), 'error');
     }
@@ -117,7 +128,14 @@
 
 <div class="space-chat">
   <aside class="space-chat-list">
-    <button type="button" class="btn btn-primary btn-sm" onclick={() => chat.startNew()}>
+    <button
+      type="button"
+      class="btn btn-primary btn-sm"
+      onclick={() => {
+        chat.startNew();
+        nextChat();
+      }}
+    >
       <Plus size={13} /> New chat
     </button>
     <div class="search-field">
@@ -128,7 +146,8 @@
       {#each shown as s (s.id)}
         <li class={{ selected: s.id === chat.session?.id }}>
           <button type="button" class="space-chat-item" onclick={() => open(s.id)} title={s.title}>
-            <span class="space-chat-item-title">{s.title}</span>
+            <span class="space-chat-item-title">{s.turnCount === 0 && s.title === spaceKey ? 'New chat' : s.title}</span
+            >
             <span class="space-chat-item-meta"
               >{new Date(s.updatedAt).toLocaleDateString()} · {Math.ceil(s.turnCount / 2)} question{Math.ceil(
                 s.turnCount / 2,
@@ -172,13 +191,16 @@
         </button>
       {/if}
     </div>
-    <ChatContext
-      {spaceKey}
-      scope={chat.session?.scope ?? scope}
-      {pages}
-      onChange={(choice) => update({ scope: choice })}
-      {onSelectPage}
-    />
+    <!-- Each chat starts with its own choice of what to read. -->
+    {#key shownChat}
+      <ChatContext
+        {spaceKey}
+        scope={chat.session?.scope ?? scope}
+        {pages}
+        onChange={(choice) => update({ scope: choice })}
+        {onSelectPage}
+      />
+    {/key}
     <ChatThread
       {chat}
       subject="space {spaceKey}"
