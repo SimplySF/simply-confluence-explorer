@@ -20,6 +20,7 @@
 
 import type { BatchProgress, BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
 import { api, batches, branches, type Chosen } from './api.js';
+import { observe } from './observe.svelte.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
@@ -38,6 +39,8 @@ export type Job = {
   processed: number;
   total: number;
   current?: string;
+  /** For a batched run in a chat, the step it is on, such as "batch 3 of 8". */
+  step?: string;
 };
 
 type Finished = (job: Job, status: string) => void;
@@ -102,10 +105,14 @@ class Jobs {
       spaceKey: q.spaceKey,
       rootPageId,
       sessionId: q.sessionId,
-      label: `${q.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${q.pages} pages`,
+      label:
+        q.kind === 'answer'
+          ? `Answering thoroughly from ${q.sections ?? 0} sections`
+          : `${q.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${q.pages} pages`,
       processed: q.processed,
       total: q.total,
       current: q.currentTitle,
+      step: q.combining ? 'combining the notes' : `batch ${Math.min(q.processed + 1, q.total)} of ${q.total}`,
     });
     this.put(job(p));
     this.stops.set(
@@ -116,9 +123,12 @@ class Jobs {
           if (q.status !== 'cancelled')
             toast(
               q.status === 'completed'
-                ? `${job(q).label}: the suggestions are ready.`
+                ? `${job(q).label}: the ${q.kind === 'answer' ? 'answer is' : 'suggestions are'} ready.`
                 : `${job(q).label}: ${q.error ?? q.status}.`,
               q.status === 'completed' ? 'success' : 'error',
+              q.status === 'failed' && q.traceId
+                ? { label: 'See why', run: () => observe.show('trace', { traceId: q.traceId }) }
+                : undefined,
             );
           this.finish(job(q), q.status);
         },
@@ -250,11 +260,16 @@ class Jobs {
       pollJob(() => api.metadataStatus(p.jobId), {
         onProgress: (q) => this.put(job(q)),
         onFinished: (q) => {
+          // A run that left pages out leads to its trace, where each page's reason is recorded.
+          const failed = q.errorCount > 0 || q.status === 'failed';
           toast(
             q.status === 'completed'
               ? `${job(q).label}: done${q.errorCount ? `, ${q.errorCount} failed` : ''}.`
               : `${job(q).label}: ${q.status}.`,
-            q.status === 'completed' ? 'success' : 'info',
+            failed ? 'error' : q.status === 'completed' ? 'success' : 'info',
+            failed && q.traceId
+              ? { label: 'See why', run: () => observe.show('trace', { traceId: q.traceId }) }
+              : undefined,
           );
           this.finish(job(q), q.status);
         },

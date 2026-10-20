@@ -15,7 +15,7 @@
  */
 
 import path from 'node:path';
-import type { AiSettingsView } from '../api/types.js';
+import type { AiEmbeddings, AiSettingsView } from '../api/types.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
 
 // Which AI answers, and with what credentials (ADR-017). Keys are kept in a file only the user
@@ -25,6 +25,7 @@ export const PROVIDERS = ['gemini-cli', 'anthropic', 'openai', 'gemini'] as cons
 export type Provider = (typeof PROVIDERS)[number];
 export type ApiProvider = Exclude<Provider, 'gemini-cli'>;
 export const API_PROVIDERS: ApiProvider[] = ['anthropic', 'openai', 'gemini'];
+export const EMBEDDING_CHOICES: AiEmbeddings[] = ['chat', 'openai', 'gemini', 'none'];
 
 // OpenAI has no default, because its current model names change too often to pin; Settings lists the
 // models the key can use instead.
@@ -52,7 +53,18 @@ type Stored = {
   openai?: ApiConfig;
   gemini?: ApiConfig;
   geminiCli?: { path?: string };
+  /** How many requests the AI index sends at once. */
+  parallel?: number;
+  embeddings?: AiEmbeddings;
 };
+
+/**
+ * How many indexing requests run at once when none is set. The Gemini CLI starts a process for each
+ * request, so it runs fewer; an API provider's rate limits allow a few more.
+ */
+export const DEFAULT_PARALLEL = { cli: 2, api: 4 };
+/** The most requests at once a person may choose, so a slip cannot flood a provider. */
+export const MAX_PARALLEL = 8;
 
 export type ResolvedApi = {
   apiKey: string;
@@ -65,6 +77,8 @@ export type Resolved = {
   provider: Provider;
   api: Record<ApiProvider, ResolvedApi>;
   geminiCliPath: string;
+  parallel: number;
+  embeddings: AiEmbeddings;
 };
 
 /** An update from the Settings dialog. `apiKey`: omitted keeps it, '' removes it. */
@@ -74,6 +88,8 @@ export type SettingsUpdate = {
   openai?: ApiConfig;
   gemini?: ApiConfig;
   geminiCli?: { path?: string };
+  parallel?: number;
+  embeddings?: AiEmbeddings;
 };
 
 export class AiSettingsStore {
@@ -105,7 +121,14 @@ export class AiSettingsStore {
     }
     const envProvider = this.env.AI_PROVIDER as Provider | undefined;
     const provider = stored.provider ?? (envProvider && PROVIDERS.includes(envProvider) ? envProvider : 'gemini-cli');
-    return { provider, api, geminiCliPath: stored.geminiCli?.path ?? this.env.GEMINI_CLI_PATH ?? '' };
+    const parallel = stored.parallel ?? (provider === 'gemini-cli' ? DEFAULT_PARALLEL.cli : DEFAULT_PARALLEL.api);
+    return {
+      provider,
+      api,
+      geminiCliPath: stored.geminiCli?.path ?? this.env.GEMINI_CLI_PATH ?? '',
+      parallel,
+      embeddings: stored.embeddings ?? 'chat',
+    };
   }
 
   /** What a browser may see: everything except the keys. */
@@ -122,6 +145,8 @@ export class AiSettingsStore {
       providers: providers as AiSettingsView['providers'],
       geminiCli: { path: r.geminiCliPath },
       defaults: DEFAULT_MODELS,
+      parallel: r.parallel,
+      embeddings: r.embeddings,
     };
   }
 
@@ -143,6 +168,16 @@ export class AiSettingsStore {
       next[p] = cur;
     }
     if (change.geminiCli?.path !== undefined) next.geminiCli = { path: change.geminiCli.path.trim() };
+    if (change.parallel !== undefined) {
+      if (!Number.isInteger(change.parallel) || change.parallel < 1 || change.parallel > MAX_PARALLEL)
+        throw new Error(`requests at once must be a whole number from 1 to ${MAX_PARALLEL}`);
+      next.parallel = change.parallel;
+    }
+    if (change.embeddings !== undefined) {
+      if (!EMBEDDING_CHOICES.includes(change.embeddings))
+        throw new Error(`embeddings must be one of ${EMBEDDING_CHOICES.join(', ')}`);
+      next.embeddings = change.embeddings;
+    }
     writePrivateJson(this.file, next);
   }
 

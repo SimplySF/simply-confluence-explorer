@@ -16,8 +16,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { parsePage } from '../parser/convert.js';
+import { frontmatterOf, parsePage } from '../parser/convert.js';
 import type { PageDetail, PageMetadata } from '../api/types.js';
+import { mapChunked } from '../util/pause.js';
 import { splitSections, type Section } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
 
@@ -28,7 +29,30 @@ const STOP = new Set(
 );
 
 /**
- * Splits text into the lower-case words a search compares, without common words that match everything.
+ * A word reduced to a common stem, so "rolled", "rolling" and "rolls" all compare as "roll", and
+ * "billed" finds "billing". It is a small set of English suffix rules rather than a full stemmer: a
+ * search only needs the same word in different forms to meet, not a correct root.
+ *
+ * @param word A lower-case word.
+ */
+export function stem(word: string): string {
+  let w = word.length > 4 && word.endsWith('ies') ? `${word.slice(0, -3)}y` : word;
+  for (const suffix of ['ing', 'ed', 'es', 's', 'ly']) {
+    if (w.length - suffix.length >= 3 && w.endsWith(suffix)) {
+      w = w.slice(0, -suffix.length);
+      break;
+    }
+  }
+  if (w.endsWith('ie')) w = `${w.slice(0, -2)}y`;
+  if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);
+  // A doubled last letter, as in "stopped" or "billing", meets the single one, as in "stop" or "bill".
+  if (w.length > 3 && w.at(-1) === w.at(-2) && !/[aeiou]/.test(w.at(-1)!)) w = w.slice(0, -1);
+  return w;
+}
+
+/**
+ * Splits text into the stems of the lower-case words a search compares, without common words that
+ * match everything.
  *
  * @param text The text to split.
  */
@@ -37,13 +61,15 @@ export function tokens(text: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
-    .filter((t) => t.length > 2 && !STOP.has(t));
+    .filter((t) => t.length > 2 && !STOP.has(t))
+    .map(stem);
 }
 
 type Doc = { section: Section; title: string; excerpt: string; length: number; terms: Map<string, number> };
 export type SearchHit = { pageId: string; title: string; excerpt: string; score: number };
 /** A section that matched, with the page it belongs to. */
-export type SectionHit = { section: Section; title: string; score: number };
+/** A section that matched, with the page it belongs to and the share of the question's words it holds. */
+export type SectionHit = { section: Section; title: string; score: number; covers: number };
 
 // A word in the title says more about what a page is for than one in its body, and a word in a
 // section's heading says more about the section than one in its text.
@@ -53,12 +79,12 @@ const HEADING_WEIGHT = 2;
 const K1 = 1.2;
 const B = 0.75;
 
-type PageDocs = { stamp: string; docs: Doc[] };
+type PageDocs = { stamp: string; docs: Doc[]; size: number };
 type Index = { docs: Doc[]; df: Map<string, number>; avgLength: number };
+const EMPTY: Index = { docs: [], df: new Map(), avgLength: 0 };
 
 /** One page's sections as search documents. Each carries its page's title, labels, tags, summary and questions. */
-function pageDocs(page: PageDetail, meta?: PageMetadata): Doc[] {
-  const sections = splitSections(page.id, parsePage(page).markdown);
+function pageDocs(page: PageDetail, sections: Section[], meta?: PageMetadata): Doc[] {
   const pageTerms = new Map<string, number>();
   const add = (terms: Map<string, number>, text: string, weight: number): void =>
     tokens(text).forEach((t) => terms.set(t, (terms.get(t) ?? 0) + weight));
@@ -92,6 +118,10 @@ function pageDocs(page: PageDetail, meta?: PageMetadata): Doc[] {
 export class SearchIndex {
   private readonly cache = new Map<string, { stamp: string; index: Index }>();
   private readonly pages = new Map<string, PageDocs>();
+  // Converting a page to sections is the slow part, so it is kept per page version, apart from the
+  // search documents, which a new summary changes.
+  private readonly split = new Map<string, { stamp: string; sections: Section[] }>();
+  private readonly builds = new Map<string, { done: number; total: number; promise: Promise<void> }>();
 
   public constructor(private readonly store: SpaceStore) {}
 
@@ -119,7 +149,7 @@ export class SearchIndex {
       this.rank(spaceKey, query)
         .filter((hit) => !within || within.has(hit.doc.section.pageId))
         .slice(0, limit)
-        .map((hit) => ({ section: hit.doc.section, title: hit.doc.title, score: hit.score })),
+        .map((hit) => ({ section: hit.doc.section, title: hit.doc.title, score: hit.score, covers: hit.covers })),
     );
   }
 
@@ -131,58 +161,111 @@ export class SearchIndex {
       .filter((s) => s.text);
   }
 
-  private rank(spaceKey: string, query: string): Array<{ doc: Doc; score: number }> {
+  /**
+   * Resolves when a space's index is up to date, building it first if not. The build reads the pages
+   * in small chunks and lets other requests through between them, so a large space never stops the
+   * server answering while it is indexed.
+   */
+  public ready(spaceKey: string): Promise<void> {
+    const key = spaceKey.toUpperCase();
+    const running = this.builds.get(key);
+    if (running) return running.promise;
+    if (!this.store.isSynced(key) || this.cache.get(key)?.stamp === this.stamp(key)) return Promise.resolve();
+    const build = { done: 0, total: 0, promise: Promise.resolve() };
+    build.promise = this.warm(key, build).finally(() => this.builds.delete(key));
+    this.builds.set(key, build);
+    return build.promise;
+  }
+
+  /** About how many characters reading these pages in full would take, from what the index has kept. */
+  public sizeOf(spaceKey: string, pages: PageDetail[]): number {
+    const key = spaceKey.toUpperCase();
+    this.indexFor(key);
+    return pages.reduce((n, p) => n + (this.pages.get(`${key}/${p.id}`)?.size ?? 0), 0);
+  }
+
+  /** The builds under way, with how far each has got. */
+  public building(): Array<{ spaceKey: string; done: number; total: number }> {
+    return [...this.builds].map(([spaceKey, b]) => ({ spaceKey, done: b.done, total: b.total }));
+  }
+
+  private rank(spaceKey: string, query: string): Array<{ doc: Doc; score: number; covers: number }> {
     if (!this.store.isSynced(spaceKey)) return [];
     const { docs, df, avgLength } = this.indexFor(spaceKey.toUpperCase());
     const q = [...new Set(tokens(query))];
     return docs
       .map((doc) => {
         let score = 0;
+        let found = 0;
         for (const t of q) {
           const f = doc.terms.get(t);
           if (!f) continue;
+          found++;
           const n = df.get(t) ?? 0;
           const idf = Math.log(1 + (docs.length - n + 0.5) / (n + 0.5));
           score += (idf * f * (K1 + 1)) / (f + K1 * (1 - B + (B * doc.length) / avgLength));
         }
-        return { doc, score };
+        return { doc, score, covers: q.length ? found / q.length : 0 };
       })
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score);
   }
 
-  private indexFor(key: string): Index {
+  private async warm(key: string, progress: { done: number; total: number }): Promise<void> {
     const stamp = this.stamp(key);
-    let entry = this.cache.get(key);
-    if (entry?.stamp !== stamp) {
-      entry = { stamp, index: this.build(key) };
-      this.cache.set(key, entry);
-    }
-    return entry.index;
-  }
-
-  private build(key: string): Index {
+    const pages = await this.store.visiblePages(key);
+    progress.total = pages.length;
     const docs: Doc[] = [];
     const df = new Map<string, number>();
     const seen = new Set<string>();
-    for (const page of this.store.visiblePages(key)) {
-      const meta = this.store.readMetadata(key, page.id);
-      const id = `${key}/${page.id}`;
-      const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}`;
-      let cached = this.pages.get(id);
-      if (cached?.stamp !== pageStamp) {
-        cached = { stamp: pageStamp, docs: pageDocs(page, meta) };
-        this.pages.set(id, cached);
-      }
-      seen.add(id);
-      for (const doc of cached.docs) {
+    await mapChunked(pages, (page) => {
+      seen.add(`${key}/${page.id}`);
+      for (const doc of this.docsFor(key, page)) {
         docs.push(doc);
         for (const t of doc.terms.keys()) df.set(t, (df.get(t) ?? 0) + 1);
       }
-    }
+      progress.done++;
+    });
     // A page that left the space, or is now excluded, is dropped from the cache too.
-    for (const id of this.pages.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) this.pages.delete(id);
-    return { docs, df, avgLength: docs.reduce((a, d) => a + d.length, 0) / Math.max(1, docs.length) };
+    for (const cache of [this.pages, this.split])
+      for (const id of cache.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) cache.delete(id);
+    const avgLength = docs.reduce((a, d) => a + d.length, 0) / Math.max(1, docs.length);
+    this.cache.set(key, { stamp, index: { docs, df, avgLength } });
+  }
+
+  private docsFor(key: string, page: PageDetail): Doc[] {
+    const meta = this.store.readMetadata(key, page.id);
+    const id = `${key}/${page.id}`;
+    const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}`;
+    let cached = this.pages.get(id);
+    if (cached?.stamp !== pageStamp) {
+      const splitStamp = `${page.version}|${page.storageXml.length}`;
+      let split = this.split.get(id);
+      if (split?.stamp !== splitStamp) {
+        split = { stamp: splitStamp, sections: splitSections(page.id, parsePage(page).markdown) };
+        this.split.set(id, split);
+      }
+      // About how many characters the page takes when read in full: its frontmatter and each section with its heading.
+      const size = frontmatterOf(page).length + split.sections.reduce((n, s) => n + s.text.length + 20, 0);
+      cached = { stamp: pageStamp, docs: pageDocs(page, split.sections, meta), size };
+      this.pages.set(id, cached);
+    }
+    return cached.docs;
+  }
+
+  /**
+   * The index as last built. It is never built here, on a request's path: every search a person
+   * waits on awaits `ready` first, so a stale index is read only when a write lands in between, and a
+   * rebuild is started. After a change to the exclusion rules nothing is read until the rebuild, so an
+   * excluded page is never found.
+   */
+  private indexFor(key: string): Index {
+    const stamp = this.stamp(key);
+    const entry = this.cache.get(key);
+    if (entry?.stamp === stamp) return entry.index;
+    void this.ready(key);
+    const rulesOf = (s: string): string => s.split('|')[1];
+    return entry && rulesOf(entry.stamp) === rulesOf(stamp) ? entry.index : EMPTY;
   }
 
   // The store counts every change it makes to a space, so checking for changes costs nothing however

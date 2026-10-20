@@ -18,6 +18,7 @@ import type { PageDetail, PageTreeNode } from '../api/types.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
 import { parsePage } from '../parser/convert.js';
 import { runLimited } from '../util/runLimited.js';
+import type { ManifestBuilder } from '../ai/manifest.js';
 import type { GateDeps } from './aiGate.js';
 
 /** How much page text one AI request may carry, so a large branch cannot exceed what a model accepts. */
@@ -32,6 +33,8 @@ export type BranchContext = {
   withheld: string[];
   /** Pages left out because the context was already full. */
   overflow: string[];
+  /** How many pages were left out because the exclusion rules exclude them; never which. */
+  excluded: number;
 };
 
 /**
@@ -52,10 +55,13 @@ export function contextCollector(
   budget = CONTEXT_CHAR_LIMIT,
 ): { consider: (page: PageDetail) => void; result: BranchContext } {
   const screen = new OutboundGuard(loadGuardRules(dataDir, spaceKey));
-  const result: BranchContext = { pages: [], withheld: [], overflow: [] };
+  const result: BranchContext = { pages: [], withheld: [], overflow: [], excluded: 0 };
   let used = 0;
   const consider = (page: PageDetail): void => {
-    if (deps.exclusions.isPageExcluded(page, spaceKey || page.spaceKey)) return;
+    if (deps.exclusions.isPageExcluded(page, spaceKey || page.spaceKey)) {
+      result.excluded++;
+      return;
+    }
     const { markdown } = parsePage(page);
     if (screen.secretsIn(markdown).length > 0) result.withheld.push(page.title);
     else if (used + markdown.length > budget) result.overflow.push(page.title);
@@ -115,4 +121,17 @@ export async function collectBranch(
 /** The note an answer carries about pages left out of its context to fit the size limit. */
 export function leftOutNote(branch: Pick<BranchContext, 'overflow'>): string {
   return branch.overflow.length > 0 ? ` Left out to fit the request size: ${branch.overflow.join(', ')}.` : '';
+}
+
+/**
+ * Formats collected pages as context, each marked in the manifest, and records the pages left out
+ * with why: excluded (counted, never named), holding a secret, or past the size limit.
+ */
+export function pagesAsContext(collected: BranchContext, manifest: ManifestBuilder): string {
+  for (const title of collected.withheld) manifest.leaveOut('page', title, 0, 'secret');
+  for (const title of collected.overflow) manifest.leaveOut('page', title, 0, 'over-limit');
+  for (let i = 0; i < collected.excluded; i++) manifest.leaveOut('page', '', 0, 'excluded');
+  return collected.pages
+    .map((p) => manifest.include('page', p.page.title, `## [Page: ${p.page.title}]\n${p.markdown}`))
+    .join('\n\n---\n\n');
 }

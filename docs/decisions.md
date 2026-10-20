@@ -990,7 +990,7 @@ the fix belongs where every user of the library gets it.
 
 ## ADR-034 — The decision log is left out of the prose budget, as history and review are, and the budget for the live documents drops to 1,700 lines
 
-**Status:** accepted, 2026-10-16. Amends ADR-031.
+**Status:** accepted, 2026-10-16. Amended by ADR-055. Amends ADR-031.
 
 The prose budget (`MAX_DOC_LINES`) exists so that the documents a reader must keep up with stay a
 size someone can read. It already leaves out `docs/history/` and `docs/review/`, because they are
@@ -1554,3 +1554,97 @@ author. That is accepted for now because the maintainer reviews every pull reque
 it, every change to a load-bearing surface is still flagged in its pull request, and the release
 pull request still lists those surfaces for anyone who wants to read them. The project does not lower
 its declared stakes; it records this as a time-limited exception that ends at 1.0.0.
+
+---
+
+## ADR-054 — Large spaces are indexed in packs of pages, context is checked on its way to the model, and the app keeps its own traces instead of console lines
+
+**Status:** accepted, 2026-10-20.
+
+The space the app was built for has about 3,200 pages and uses the Gemini CLI, which has no
+embeddings and starts a process for every request. Measured on a generated space of that size, the
+server's own work took under a second per action, but indexing meant 3,200 requests in a row, a
+question read at most 12 sections, failures were only counted, and server messages were lost when
+the console closed. Design doc 0008 describes the changes; these are the decisions behind them.
+
+- **Indexing sends several pages per request** and runs a few requests at once (2 for the Gemini CLI,
+  4 for API providers, set in Settings). Every page sent must come back in the reply; one that does
+  not is retried on its own, then recorded as a failure with its reason.
+- **Every request carries a context manifest**: what was meant to be sent, what was included, and why
+  anything was left out. The engine checks the manifest against the guarded payload before sending
+  and refuses a request whose included items are missing from it. An answer cut short by the
+  model's output limit, or blocked, is reported as such.
+- **A broad question can be answered thoroughly**, as a background job that reads many sections in
+  batches and combines their notes, on the machinery of batched reviews (ADR-051).
+- **The app records traces, logs and a few health numbers** in `<data dir>/telemetry/`, kept 14 days
+  and capped at 200 MB, and shows them on an Observability page. They hold counts, ids, durations,
+  titles of allowed pages and error messages, and never page text, prompts, answers, credentials or
+  the title of an excluded page; a test checks this.
+
+**The argument against:** packing pages lets one bad reply affect several pages, the manifest check
+can refuse a request that would have worked, and telemetry is a new store of data about the user's
+work on disk. These are accepted because every packed page is accounted for and retried alone, a
+refused request is a bug the check found rather than context silently lost, and the telemetry stays
+on this machine under the same rule as the synced pages: nothing excluded is named in it.
+
+---
+
+## ADR-055 — The prose budget rises to 1,850 lines for design doc 0008
+
+**Status:** accepted, 2026-10-20. Amends ADR-034.
+
+New features start as a design doc (AGENTS.md), and the work in ADR-054 is a new feature: indexing
+large spaces, thorough answers, context checks and an Observability page. The live documents stood
+at 1,699 of 1,700 lines, so the design doc could not be written without removing text from other
+documents that still describe how the app works. The limit rises to 1,850, enough for design doc
+0008 and the guide changes that point to it.
+
+**The argument against:** the budget exists to keep the documents a size someone can read, and
+raising it whenever it is reached makes it no limit at all. This is accepted because the increase is
+sized to one design doc, which the project's own rule requires, and the next increase needs its own
+record arguing for it.
+
+---
+
+## ADR-056 — A question is not expanded with the space's topics; words that mean the same come from embeddings instead
+
+**Status:** accepted, 2026-10-20.
+
+The plan for design doc 0008 included topic expansion: matching a question's words to the space's
+topics from the AI index, and adding the pages that carry those topics as candidates. It was
+declined once the retrieval measurement (`test/retrievalEval.test.ts`) was in place. Topics already
+count in the section search, and their words are stemmed in the same way as the question's, so a
+question that shares a word with a topic already finds that topic's pages. What expansion would add
+is a match between different words that mean the same thing, such as "down" and "outage". Matching
+those needs embeddings, so the embedding provider was made separate from the chat provider instead.
+A Gemini CLI user can then add a Gemini or OpenAI key for embeddings alone.
+
+**The argument against:** a user with no embedding key gets no match on meaning at all. That is
+accepted because a table of synonyms kept by the app would be a guess about every team's vocabulary,
+and the weak-match warning tells the user when a search found little.
+
+---
+
+## ADR-057 — Timing checks on large spaces run on a real machine, not in CI
+
+**Status:** accepted, 2026-10-20.
+
+Design doc 0008 promises that the server keeps answering while a 3,200-page space is indexed. The
+test for it timed health checks during the walk and failed on any wait of 250 ms or more. In CI it
+failed on the Windows runners again and again after the code that held the server had been fixed.
+Each failing wait was recorded with the CPU time the test's process used in it, and the longest
+waits used a third of their time or less: the runner, sharing two cores among some forty test
+files, was not giving the process a turn. On a real machine, pinned to a single core, the longest
+wait was under 75 ms.
+
+- **The fast suite keeps what does not depend on timing.** `test/largeSpace.test.ts` indexes the
+  generated space and fails if a page is left out, if indexing takes more than one request per five
+  pages, or if a question about the space is not answered.
+- **The timing moves to a scale check** in `test/scale/`, run with `pnpm run test:scale`. It is run
+  on a real machine after changing code that reads a whole space, and the result is reported in the
+  pull request.
+
+**The argument against:** with the timing out of CI, a change that brings back a freeze is caught
+only if someone runs the scale check. This is accepted because a check that fails at random teaches
+people to ignore it, which is worse; the code that reads whole spaces goes through `mapChunked` in
+`src/util/pause.ts`, and the scale check is named in AGENTS.md beside the other suites.

@@ -1,6 +1,6 @@
 # 0007 — Chat as the place to work: contexts, a context engine, a change queue, and new pages from GitLab
 
-**Status:** Planned
+**Status:** Implemented (PR #24)
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-10-19
 

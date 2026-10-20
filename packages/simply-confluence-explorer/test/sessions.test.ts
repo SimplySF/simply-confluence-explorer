@@ -282,8 +282,10 @@ async function retriever(app: TestApp): Promise<{
   const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
   const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
   return {
-    context: (q, budget = RETRIEVING) =>
-      retrieveContext('PEOPLE', store.visiblePages('PEOPLE'), q, deps, { budget, outline: true }),
+    context: async (q, budget = RETRIEVING) => {
+      await deps.index.ready('PEOPLE');
+      return retrieveContext('PEOPLE', await store.visiblePages('PEOPLE'), q, deps, { budget, outline: true });
+    },
   };
 }
 
@@ -415,9 +417,21 @@ test('a whole-space question lets the AI choose its sections from their summarie
     fake,
     (payload) => {
       if (payload.system.includes('return a JSON object')) {
+        const about = (title: string): string =>
+          title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
+        const pages = [...payload.messages[0].content.matchAll(/^=== PAGE (\S+): (.+) ===$/gm)];
+        if (pages.length)
+          return JSON.stringify({
+            pages: pages.map((m) => ({
+              id: m[1],
+              summary: about(m[2]),
+              tags: [],
+              documentType: 'policy',
+              systemsMentioned: [],
+            })),
+          });
         const title = /# Document Title: (.+)/.exec(payload.messages[0].content)?.[1] ?? '';
-        const summary = title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
-        return JSON.stringify({ summary, tags: [], documentType: 'policy', systemsMentioned: [] });
+        return JSON.stringify({ summary: about(title), tags: [], documentType: 'policy', systemsMentioned: [] });
       }
       if (choosing(payload)) return choice;
       return 'an answer';
@@ -527,11 +541,13 @@ test('an excluded page is left out of a corpus, and an excluded directory refuse
 
     // Excluded after it was synced, so its copy is still on disk.
     await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
-    const titles = corpusPages(store, exclusions, {
-      kind: 'pages',
-      spaceKey: 'PEOPLE',
-      pageIds: [id('Travel Policy'), id('Remote Work Policy')],
-    }).map((p) => p.title);
+    const titles = (
+      await corpusPages(store, exclusions, {
+        kind: 'pages',
+        spaceKey: 'PEOPLE',
+        pageIds: [id('Travel Policy'), id('Remote Work Policy')],
+      })
+    ).map((p) => p.title);
     assert.deepEqual(titles, ['Remote Work Policy']);
   });
 });
@@ -588,6 +604,11 @@ test('a review of more pages than one request carries reads them in batches and 
     assert.ok(done.total > 1, `${done.total} batches`);
     const sent = app.sent.slice(before);
     assert.equal(sent.filter(isReview).length, done.total);
+    // Every page a batch reads is marked, so the engine could check it arrived whole.
+    for (const p of sent.filter(isReview)) {
+      const text = textOf(p);
+      assert.equal((text.match(/⟦c\d+⟧/g) ?? []).length, (text.match(/## \[Page: /g) ?? []).length);
+    }
     for (const title of expectations.PEOPLE.excluded)
       assert.doesNotMatch(sent.map(textOf).join('\n'), new RegExp(title));
     const { body: s } = await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`);
@@ -671,4 +692,75 @@ test('a corpus judged to fit is never read with pages left out for size; it is r
       );
     }
   });
+});
+
+test('a batch whose reply cannot be read is asked again, then named as not reviewed', async () => {
+  let asked = 0;
+  const app = await startTestApp(
+    fake,
+    (payload) => {
+      if (!isReview(payload)) return 'an answer';
+      asked++;
+      return 'Here are some thoughts, but no JSON.';
+    },
+    {},
+    { contextChars: 900 },
+  );
+  try {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const { body } = await app.call<AiSessionView & { batch: BatchProgress }>('POST', `/ai/sessions/${c.id}/suggest`, {
+      kind: 'review',
+    });
+    const done = await finished(app, body.batch.jobId);
+    assert.equal(asked, done.total * 2, 'each batch is asked twice');
+    const { body: s } = await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`);
+    assert.match(s.turns.at(-1)?.guardSummary ?? '', /Not reviewed, because the AI's reply could not be read twice: /);
+    assert.equal(s.turns.at(-1)?.findings?.length, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an answer built on pages that share few words with the question says its matches are weak', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const weak = await ask(app, c.id, 'zebra quantum festival tickets');
+    assert.equal(weak.turns.at(-1)?.weakMatch, true);
+    const strong = await ask(app, c.id, 'Which flights can be booked in economy?');
+    assert.equal(strong.turns.at(-1)?.weakMatch, undefined);
+  }, RETRIEVING);
+});
+
+test('a question being answered reports the step it is on, and none once answered', async () => {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const app = await startTestApp(
+    fake,
+    async (payload) => {
+      if (!payload.system.includes('choosing which sections')) await held;
+      return 'an answer';
+    },
+    {},
+    { contextChars: RETRIEVING },
+  );
+  try {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const asked = ask(app, c.id, 'Which flights can be booked in economy?');
+    let activity: { step: string | null } = { step: null };
+    for (let i = 0; i < 50 && activity.step !== 'Writing the answer'; i++) {
+      // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // eslint-disable-next-line no-await-in-loop -- as above
+      activity = (await app.call<{ step: string | null }>('GET', `/ai/sessions/${c.id}/activity`)).body;
+    }
+    assert.equal(activity.step, 'Writing the answer');
+    release();
+    await asked;
+    assert.deepEqual((await app.call('GET', `/ai/sessions/${c.id}/activity`)).body, { step: null });
+  } finally {
+    await app.close();
+  }
 });

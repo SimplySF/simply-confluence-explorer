@@ -35,4 +35,10 @@ describe('the Space menu, for AI summaries', () => {
     expect(summaryAction({ pageCount: 12, metadataCount: 0 }).label).toBe('Build the AI index');
     expect(summaryAction(undefined).done).toBe(false);
   });
+
+  it('says what a run would cost before it starts', () => {
+    expect(summaryAction({ pageCount: 3200, metadataCount: 0 }, { missing: 3200, requests: 450 }).hint).toMatch(
+      /^3,200 pages in about 450 requests\. /,
+    );
+  });
 });

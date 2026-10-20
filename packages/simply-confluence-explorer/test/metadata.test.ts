@@ -25,6 +25,7 @@ import type { AiEngine } from '../src/ai/engine.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { generateMetadata, MetadataPipeline } from '../src/spaces/metadata.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
+import { noTracer } from '../src/telemetry/tracer.js';
 
 const page = (id: string, title: string, storageXml: string): PageDetail => ({
   id,
@@ -105,7 +106,7 @@ describe('metadata of the second kind', () => {
       lastSynced: '2026-01-01T00:00:00Z',
       pageCount: 2,
     });
-    expect(store.listSynced()[0].metadataCount).toBe(1);
+    expect((await store.listSynced())[0].metadataCount).toBe(1);
     const { ai, prompts } = fakeAi(() => '{"summary":"New.","tags":[]}');
     const pipeline = new MetadataPipeline(
       store,
@@ -113,16 +114,18 @@ describe('metadata of the second kind', () => {
       () => ai,
       () => undefined,
     );
-    expect(pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 1 });
+    expect(await pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 1, requests: 1 });
     await finish(pipeline, pipeline.start('PLAT').jobId);
     expect(prompts).toHaveLength(1);
     expect(store.readMetadata('PLAT', '1')?.summary).toBe('New.');
-    expect(pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 0 });
+    expect(await pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 0, requests: 0 });
   });
 
   it("offers the space's topics, including those given earlier in the same run", async () => {
     const { store, exclusions } = setup();
-    for (const id of ['1', '2', '3']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);
+    // Each page is large enough to need a request of its own, so the second request follows the first.
+    const long = `<p>${'Text. '.repeat(7000)}</p>`;
+    for (const id of ['1', '2', '3']) store.writePage('PLAT', page(id, `Page ${id}`, long), '', []);
     store.writeMetadata('PLAT', meta('1', { version: 2, tags: ['source-control'] }));
     const { ai, prompts } = fakeAi(() => '{"summary":"New.","tags":["Pipelines"]}');
     const pipeline = new MetadataPipeline(
@@ -134,5 +137,65 @@ describe('metadata of the second kind', () => {
     await finish(pipeline, pipeline.start('PLAT').jobId);
     expect(prompts[0]).toContain('add a new one only for a subject none of them covers: source-control.');
     expect(prompts[1]).toContain(': source-control, pipelines.');
+  });
+});
+
+describe('an index run with failures', () => {
+  it('records each page left out with its reason, and raises a problem, where it was only counted before', async () => {
+    const { store, exclusions } = setup();
+    for (const id of ['1', '2']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);
+    const { ai } = fakeAi((prompt) => {
+      if (prompt.includes('Page 2')) throw new Error('quota exceeded');
+      return '{"summary":"S","tags":[]}';
+    });
+    const problems: string[] = [];
+    const tracer = { ...noTracer, problem: (_kind: string, message: string) => void problems.push(message) };
+    const pipeline = new MetadataPipeline(
+      store,
+      exclusions,
+      () => ai,
+      () => undefined,
+      undefined,
+      tracer,
+      { retryDelayMs: 0 },
+    );
+    const { jobId } = pipeline.start('PLAT');
+    await finish(pipeline, jobId);
+    expect(pipeline.get(jobId)?.failures).toEqual([{ pageId: '2', title: 'Page 2', error: 'quota exceeded' }]);
+    expect(problems).toEqual(['The AI index of PLAT left out 1 page.']);
+  });
+});
+
+describe('an index run whose pack reply cannot be read', () => {
+  it('counts each page as it is asked for alone, where the count once waited for the whole pack', async () => {
+    const { store, exclusions } = setup();
+    for (const id of ['1', '2', '3']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // The pack request gets an answer in the wrong shape, so each page is asked for alone; the last waits.
+    const ai: AiEngine = {
+      ...fakeAi(() => '').ai,
+      analyzeDocument: async (markdown) => {
+        if (markdown.includes('Page 3') && !markdown.includes('Page 1')) await held;
+        return { text: '{"summary":"S","tags":[]}', guard: { redacted: {}, summary: '' } as never };
+      },
+    };
+    const pipeline = new MetadataPipeline(
+      store,
+      exclusions,
+      () => ai,
+      () => undefined,
+      undefined,
+      noTracer,
+      { retryDelayMs: 0 },
+    );
+    const { jobId } = pipeline.start('PLAT');
+    for (let i = 0; i < 200 && (pipeline.get(jobId)?.processed ?? 0) < 2; i++)
+      // eslint-disable-next-line no-await-in-loop -- polls until the first two pages are done
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(pipeline.get(jobId)).toMatchObject({ status: 'running', processed: 2, total: 3 });
+    release();
+    await finish(pipeline, jobId);
+    expect(pipeline.get(jobId)).toMatchObject({ status: 'completed', processed: 3 });
   });
 });

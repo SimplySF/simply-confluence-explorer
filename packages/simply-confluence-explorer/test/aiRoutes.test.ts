@@ -24,7 +24,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
 import type { AnalyzeResponse, MetadataProgress, PageMetadata, SpaceTocNode, SyncProgress } from '../src/api/types.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
-import { startTestApp, type TestApp } from './support/testApp.js';
+import { metadataReply, startTestApp, type TestApp } from './support/testApp.js';
 
 let fake: FakeConfluence;
 beforeAll(async () => {
@@ -240,9 +240,9 @@ describe('a second request for AI summaries', () => {
   it('gets the run already going instead of summarising every page twice', async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => (release = resolve));
-    const app = await startTestApp(fake, async () => {
+    const app = await startTestApp(fake, async (payload) => {
       await held;
-      return '{"summary":"A page about operations.","tags":["ops"],"documentType":"runbook","systemsMentioned":[]}';
+      return metadataReply(payload, { summary: 'A page about operations.', tags: ['ops'], documentType: 'runbook' });
     });
     try {
       await sync(app, 'PEOPLE');
@@ -264,7 +264,9 @@ describe('a second request for AI summaries', () => {
         progress = (await app.call<MetadataProgress>('GET', `/space-cache/metadata/status/${first.jobId}`)).body;
       }
       expect(progress.status).toBe('completed');
-      expect(app.sent.length).toBe(progress.total);
+      // Small pages share a request, so the run sends one request per pack, and each page once.
+      expect(app.sent.length).toBe(progress.requests);
+      expect(progress.requests).toBeLessThan(progress.total);
     } finally {
       await app.close();
     }
@@ -314,7 +316,8 @@ describe('AI summaries for chosen pages', () => {
         progress = (await app.call<MetadataProgress>('GET', `/space-cache/metadata/status/${started.jobId}`)).body;
       }
       expect(progress.total).toBe(2);
-      expect(app.sent).toHaveLength(2);
+      expect(progress.requests).toBe(1);
+      expect(app.sent).toHaveLength(1);
       expect((await coverage({ pageIds: ids })).body).toMatchObject({ pages: 2, missing: 0 });
       const whole = (await coverage({})).body;
       expect(whole.missing).toBe(whole.pages - 2);
@@ -323,7 +326,7 @@ describe('AI summaries for chosen pages', () => {
       expect((await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', { pageIds: ['../x'] })).status).toBe(400);
       // A directory counts with every page under it, as a chat on it reads them.
       const policies = fake.page('PEOPLE', 'Policies').id;
-      expect((await coverage({ dirs: [policies] })).body).toEqual({ pages: 3, missing: 1, fits: true });
+      expect((await coverage({ dirs: [policies] })).body).toEqual({ pages: 3, missing: 1, requests: 1, fits: true });
     });
   });
 });

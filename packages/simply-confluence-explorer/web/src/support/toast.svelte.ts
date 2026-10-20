@@ -17,7 +17,9 @@
 // Reports the outcome of an action without stopping the person, as a browser alert would.
 
 export type ToastKind = 'info' | 'success' | 'error';
-export type Toast = { id: number; message: string; kind: ToastKind };
+/** Something the person can do about the message, such as opening its trace. */
+export type ToastAction = { label: string; run: () => void };
+export type Toast = { id: number; message: string; kind: ToastKind; action?: ToastAction };
 
 // An error stays long enough to be read and copied; it can always be dismissed sooner.
 const LIFETIME: Record<ToastKind, number> = { info: 5000, success: 5000, error: 12000 };
@@ -36,10 +38,11 @@ export function dismiss(id: number): void {
  *
  * @param message What happened, in words a person can act on.
  * @param kind Whether it went well.
+ * @param action A button that leads to more, such as the trace of what failed.
  */
-export function toast(message: string, kind: ToastKind = 'info'): void {
+export function toast(message: string, kind: ToastKind = 'info', action?: ToastAction): void {
   const id = ++nextId;
-  toasts.push({ id, message, kind });
+  toasts.push({ id, message, kind, ...(action ? { action } : {}) });
   if (toasts.length > 4) toasts.shift();
   setTimeout(() => dismiss(id), LIFETIME[kind]);
 }

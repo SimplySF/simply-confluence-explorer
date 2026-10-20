@@ -14,12 +14,17 @@
  * limitations under the License.
  */
 
+import { noTracer, type Tracer } from '../telemetry/tracer.js';
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type JobRecord = {
   jobId: string;
   status: JobStatus;
+  startedAt?: string;
   completedAt?: string;
+  /** The trace the job is recorded under, so a failure can be traced (ADR-054). */
+  traceId?: string;
 };
 
 const KEEP_FINISHED_MS = 60 * 60 * 1000;
@@ -38,14 +43,27 @@ export class JobRunner<J extends JobRecord> {
   public constructor(
     private readonly prefix: string,
     private readonly onFailure: (job: J, error: unknown) => void,
+    private readonly tracer: Tracer = noTracer,
   ) {}
 
   public start(fields: Omit<J, 'jobId' | 'status'>, work: (job: J) => Promise<void>): J {
     this.prune();
     const jobId = `${this.prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const job = { ...fields, jobId, status: 'pending' } as J;
+    const job = { ...fields, jobId, status: 'pending', startedAt: new Date().toISOString() } as J;
     this.jobs.set(jobId, job);
-    work(job)
+    // Each job is a trace of its own, linked to the request that started it, because it outlives it.
+    const startedBy = this.tracer.current()?.traceId;
+    this.tracer
+      .span(
+        'job',
+        this.prefix,
+        { jobId, ...(startedBy ? { startedBy } : {}) },
+        (span) => {
+          job.traceId = span.traceId;
+          return work(job);
+        },
+        { root: true },
+      )
       .catch((error: unknown) => {
         if (job.status === 'cancelled') return;
         job.status = 'failed';
@@ -64,6 +82,11 @@ export class JobRunner<J extends JobRecord> {
 
   public find(match: (job: J) => boolean): J | undefined {
     return [...this.jobs.values()].find(match);
+  }
+
+  /** The jobs still running, for the Observability page. */
+  public running(): J[] {
+    return [...this.jobs.values()].filter((j) => j.status === 'pending' || j.status === 'running');
   }
 
   public cancel(jobId: string): J | undefined {

@@ -15,15 +15,20 @@
  */
 
 import type { BatchProgress, BranchFinding, PageDetail, SessionTurn } from '../api/types.js';
-import type { AiEngine } from '../ai/engine.js';
+import type { AiAnswer, AiEngine } from '../ai/engine.js';
 import { AiStopped } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
+import { ManifestBuilder, mergeSummaries, summarise, type ManifestSummary } from '../ai/manifest.js';
+import { cutOffNote } from '../ai/reply.js';
 import { historyToSend, type SessionStore } from '../ai/sessions.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
-import { contextCollector, leftOutNote } from '../spaces/branchContext.js';
+import { contextCollector, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
+import type { ReadPage, RetrievedContext } from '../spaces/contextRetriever.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { errorMessage } from '../util/errors.js';
+import type { LiveJob } from '../telemetry/telemetry.js';
+import { noTracer, type Tracer } from '../telemetry/tracer.js';
 
 // A review, or a request for changes, over more pages than one request can carry (ADR-051). The
 // pages are grouped by the topics their metadata shares, so pages about one subject are compared in
@@ -97,6 +102,7 @@ export type CorpusReviewDeps = {
   dataDir: string;
   budget: number;
   log: (message: string) => void;
+  tracer?: Tracer;
 };
 
 export type CorpusReviewRequest = {
@@ -112,20 +118,82 @@ export type CorpusReviewRequest = {
   parse: (text: string) => BranchFinding[] | null;
 };
 
-/** The runs of batched reviews, one at a time per conversation. */
+/** What reading one batch of a thorough answer gives: its context, checked again as it is read. */
+export type ReadBatch = (
+  ids: string[],
+  manifest: ManifestBuilder,
+) => Pick<RetrievedContext, 'contextMarkdown' | 'selectedPages' | 'withheld' | 'overflow'>;
+
+export type ThoroughRequest = {
+  sessionId: string;
+  spaceKey: string;
+  question: string;
+  /** How many pages the chat reads from. */
+  corpusPages: number;
+  /** The sections to read, by id, one list per request (`sectionBatches`). */
+  batches: string[][];
+  read: ReadBatch;
+  /** The files added to the conversation, which the request combining the notes carries. */
+  files: (manifest: ManifestBuilder) => string;
+  weak: boolean;
+};
+
+/** What a batch's notes say when nothing in it helps, so the batch counts as read with nothing to add. */
+const NOTHING = 'NOTHING RELEVANT';
+
+const notesPrompt = (question: string): string =>
+  `You are reading one batch of the sections found for a question. Other batches are read separately, and the notes from all of them are combined into the answer afterwards.
+Write notes on everything in these sections that helps answer the question: facts, steps, names, numbers, and where pages disagree. Cite each note with its page and section, as [Page title › Section]. Write only the notes, with no introduction. If nothing here helps, reply with exactly: ${NOTHING}
+
+Question: ${question}`;
+
+const combinePrompt = (question: string, batches: number): string =>
+  `Answer the question below from the notes provided, which were taken from ${batches} batches of sections of Confluence pages. Combine them into one complete answer, keeping each citation [Page title › Section] beside what it supports, and say where pages disagree. Say plainly if the notes do not answer part of the question.
+
+Question: ${question}`;
+
+/** The pages several batches read, each named once with every section read from it. */
+function mergeRead(lists: ReadPage[][]): ReadPage[] {
+  const pages = new Map<string, ReadPage>();
+  for (const p of lists.flat()) {
+    const seen = pages.get(p.id);
+    if (!seen) pages.set(p.id, { ...p, sections: [...(p.sections ?? [])] });
+    else seen.sections = [...(seen.sections ?? []), ...(p.sections ?? [])].sort((a, b) => a.index - b.index);
+  }
+  return [...pages.values()];
+}
+
+/** The runs of batched reviews and thorough answers, one at a time per conversation. */
 export class CorpusReviews {
   private readonly jobs: JobRunner<BatchProgress>;
   private readonly stoppers = new Map<string, AbortController>();
 
   public constructor(private readonly deps: CorpusReviewDeps) {
-    this.jobs = new JobRunner<BatchProgress>('batch', (job, error) =>
-      deps.log(`A batched review of ${job.pages} pages failed: ${errorMessage(error)}`),
+    this.jobs = new JobRunner<BatchProgress>(
+      'batch',
+      (job, error) => deps.log(`A batched review of ${job.pages} pages failed: ${errorMessage(error)}`),
+      deps.tracer,
     );
   }
 
+  /** Batched reviews running now, for the Observability page. */
+  public liveJobs(): LiveJob[] {
+    return this.jobs.running().map((j) => ({
+      jobId: j.jobId,
+      kind: 'batch',
+      label:
+        j.kind === 'answer'
+          ? `Answering thoroughly from ${j.sections ?? 0} sections`
+          : `${j.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${j.pages} pages`,
+      processed: j.processed,
+      total: j.total,
+      startedAt: j.startedAt,
+      current: j.currentTitle,
+    }));
+  }
+
   public start(request: CorpusReviewRequest): BatchProgress {
-    const running = this.activeFor(request.sessionId);
-    if (running) throw new HttpError(409, 'This chat is already reviewing its pages. Stop that first, or wait for it.');
+    this.refuseSecond(request.sessionId);
     const key = request.spaceKey.toUpperCase();
     const byId = new Map(request.pages.map((p) => [p.id, p]));
     const batches = batchPages(
@@ -153,6 +221,31 @@ export class CorpusReviews {
     return job;
   }
 
+  /**
+   * Answers a question from more sections than one request carries (design doc 0008). Each batch of
+   * sections is asked for notes that answer the question, and one last request combines the notes
+   * into the answer. Every batch is accounted for: its notes, a reply that nothing in it helps, or,
+   * when its reply could not be read twice, its pages named in the answer as not read.
+   */
+  public startAnswer(request: ThoroughRequest): BatchProgress {
+    this.refuseSecond(request.sessionId);
+    const stopper = new AbortController();
+    const job = this.jobs.start(
+      {
+        sessionId: request.sessionId,
+        spaceKey: request.spaceKey.toUpperCase(),
+        kind: 'answer',
+        pages: request.corpusPages,
+        sections: request.batches.reduce((n, b) => n + b.length, 0),
+        total: request.batches.length,
+        processed: 0,
+      },
+      (j) => this.runAnswer(j, request, stopper.signal),
+    );
+    this.stoppers.set(job.jobId, stopper);
+    return job;
+  }
+
   public get(jobId: string): BatchProgress | undefined {
     return this.jobs.get(jobId);
   }
@@ -165,6 +258,15 @@ export class CorpusReviews {
   public cancel(jobId: string): boolean {
     this.stoppers.get(jobId)?.abort();
     return this.jobs.cancel(jobId) !== undefined;
+  }
+
+  private refuseSecond(sessionId: string): void {
+    const running = this.activeFor(sessionId);
+    if (running)
+      throw new HttpError(
+        409,
+        `This chat is already ${running.kind === 'answer' ? 'answering a question' : 'reviewing its pages'}. Stop that first, or wait for it.`,
+      );
   }
 
   private async run(
@@ -182,6 +284,7 @@ export class CorpusReviews {
     const found: BranchFinding[][] = [];
     const withheld: string[] = [];
     const overflow: string[] = [];
+    const unread: string[] = [];
     const titles = new Map<string, string>();
     try {
       for (const batch of batches) {
@@ -195,13 +298,36 @@ export class CorpusReviews {
         overflow.push(...result.overflow);
         if (result.pages.length > 0) {
           result.pages.forEach((p) => titles.set(p.page.title, p.page.id));
-          const context = result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n');
-          // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
-          const reply = await ai.chat(
-            { context, history, prompt: request.prompt },
-            { spaceKey: job.spaceKey, guard, signal },
+          const manifest = new ManifestBuilder();
+          const context = pagesAsContext(result, manifest);
+          manifest.includeTurns(
+            history.length,
+            history.reduce((n, t) => n + t.text.length, 0),
           );
-          found.push(request.parse(reply.text) ?? []);
+          const batchNumber = job.processed + 1;
+          // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
+          const parsed = await (this.deps.tracer ?? noTracer).span(
+            'review',
+            'batch',
+            { batch: batchNumber, pages: result.pages.length, withheld: result.withheld.length },
+            async (span) => {
+              // A reply that cannot be read is asked for once more; a batch still unread is named in
+              // the answer, so its pages are not taken as reviewed.
+              for (let attempt = 1; attempt <= 2; attempt++) {
+                // eslint-disable-next-line no-await-in-loop -- the second attempt only follows a failed first
+                const reply = await ai.chat(
+                  { context, history, prompt: request.prompt, manifest: manifest.build() },
+                  { spaceKey: job.spaceKey, guard, signal },
+                );
+                const findings = reply.cutOff ? null : request.parse(reply.text);
+                span.set({ findings: findings?.length ?? 0, parsed: findings !== null, attempts: attempt });
+                if (findings) return findings;
+              }
+              return null;
+            },
+          );
+          if (parsed) found.push(parsed);
+          else unread.push(...result.pages.map((p) => p.page.title));
         }
         job.processed++;
       }
@@ -224,7 +350,8 @@ export class CorpusReviews {
         at: now,
         guardSummary:
           withWithheld({ blocked: [], redacted: {}, summary: 'Leak guard: checked every batch.' }, withheld).summary +
-          leftOutNote({ overflow }),
+          leftOutNote({ overflow }) +
+          (unread.length ? ` Not reviewed, because the AI's reply could not be read twice: ${unread.join(', ')}.` : ''),
         engine: ai.getEngine(),
         corpus: { pages: job.pages, mode: 'batched', batches: batches.length },
         findings,
@@ -232,5 +359,133 @@ export class CorpusReviews {
       },
     ];
     sessions.addTurns(session.id, turns, guard.exportState());
+  }
+
+  private async runAnswer(job: BatchProgress, request: ThoroughRequest, signal: AbortSignal): Promise<void> {
+    job.status = 'running';
+    const { ai, sessions, dataDir, budget } = this.deps;
+    const tracer = this.deps.tracer ?? noTracer;
+    const session = sessions.get(request.sessionId);
+    if (!session) throw new Error('the conversation was deleted');
+    const guard = new OutboundGuard(loadGuardRules(dataDir, job.spaceKey), sessions.guardState(session.id));
+    const history = historyToSend(session.turns);
+    const historyChars = history.reduce((n, t) => n + t.text.length, 0);
+    const notes: Array<{ batch: number; text: string }> = [];
+    const summaries: ManifestSummary[] = [];
+    const read: ReadPage[][] = [];
+    const withheld: string[] = [];
+    const overflow: string[] = [];
+    const unread: string[] = [];
+    let reply: AiAnswer;
+    try {
+      for (const [n, ids] of request.batches.entries()) {
+        if (this.jobs.isCancelled(job.jobId)) return;
+        const manifest = new ManifestBuilder();
+        const batch = request.read(ids, manifest);
+        job.currentTitle = batch.selectedPages[0]?.title;
+        withheld.push(...batch.withheld);
+        overflow.push(...batch.overflow);
+        if (batch.selectedPages.length > 0) {
+          manifest.includeTurns(history.length, historyChars);
+          const built = manifest.build();
+          // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
+          const text = await tracer.span<string | null>(
+            'chat',
+            'thorough batch',
+            { batch: n + 1, sections: ids.length, withheld: batch.withheld.length },
+            async (span) => {
+              // A reply that cannot be read is asked for once more; a batch still unread is named in
+              // the answer, so its pages are not taken as read.
+              for (let attempt = 1; attempt <= 2; attempt++) {
+                // eslint-disable-next-line no-await-in-loop -- the second attempt only follows a failed first
+                const got = await ai.chat(
+                  { context: batch.contextMarkdown, history, prompt: notesPrompt(request.question), manifest: built },
+                  { spaceKey: job.spaceKey, guard, signal },
+                );
+                const usable = !got.cutOff && got.text.trim().length > 0;
+                span.set({ chars: got.text.length, read: usable, attempts: attempt });
+                if (usable) return got.text.trim();
+              }
+              return null;
+            },
+          );
+          summaries.push(summarise(built));
+          if (text === null) unread.push(...batch.selectedPages.map((p) => p.title));
+          else {
+            read.push(batch.selectedPages);
+            if (!text.includes(NOTHING)) notes.push({ batch: n + 1, text });
+          }
+        }
+        job.processed++;
+      }
+      if (this.jobs.isCancelled(job.jobId)) return;
+      job.combining = true;
+      job.currentTitle = undefined;
+      const manifest = new ManifestBuilder();
+      let used = 0;
+      const parts: string[] = [];
+      for (const note of notes) {
+        const label = `notes from batch ${note.batch}`;
+        if (used + note.text.length > budget) manifest.leaveOut('notes', label, note.text.length, 'over-limit');
+        else {
+          used += note.text.length;
+          parts.push(manifest.include('notes', label, `## Notes from batch ${note.batch}\n${note.text}`));
+        }
+      }
+      let combined = parts.length
+        ? `# Notes taken from the sections found for this question\n\n${parts.join('\n\n')}`
+        : 'No batch found anything that helps answer this question.';
+      const files = request.files(manifest);
+      if (files) combined += `\n\n---\n\n# Files added to this conversation\n\n${files}`;
+      manifest.includeTurns(history.length, historyChars);
+      const built = manifest.build();
+      reply = await tracer.span('chat', 'thorough combine', { notes: parts.length }, () =>
+        ai.chat(
+          {
+            context: combined,
+            history,
+            prompt: combinePrompt(request.question, request.batches.length),
+            manifest: built,
+          },
+          { spaceKey: job.spaceKey, guard, signal },
+        ),
+      );
+      summaries.push(summarise(built));
+    } catch (error) {
+      // Stopping is not a failure: the run ends with nothing written and no error to report.
+      if (error instanceof AiStopped || signal.aborted) return;
+      job.error = errorMessage(error);
+      throw error;
+    } finally {
+      this.stoppers.delete(job.jobId);
+    }
+    const matchedPages = mergeRead(read);
+    const now = new Date().toISOString();
+    sessions.addTurns(
+      session.id,
+      [
+        { role: 'user', text: request.question, at: now },
+        {
+          role: 'assistant',
+          text: reply.text,
+          at: now,
+          guardSummary:
+            withWithheld({ ...reply.guard, summary: `${reply.guard.summary} Every batch was checked.` }, withheld)
+              .summary +
+            leftOutNote({ overflow }) +
+            (unread.length ? ` Not read, because the AI's reply could not be read twice: ${unread.join(', ')}.` : '') +
+            cutOffNote(reply.cutOff),
+          sent: mergeSummaries(summaries),
+          ...(reply.cutOff ? { cutOff: reply.cutOff } : {}),
+          engine: ai.getEngine(),
+          matchedPages,
+          considered: job.sections,
+          corpus: { pages: request.corpusPages, mode: 'retrieved', batches: request.batches.length },
+          ...(request.weak ? { weakMatch: true } : {}),
+          traceId: job.traceId,
+        },
+      ],
+      guard.exportState(),
+    );
   }
 }

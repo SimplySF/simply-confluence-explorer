@@ -23,9 +23,20 @@ import type { SyncedSpace } from '../../../src/api/types.js';
 
 export type SummaryAction = { label: string; hint: string; done: boolean };
 
-export function summaryAction(manifest?: Pick<SyncedSpace, 'pageCount' | 'metadataCount'>): SummaryAction {
+/**
+ * @param manifest The synced space's counts.
+ * @param estimate How many pages a run would index and about how many requests that takes, so a large
+ *   space says what it is about to cost before it starts.
+ */
+export function summaryAction(
+  manifest?: Pick<SyncedSpace, 'pageCount' | 'metadataCount'>,
+  estimate?: { missing: number; requests?: number },
+): SummaryAction {
+  const what = 'Summaries, topics, section notes and the questions each page answers, which chats search';
   const offer = {
-    hint: 'Summaries, topics, section notes and the questions each page answers, which chats search',
+    hint: estimate?.requests
+      ? `${estimate.missing.toLocaleString('en-US')} pages in about ${estimate.requests.toLocaleString('en-US')} requests. ${what}`
+      : what,
     done: false,
   };
   if (!manifest) return { ...offer, label: 'Build the AI index' };

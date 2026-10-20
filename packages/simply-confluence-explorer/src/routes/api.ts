@@ -29,6 +29,7 @@ import type { CorpusReviews } from '../branches/corpusReview.js';
 import type { MetadataPipeline } from '../spaces/metadata.js';
 import type { SearchIndex } from '../spaces/searchIndex.js';
 import type { VectorIndex } from '../spaces/vectors.js';
+import type { Telemetry } from '../telemetry/telemetry.js';
 import { GitLabClient, type GitLabStore } from '../gitlab/client.js';
 import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
@@ -37,6 +38,7 @@ import { addBranchRoutes } from './branches.js';
 import { addBrowseRoutes } from './browse.js';
 import { addDraftRoutes } from './drafts.js';
 import { addPageRoutes } from './pages.js';
+import { addObserveRoutes } from './observe.js';
 import { addSessionRoutes } from './sessions.js';
 import { addSpaceRoutes } from './spaces.js';
 
@@ -60,6 +62,8 @@ export type Services = {
   contextChars: number;
   /** Reviews of more pages than one request carries, read in batches (ADR-051). */
   reviews: CorpusReviews;
+  /** Traces, logs and health numbers, kept on this machine (ADR-054). */
+  telemetry: Telemetry;
   /** The GitLab connection the server holds (ADR-050). */
   gitlab: GitLabStore;
   /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */
@@ -78,7 +82,7 @@ export type HealthResponse = {
  */
 export function createApi(services: Services): Router {
   const { connection } = services;
-  const router = new Router(services.log)
+  const router = new Router(services.log, services.telemetry)
     .add('GET', '/api/health', (): HealthResponse => ({ status: 'ok', version: services.version }))
     .add('GET', '/api/connection', () => connection.publicView())
     .add('PUT', '/api/connection', ({ body }) => {
@@ -113,6 +117,7 @@ export function createApi(services: Services): Router {
     addPageRoutes,
     addBranchRoutes,
     addDraftRoutes,
+    addObserveRoutes,
   ])
     add(router, services);
   return router;

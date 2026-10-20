@@ -20,6 +20,7 @@ import { guardRulesPath, parseGuardRules } from '../ai/guard.js';
 import { ConfluenceClient } from '../confluence/client.js';
 import type { ConnectionStore } from '../confluence/connection.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
+import { Telemetry } from '../telemetry/telemetry.js';
 import type { DoctorDeps } from './checks.js';
 
 // A directory that does not exist yet is fine, as long as it can be created.
@@ -75,6 +76,18 @@ function guardFiles(dataDir: string): DoctorDeps['guardFiles'] {
 /**
  * Reads what the doctor's checks need from this machine and from Confluence.
  */
+/** The problems telemetry raised in the last day, read without starting anything. */
+function recentProblems(dataDir: string): DoctorDeps['telemetry'] {
+  const telemetry = new Telemetry({ dataDir, timers: false });
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const problems: DoctorDeps['telemetry']['problems'] = [];
+  for (const record of telemetry.records(since)) {
+    if (record.at < since) break;
+    if (record.type === 'problem') problems.push({ at: record.at, message: record.message, traceId: record.traceId });
+  }
+  return { path: telemetry.dir, problems };
+}
+
 export function systemDeps(
   dataDir: string,
   connection: ConnectionStore,
@@ -99,6 +112,7 @@ export function systemDeps(
     guardFiles: guardFiles(dataDir),
     ai: { available: ai.isAvailable(), engine: ai.getEngine() },
     license: () => client.getLicenseDetails(),
+    telemetry: recentProblems(dataDir),
     now: Date.now(),
   };
 }

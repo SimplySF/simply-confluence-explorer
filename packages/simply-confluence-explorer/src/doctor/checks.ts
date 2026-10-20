@@ -33,6 +33,7 @@ export const CHECK_IDS = [
   'guard-rules',
   'ai-engine',
   'test-license',
+  'telemetry',
 ] as const;
 export type CheckId = (typeof CHECK_IDS)[number];
 
@@ -58,6 +59,8 @@ export type DoctorDeps = {
   ai: { available: boolean; engine: string };
   /** The Data Center license, or `null` when it cannot be read. */
   license: () => Promise<{ expired: boolean; expiryDate: number } | null>;
+  /** Where telemetry is kept, and the problems it raised in the last day, newest first (ADR-054). */
+  telemetry: { path: string; problems: Array<{ at: string; message: string; traceId?: string }> };
   now: number;
 };
 
@@ -271,6 +274,22 @@ function dataDir(d: DoctorDeps): Result {
   return result('data-dir', 'ok', `data is kept in ${d.dataDir.path}${protection}`);
 }
 
+function telemetry(d: DoctorDeps): Result {
+  const { path: where, problems } = d.telemetry;
+  if (problems.length === 0)
+    return result('telemetry', 'ok', `traces and logs are kept in ${where}; no problems in the last day`);
+  const listed = problems
+    .slice(0, 5)
+    .map((p) => `\n    ${p.at.slice(0, 16).replace('T', ' ')} ${p.message}${p.traceId ? ` (trace ${p.traceId})` : ''}`)
+    .join('');
+  return result(
+    'telemetry',
+    'warn',
+    `${problems.length} problem${problems.length === 1 ? '' : 's'} in the last day, kept in ${where}:${listed}`,
+    'open the Observability page in the app to see each one with its trace',
+  );
+}
+
 /**
  * Runs every check.
  */
@@ -290,6 +309,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorReport> {
     guardRules(d),
     aiEngine(d),
     await testLicense(d, auth),
+    telemetry(d),
   ];
   return { results, ok: !results.some((r) => r.level === 'fail') };
 }

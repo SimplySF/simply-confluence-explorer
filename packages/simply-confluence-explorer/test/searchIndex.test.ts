@@ -22,7 +22,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { PageDetail } from '../src/api/types.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
-import { SearchIndex, tokens } from '../src/spaces/searchIndex.js';
+import { SearchIndex, stem, tokens } from '../src/spaces/searchIndex.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 
 const page = (id: string, title: string, body: string, version = 1): PageDetail => ({
@@ -49,16 +49,31 @@ function setup(): { store: SpaceStore; index: SearchIndex; dataDir: string } {
   return { store, index: new SearchIndex(store), dataDir };
 }
 
-const ids = (index: SearchIndex, query: string): string[] => index.search('PLAT', query).map((h) => h.pageId);
+/** The pages found, once the index has caught up with every write, as every search a person waits on does. */
+const ids = async (index: SearchIndex, query: string): Promise<string[]> => {
+  await index.ready('PLAT');
+  return index.search('PLAT', query).map((h) => h.pageId);
+};
 
 describe('the search index', () => {
-  it('leaves out short and common words', () => {
-    expect(tokens('How to fail over the DB, and promote it')).toEqual(['fail', 'promote']);
+  it('leaves out short and common words, and compares words by their stem', () => {
+    expect(tokens('How to fail over the DB, and promote it')).toEqual(['fail', 'promot']);
+    expect(new Set(['rolled', 'rolling', 'rolls', 'roll'].map(stem)).size).toBe(1);
+    expect(stem('billed')).toBe(stem('billing'));
+    expect(stem('spiked')).toBe(stem('spike'));
+    expect(stem('policies')).toBe(stem('policy'));
+    expect(stem('stopped')).toBe(stem('stop'));
   });
 
-  it('ranks a page whose title matches above one that only mentions the words', () => {
+  it('finds a page by another form of the word it uses', async () => {
     const { index } = setup();
-    expect(ids(index, 'database failover').slice(0, 2)).toEqual(['1', '2']);
+    // Page 1 says "Promote the replica"; the question asks about promoting replicas.
+    expect((await ids(index, 'promoting replicas'))[0]).toBe('1');
+  });
+
+  it('ranks a page whose title matches above one that only mentions the words', async () => {
+    const { index } = setup();
+    expect((await ids(index, 'database failover')).slice(0, 2)).toEqual(['1', '2']);
   });
 
   it('finds nothing in a space that is not synced', () => {
@@ -66,44 +81,47 @@ describe('the search index', () => {
     expect(index.search('OPS', 'database')).toEqual([]);
   });
 
-  it('never returns a page the exclusion rules hide, and follows a change to the rules', () => {
+  it('never returns a page the exclusion rules hide, and follows a change to the rules', async () => {
     const { index, store } = setup();
-    expect(ids(index, 'database passwords')).toContain('3');
+    expect(await ids(index, 'database passwords')).toContain('3');
     fs.writeFileSync(path.join(store.spaceDir('PLAT'), '.confluenceignore'), 'Production Credentials\n');
     store.invalidate('PLAT');
-    expect(ids(index, 'database passwords')).not.toContain('3');
+    expect(await ids(index, 'database passwords')).not.toContain('3');
   });
 
-  it('sees a page rewritten in place, as a push leaves it', () => {
+  it('sees a page rewritten in place, as a push leaves it', async () => {
     const { index, store } = setup();
-    expect(ids(index, 'quorum')).toEqual([]);
+    expect(await ids(index, 'quorum')).toEqual([]);
     const file = path.join(store.spaceDir('PLAT'), 'pages_cache', '2.json');
     const before = fs.statSync(file).mtimeMs;
     store.refreshPage('PLAT', page('2', 'Gateway Service', 'Routes requests and waits for quorum.', 2));
     // The rewrite must land on a later file time than the first write for the test to mean anything.
     fs.utimesSync(file, new Date(), new Date(before + 1000));
-    expect(ids(index, 'quorum')).toEqual(['2']);
+    expect(await ids(index, 'quorum')).toEqual(['2']);
   });
 
-  it('finds the section of a page that answers, not only the page', () => {
+  it('finds the section of a page that answers, not only the page', async () => {
     const { index, store } = setup();
     const runbook = page('4', 'Runbook', '');
     runbook.storageXml = '<h1>Deploy</h1><p>Ship the build.</p><h1>Rollback</h1><p>Revert the release tag.</p>';
     store.writePage('PLAT', runbook, '', []);
+    await index.ready('PLAT');
     const [hit] = index.searchSections('PLAT', 'revert release', 5);
     expect([hit.section.pageId, hit.section.path]).toEqual(['4', ['Rollback']]);
     // The word is only in the heading, which the section is found by.
     expect(index.searchSections('PLAT', 'rollback', 5)[0].section.path).toEqual(['Rollback']);
   });
 
-  it('searches only the pages it is given', () => {
+  it('searches only the pages it is given', async () => {
     const { index } = setup();
+    await index.ready('PLAT');
     const hits = index.searchSections('PLAT', 'database', 10, new Set(['2']));
     expect(hits.map((h) => h.section.pageId)).toEqual(['2']);
   });
 
-  it('splits a page again only when its version changes', () => {
+  it('splits a page again only when its version changes', async () => {
     const { index, store } = setup();
+    await index.ready('PLAT');
     const first = index.sectionsOf('PLAT', '1');
     // A new summary changes the index stamp but not the page, so the page's sections are reused.
     store.writeMetadata('PLAT', {
@@ -115,17 +133,20 @@ describe('the search index', () => {
       systemsMentioned: [],
       generatedAt: new Date(Date.now() + 1000).toISOString(),
     });
+    await index.ready('PLAT');
     expect(index.sectionsOf('PLAT', '1')[0]).toBe(first[0]);
     store.refreshPage('PLAT', page('1', 'Database Failover', 'Promote the replica.', 2));
     const file = path.join(store.spaceDir('PLAT'), 'pages_cache', '1.json');
     fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+    await index.ready('PLAT');
     expect(index.sectionsOf('PLAT', '1')[0]).not.toBe(first[0]);
     expect(index.sectionsOf('PLAT', '1')[0].text).toBe('Promote the replica.');
   });
 
-  it('finds a section by its summary and a page by the questions it answers', () => {
+  it('finds a section by its summary and a page by the questions it answers', async () => {
     const { index, store } = setup();
     // Searched once first, so the summary must reach an index that was already built.
+    await index.ready('PLAT');
     expect(index.searchSections('PLAT', 'keystore', 5)).toEqual([]);
     store.writeMetadata('PLAT', {
       pageId: '3',
@@ -139,8 +160,9 @@ describe('the search index', () => {
       questions: ['Who rotates the vault keys?'],
       sections: [{ heading: 'Production Credentials', summary: 'Explains the keystore layout.' }],
     });
+    await index.ready('PLAT');
     expect(index.searchSections('PLAT', 'keystore', 5).map((h) => h.section.pageId)).toEqual(['3']);
-    expect(ids(index, 'rotates vault')).toEqual(['3']);
+    expect(await ids(index, 'rotates vault')).toEqual(['3']);
   });
 });
 
@@ -154,7 +176,7 @@ describe('reading a corpus in full', () => {
       '',
     );
     store.writePage('PLAT', long, '', []);
-    const pages = store.visiblePages('PLAT');
+    const pages = await store.visiblePages('PLAT');
     const exclusions = new ExclusionManager(dataDir, () => undefined);
     const budget = corpusSize('PLAT', pages, index) + 50;
     const r = await retrieveContext(
@@ -173,7 +195,7 @@ describe('checking a large space', () => {
     const { corpusSize } = await import('../src/spaces/contextRetriever.js');
     const { store, index } = setup();
     for (let i = 10; i < 210; i++) store.writePage('PLAT', page(String(i), `Page ${i}`, `Text ${i}.`), '', []);
-    const pages = store.visiblePages('PLAT');
+    const pages = await store.visiblePages('PLAT');
     corpusSize('PLAT', pages, index);
     const stat = vi.spyOn(fs, 'statSync');
     try {
@@ -186,10 +208,24 @@ describe('checking a large space', () => {
     }
   });
 
-  it('still notices a page written through the store', () => {
+  it('still notices a page written through the store', async () => {
     const { store, index } = setup();
-    expect(index.search('PLAT', 'zeppelin')).toEqual([]);
+    expect(await ids(index, 'zeppelin')).toEqual([]);
     store.writePage('PLAT', page('20', 'Airships', 'The zeppelin docks here.'), '', []);
-    expect(index.search('PLAT', 'zeppelin').map((h) => h.pageId)).toEqual(['20']);
+    expect(await ids(index, 'zeppelin')).toEqual(['20']);
+  });
+});
+
+describe('building the index', () => {
+  it('reports its progress while it runs, and answers sizes from what it kept once done', async () => {
+    const { store, index } = setup();
+    const ready = index.ready('PLAT');
+    expect(index.building()).toMatchObject([{ spaceKey: 'PLAT' }]);
+    await ready;
+    expect(index.building()).toEqual([]);
+    expect(index.sizeOf('PLAT', await store.visiblePages('PLAT'))).toBeGreaterThan(0);
+    // Already up to date, so nothing is built again.
+    await index.ready('PLAT');
+    expect(index.building()).toEqual([]);
   });
 });

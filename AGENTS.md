@@ -101,8 +101,10 @@ template's wording; our additions to them follow this rule.
   record that argues for the new number.
 - **Say which suite ran.** `pnpm test` is the fast suite and does not include the end-to-end suite.
   `pnpm run test:e2e` runs against the Confluence test environment (`pnpm run testenv:start`) and
-  skips itself when no environment is running. A report that "all tests pass" names the suite, so
-  that a skipped end-to-end run is not mistaken for a passing one.
+  skips itself when no environment is running. `pnpm run test:scale` times the server on a generated
+  3,200-page space; it runs on a real machine, never in CI, and is run after changing code that reads
+  a whole space (ADR-057). A report that "all tests pass" names the suite, so that a skipped
+  end-to-end run is not mistaken for a passing one.
 - **Every claim made to users names the test or CI job that proves it.** If nothing proves a claim,
   remove the claim.
 - **Closed-world results go in the expectation table.** Some tests check a fixed, known set of
@@ -123,21 +125,22 @@ maintainer named in the repository variable `RELEASE_MAINTAINERS` may merge a re
 without that approval (ADR-053). The paths below are
 relative to `packages/simply-confluence-explorer/src/`.
 
-| surface                         | where                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts`                            |
-| HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)                                  |
-| HTTP to GitLab                  | `gitlab/client.ts`, the only module besides the Confluence client that reaches the network (ADR-050)                            |
-| Tokens                          | `confluence/connection.ts` (the Confluence token), `gitlab/client.ts` (the GitLab token), `util/privateFile.ts`                 |
-| Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                                              |
-| The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022)                                                             |
-| AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                                                       |
-| AI keys                         | `ai/settings.ts`                                                                                                                |
-| External processes              | `ai/geminiService.ts`                                                                                                           |
-| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                                                  |
-| Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                                                    |
-| Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                                               |
-| The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`, `scripts/release-gate.mjs` |
+| surface                         | where                                                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts`                             |
+| HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)                                   |
+| HTTP to GitLab                  | `gitlab/client.ts`, the only module besides the Confluence client that reaches the network (ADR-050)                             |
+| Tokens                          | `confluence/connection.ts` (the Confluence token), `gitlab/client.ts` (the GitLab token), `util/privateFile.ts`                  |
+| Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                                               |
+| The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022), with its check of what was sent, `ai/manifest.ts` (ADR-054) |
+| AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                                                        |
+| AI keys                         | `ai/settings.ts`                                                                                                                 |
+| Telemetry kept on disk          | `telemetry/telemetry.ts`, which writes it, and `routes/observe.ts`, which serves it (ADR-054)                                    |
+| External processes              | `ai/geminiService.ts`                                                                                                            |
+| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                                                   |
+| Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                                                     |
+| Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                                                |
+| The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`, `scripts/release-gate.mjs`  |
 
 ### The rules specific to this program
 

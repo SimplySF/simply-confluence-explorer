@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
+  import { Activity, FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
   import { onMount, untrack } from 'svelte';
   import type {
     BranchFinding,
@@ -12,12 +12,14 @@
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
+  import ObservePage from './components/observe/ObservePage.svelte';
   import { checkConnection } from './support/connection.js';
+  import { observe } from './support/observe.svelte.js';
   import type { SpacePage } from './support/pages.js';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Toasts from './components/ui/Toasts.svelte';
-  import { api } from './support/api.js';
+  import { api, observability } from './support/api.js';
   import { jobs, type Job } from './support/jobs.svelte.js';
   import { applyTheme, theme, toggleTheme } from './support/theme.svelte.js';
   import { messageOf, toast } from './support/toast.svelte.js';
@@ -207,6 +209,28 @@
     };
   });
 
+  // The Observability page follows the address, so it opens from a link or in another tab, and the
+  // header counts the problems raised since it was last looked at.
+  let newProblems = $state(0);
+  $effect(() => {
+    const follow = (): void => observe.readHash(location.hash);
+    follow();
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  });
+  $effect(() => {
+    const seen = observe.seenAt;
+    const count = (): void => {
+      observability.now().then(
+        (n) => (newProblems = n.problems.filter((p) => p.at > seen).length),
+        () => undefined, // The count is a hint; the page itself reports a server that does not answer.
+      );
+    };
+    count();
+    const timer = setInterval(count, 15_000);
+    return () => clearInterval(timer);
+  });
+
   // Work started earlier, in this tab or before a reload, keeps reporting in the header.
   $effect(() => {
     if (activeSpace) jobs.resume(activeSpace);
@@ -277,6 +301,14 @@
       </button>
       <button
         class="btn btn-secondary btn-sm"
+        onclick={() => (observe.open ? observe.close() : observe.show(newProblems ? 'now' : observe.tab))}
+        title="What the app is doing, what it recorded, and how each action went"
+      >
+        <Activity size={14} /> Observability
+        {#if newProblems}<span class="observe-badge" title="Problems since you last looked">{newProblems}</span>{/if}
+      </button>
+      <button
+        class="btn btn-secondary btn-sm"
         onclick={() => (dialog = 'settings')}
         title="Connection and AI provider (Ctrl+,)"
       >
@@ -293,7 +325,10 @@
     </div>
   </header>
 
-  <div class="workbench-container">
+  {#if observe.open}
+    <ObservePage />
+  {/if}
+  <div class="workbench-container" hidden={observe.open}>
     <div class="sidebar-slot" style:width="{sidebarWidth}px" style:min-width="{sidebarWidth}px">
       <Sidebar
         {spaces}

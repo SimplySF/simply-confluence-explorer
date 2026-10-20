@@ -198,7 +198,9 @@ test('Claude: streamed Messages request with the key, system prompt and model', 
     res.end();
   });
   try {
-    assert.equal(await complete('anthropic', cfg(s.url, 'claude-opus-5-5'), guarded('SYSTEM', 'DOC')), 'ready');
+    assert.deepEqual(await complete('anthropic', cfg(s.url, 'claude-opus-5-5'), guarded('SYSTEM', 'DOC')), {
+      text: 'ready',
+    });
     const req = s.seen[0];
     assert.match(req.path, /\/v1\/messages/);
     assert.equal(req.headers['x-api-key'], 'test-key');
@@ -245,7 +247,9 @@ test('ChatGPT: Responses API with the key as a bearer token and the system promp
     );
   });
   try {
-    assert.equal(await complete('openai', cfg(`${s.url}/v1`, 'chosen-model'), guarded('SYSTEM', 'DOC')), 'ready');
+    assert.deepEqual(await complete('openai', cfg(`${s.url}/v1`, 'chosen-model'), guarded('SYSTEM', 'DOC')), {
+      text: 'ready',
+    });
     const req = s.seen[0];
     assert.equal(req.path, '/v1/responses');
     assert.equal(req.headers.authorization, 'Bearer test-key');
@@ -263,7 +267,9 @@ test('Gemini API: generateContent with the key header and the system prompt as a
     res.end(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'ready' }] } }] }));
   });
   try {
-    assert.equal(await complete('gemini', cfg(s.url, 'gemini-pro-latest'), guarded('SYSTEM', 'DOC')), 'ready');
+    assert.deepEqual(await complete('gemini', cfg(s.url, 'gemini-pro-latest'), guarded('SYSTEM', 'DOC')), {
+      text: 'ready',
+    });
     const req = s.seen[0];
     assert.match(req.path, /models\/gemini-pro-latest:generateContent/);
     assert.equal(req.headers['x-goog-api-key'], 'test-key');
@@ -362,4 +368,16 @@ test('a stopped Gemini CLI run ends the process', async () => {
   setTimeout(() => stop.abort(), 100);
   await assert.rejects(runGeminiCli(script, guarded('S', 'D'), {}, stop.signal), /stopped/);
   assert.ok(Date.now() - started < 5000);
+});
+
+test('requests at once for the AI index default by provider, and stay between 1 and 8', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-parallel-'));
+  const s = new AiSettingsStore(dir, {});
+  assert.equal(s.resolve().parallel, 2, 'the Gemini CLI starts a program per request, so it runs fewer');
+  s.update({ provider: 'anthropic' });
+  assert.equal(s.resolve().parallel, 4);
+  s.update({ parallel: 6 });
+  assert.equal(s.resolve().parallel, 6);
+  assert.equal(s.publicView().parallel, 6);
+  for (const bad of [0, 9, 2.5]) assert.throws(() => s.update({ parallel: bad }), /from 1 to 8/);
 });

@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readLabel } from '../../web/src/support/sources.js';
+import { readLabel, sentLines } from '../../web/src/support/sources.js';
 
 const page = (
   id: string,
@@ -34,6 +34,12 @@ describe("the line above an answer's sources", () => {
     );
   });
 
+  it('says how many batches a thorough answer read its sections in', () => {
+    expect(
+      readLabel({ matchedPages: [page('a', 2), page('b', 1)], corpus: { pages: 312, mode: 'retrieved', batches: 4 } }),
+    ).toBe('Read 3 sections from 2 pages in 4 batches · searched 312 pages');
+  });
+
   it('says when every page was read in full', () => {
     expect(readLabel({ matchedPages: [page('a'), page('b')], corpus: { pages: 2, mode: 'full' } })).toBe(
       'Read all 2 pages',
@@ -44,5 +50,26 @@ describe("the line above an answer's sources", () => {
   it('says when every page was read over several requests', () => {
     expect(readLabel({ corpus: { pages: 312, mode: 'batched', batches: 9 } })).toBe('Read all 312 pages in 9 batches');
     expect(readLabel({ corpus: { pages: 3, mode: 'batched', batches: 1 } })).toBe('Read all 3 pages in 1 batch');
+  });
+});
+
+describe('what an answer sent', () => {
+  it('counts what went to the model and says why anything stayed behind, never naming an excluded page', () => {
+    const lines = sentLines({
+      pages: 0,
+      sections: 12,
+      files: 1,
+      turns: 3,
+      chars: 41200,
+      leftOut: [
+        { kind: 'page', label: 'Deploy Notes', reason: 'secret' },
+        { kind: 'page', label: '', reason: 'excluded' },
+        { kind: 'page', label: '', reason: 'excluded' },
+      ],
+    });
+    expect(lines).toEqual({
+      summary: 'Sent 12 sections, 1 file, 3 earlier messages · 41,200 characters',
+      leftOut: ['Deploy Notes: holds a secret', "2 pages: excluded by the space's rules"],
+    });
   });
 });

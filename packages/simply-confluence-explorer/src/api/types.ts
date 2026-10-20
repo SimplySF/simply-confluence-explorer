@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import type { ManifestSummary } from '../ai/manifest.js';
+
 // The shapes of the JSON the server's /api routes send and accept. The frontend in web/ imports
 // this module with `import type` only, so these declarations are the one place both halves agree on
 // and no server code can reach the browser bundle.
@@ -165,7 +167,9 @@ export type SyncProgress = {
   errorCount: number;
   errors: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;
+  startedAt?: string;
   completedAt?: string;
+  traceId?: string;
 };
 
 /** One entry in a space's table of contents. */
@@ -196,7 +200,17 @@ export type AiSettingsView = {
   defaults: Record<Exclude<AiProvider, 'gemini-cli'>, string>;
   /** Where the Gemini CLI was found, or `null` when it was not. */
   geminiCliFound: string | null;
+  /** How many requests the AI index sends at once. */
+  parallel: number;
+  /** Which provider embeds sections for search by meaning (design doc 0008). */
+  embeddings: AiEmbeddings;
 };
+
+/**
+ * Who embeds sections for search by meaning: the chat provider when it can (`chat`), the OpenAI or
+ * Gemini API with its own key whatever answers questions, or nobody (`none`).
+ */
+export type AiEmbeddings = 'chat' | 'openai' | 'gemini' | 'none';
 
 /** What the outbound guard did to a request: what it blocked and how much personal data it replaced. */
 export type GuardReport = {
@@ -246,8 +260,15 @@ export type MetadataProgress = {
   total: number;
   processed: number;
   errorCount: number;
+  /** How many requests the run needs, with several small pages to a request, and how many are done. */
+  requests?: number;
+  requestsDone?: number;
+  /** The pages left out, each with why; the latest 200. */
+  failures?: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;
+  startedAt?: string;
   completedAt?: string;
+  traceId?: string;
 };
 
 /** What a conversation is about: one page, a page and everything below it, or a whole space. */
@@ -291,7 +312,8 @@ export type SessionTurn = {
   considered?: number;
   /**
    * How many pages the chat reads from, and whether they were read in full, retrieved from, or read
-   * in full over several requests (`batched`, with how many).
+   * in full over several requests (`batched`, with how many). A thorough answer is retrieved over
+   * several requests, so it is `retrieved` with `batches` set.
    */
   corpus?: { pages: number; mode: 'full' | 'retrieved' | 'batched'; batches?: number };
   /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
@@ -300,6 +322,14 @@ export type SessionTurn = {
   pageIds?: Record<string, string>;
   /** The queues of edits staged from this answer's suggestions. */
   runIds?: string[];
+  /** The trace that recorded how this answer was made, for the Observability page (ADR-054). */
+  traceId?: string;
+  /** What was sent to the model for this answer, and what was left out with why (ADR-054). */
+  sent?: ManifestSummary;
+  /** The model stopped before finishing this answer. */
+  cutOff?: 'length' | 'blocked';
+  /** The sections found shared few of the question's words, so the answer may not be about it. */
+  weakMatch?: boolean;
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
   /** On a co-writer's answer: a proposed series, an overview page then its child pages. */
@@ -502,14 +532,21 @@ export type BranchRun = {
 export type BatchProgress = {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt?: string;
   completedAt?: string;
+  traceId?: string;
   sessionId: string;
   spaceKey: string;
-  kind: 'review' | 'changes';
+  /** A review, a request for changes, or a thorough answer to a question (design doc 0008). */
+  kind: 'review' | 'changes' | 'answer';
   /** How many pages are read, and in how many batches. */
   pages: number;
   total: number;
   processed: number;
+  /** For a thorough answer: how many sections its batches read. */
+  sections?: number;
+  /** For a thorough answer: every batch is read, and their notes are being combined into the answer. */
+  combining?: boolean;
   /** The first page of the batch being read. */
   currentTitle?: string;
   error?: string;

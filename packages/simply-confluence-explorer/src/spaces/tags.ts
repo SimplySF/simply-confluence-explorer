@@ -19,6 +19,7 @@
 // without summaries still has tags (ADR-046).
 
 import type { PageDetail, PageMetadata, TaggedPages } from '../api/types.js';
+import { mapChunked } from '../util/pause.js';
 import type { SpaceStore } from './spaceStore.js';
 
 /** A page's tags, lower-cased, each once. */
@@ -34,17 +35,18 @@ export function tagsOf(page: Pick<PageDetail, 'labels'>, metadata?: Pick<PageMet
  * @param store The synced copy.
  * @param spaceKey The space.
  */
-export function tagIndex(store: SpaceStore, spaceKey: string): TaggedPages[] {
+export async function tagIndex(store: SpaceStore, spaceKey: string): Promise<TaggedPages[]> {
   const byTag = new Map<string, TaggedPages['pages']>();
-  for (const page of store.visiblePages(spaceKey)) {
-    const metadata = store.readMetadata(spaceKey, page.id);
+  const visible = await store.visiblePages(spaceKey);
+  const metadata = await mapChunked(visible, (page) => store.readMetadata(spaceKey, page.id));
+  for (const [i, page] of visible.entries()) {
     const entry = {
       id: page.id,
       title: page.title,
       path: page.ancestors.map((a) => a.title).join(' › '),
-      summary: metadata?.summary,
+      summary: metadata[i]?.summary,
     };
-    for (const tag of tagsOf(page, metadata)) byTag.set(tag, [...(byTag.get(tag) ?? []), entry]);
+    for (const tag of tagsOf(page, metadata[i])) byTag.set(tag, [...(byTag.get(tag) ?? []), entry]);
   }
   return [...byTag]
     .map(([tag, pages]) => ({ tag, pages: pages.sort((a, b) => a.title.localeCompare(b.title)) }))

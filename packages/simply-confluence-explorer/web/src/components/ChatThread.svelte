@@ -10,10 +10,12 @@
 
 <script lang="ts">
   import {
+    Activity,
     Check,
     Clock,
     Code2,
     Copy,
+    Layers,
     ListChecks,
     Paperclip,
     Send,
@@ -28,7 +30,8 @@
   import { sessions } from '../support/api.js';
   import type { AiChat } from '../support/chat.svelte.js';
   import { jobs } from '../support/jobs.svelte.js';
-  import { readLabel } from '../support/sources.js';
+  import { observe } from '../support/observe.svelte.js';
+  import { readLabel, sentLines } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChangeQueue from './ChangeQueue.svelte';
   import FindingsList from './FindingsList.svelte';
@@ -105,6 +108,25 @@
     return () => clearInterval(t);
   });
 
+  // While a question is answered, the step it is on, so a long wait shows what it is waiting for.
+  let step = $state<string | null>(null);
+  $effect(() => {
+    const id = chat.session?.id;
+    if (!chat.sending || !id) {
+      step = null;
+      return;
+    }
+    const ask = (): void => {
+      sessions.activity(id).then(
+        (a) => (step = a.step),
+        () => undefined, // The step is a hint; the answer, or its error, arrives either way.
+      );
+    };
+    const timer = setInterval(ask, 1000);
+    ask();
+    return () => clearInterval(timer);
+  });
+
   $effect(() => {
     void chat.session?.turns.length;
     void chat.sending;
@@ -115,8 +137,15 @@
     const clean = prompt.trim();
     if (!clean || chat.sending || blocked) return;
     input = '';
-    void chat.send(clean);
+    void chat.send(clean, thorough && canBeThorough);
   }
+
+  // A chat over many pages can read far more of them for one question, over several requests.
+  let thorough = $state(false);
+  const canBeThorough = $derived(chat.scopeKind !== undefined && chat.scopeKind !== 'page');
+  const sectionsOf = (t: { matchedPages?: Array<{ sections?: unknown[] }> }): number =>
+    (t.matchedPages ?? []).reduce((n, p) => n + (p.sections?.length ?? 0), 0);
+  const plural = (n: number, word: string): string => `${n} ${n === 1 ? word : `${word}s`}`;
 
   function copy(i: number, text: string): void {
     navigator.clipboard.writeText(text).then(
@@ -176,6 +205,15 @@
             {t.engine || 'AI'} · {new Date(t.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
           <span class="chat-msg-tools">
+            {#if t.traceId}
+              <button
+                class="btn btn-secondary btn-xs"
+                title="How this answer was made: what was searched, what was sent, and how long each step took"
+                onclick={() => observe.show('trace', { traceId: t.traceId })}
+              >
+                <Activity size={11} /> Trace
+              </button>
+            {/if}
             <button class="btn btn-secondary btn-xs" onclick={() => (raw[i] = !raw[i])}>
               <Code2 size={11} />
               {raw[i] ? 'Formatted' : 'Markdown'}
@@ -190,6 +228,42 @@
           <div class="guard-note" title="Checked by the outbound guard before anything was sent">
             <ShieldCheck size={12} />
             {t.guardSummary}
+          </div>
+        {/if}
+        {#if t.weakMatch}
+          <div class="alert alert-warning chat-weak">
+            Weak matches: the pages found share few words with the question, so this answer may not be about it. Try
+            naming the system or page, or choose the pages to read under Reading.
+          </div>
+        {/if}
+        {#if t.sent}
+          {@const lines = sentLines(t.sent)}
+          <details class="chat-read">
+            <summary
+              >What was sent: {lines.summary}{lines.leftOut.length
+                ? ` · ${lines.leftOut.length} left out`
+                : ''}</summary
+            >
+            {#if lines.leftOut.length}
+              <ul>
+                {#each lines.leftOut as l (l)}<li>{l}</li>{/each}
+              </ul>
+            {:else}
+              <p class="muted">Everything this answer was meant to read reached the model.</p>
+            {/if}
+          </details>
+        {/if}
+        {#if t.corpus?.mode === 'retrieved' && !t.corpus.batches && i === turns.length - 1 && turns[i - 1]?.role === 'user' && !batch}
+          <div class="chat-thorough-offer">
+            <span class="muted">This answer read {plural(sectionsOf(t), 'section')} of many.</span>
+            <button
+              class="btn btn-secondary btn-xs"
+              disabled={chat.sending}
+              title="Read many more sections over several requests and combine what each found"
+              onclick={() => void chat.send(turns[i - 1].text, true)}
+            >
+              <Layers size={11} /> Answer this thoroughly
+            </button>
           </div>
         {/if}
         {#if t.corpus?.mode === 'batched'}
@@ -245,7 +319,7 @@
   {#if chat.sending}
     <div class="ai-thinking-card">
       <div class="ai-thinking-header">
-        <span><Sparkles size={15} class="spin" /> Thinking about {subject}…</span>
+        <span><Sparkles size={15} class="spin" /> {step ? `${step}…` : `Thinking about ${subject}…`}</span>
         <span class="muted"><Clock size={12} /> {seconds.toFixed(1)}s</span>
       </div>
       <div class="ai-thinking-shimmer"></div>
@@ -254,13 +328,14 @@
   {#if batch}
     <div class="ai-thinking-card">
       <div class="ai-thinking-header">
-        <span
-          ><Sparkles size={15} class="spin" />
-          {batch.label}: batch {Math.min(batch.processed + 1, batch.total)} of {batch.total}</span
-        >
+        <span><Sparkles size={15} class="spin" /> {batch.label}: {batch.step}</span>
         <button class="btn btn-secondary btn-xs" onclick={() => jobs.stop(batch!)}><Square size={11} /> Stop</button>
       </div>
-      <p class="muted">Related pages are read together. You can leave this chat; the header shows the progress.</p>
+      <p class="muted">
+        {batch.label.startsWith('Answering')
+          ? "Each batch's notes are combined into one answer."
+          : 'Related pages are read together.'} You can leave this chat; the header shows the progress.
+      </p>
     </div>
   {/if}
   {#if chat.error}<div class="alert alert-error">Not answered: {chat.error}</div>{/if}
@@ -345,7 +420,15 @@
       <Square size={13} /> Stop
     </button>
   {:else}
-    <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked}>
+    {#if canBeThorough}
+      <label
+        class="chat-thorough"
+        title="Read up to 150 sections over several requests and combine what each found. Slower, for broad questions."
+      >
+        <input type="checkbox" bind:checked={thorough} disabled={blocked || !!batch} /> Thorough
+      </label>
+    {/if}
+    <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked || (thorough && !!batch)}>
       <Send size={15} /> Send
     </button>
   {/if}

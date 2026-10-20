@@ -58,11 +58,16 @@ Open a page and choose the **Chat** tab.
    **Summarise these pages** on chosen pages, and questions that find your way around a whole space.
 
 The answer appears under your question, with the provider's name and the time, a line saying what
-the leak guard did, and **Read N pages**, which lists the pages it read. **Markdown** shows the
-answer's source text, and **Copy** copies it. To change pages from a chat, see
+the leak guard did, and **Read N pages**, which lists the pages it read. **What was sent** counts the
+pages, sections, files and earlier messages that reached the AI, and names anything left out and
+why: over the size limit, holding a secret, or excluded, which is counted but never named. The app
+checks every request against this list before sending it, and refuses one that is missing anything.
+An answer the AI stopped writing early says it was cut short. **Trace** shows how long each step
+took. **Markdown** shows the answer's source text, and **Copy** copies it. To change pages from a chat, see
 [Changing pages from a chat](/guides/changing-pages/).
 
-While the AI is answering, **Send** becomes **Stop**. Stopping puts your question back in the box so
+While the AI is answering, the note above the box says which step it is on, such as searching the
+pages, choosing sections or writing the answer. **Send** becomes **Stop**. Stopping puts your question back in the box so
 you can correct it and send it again; nothing of the stopped question is kept in the conversation.
 The provider may already have received it, so the app's AI log records it as stopped.
 
@@ -74,7 +79,7 @@ from the browser. A page excluded from AI shows a notice instead of the question
 A conversation keeps going until you click **New conversation**: each question is sent with the
 earlier ones, so you can ask follow-ups. Conversations are saved on your computer, and when you come
 back to a page the latest conversation for it reopens. Earlier turns are sent up to a limit, newest
-first, so a very long conversation gradually forgets its start. Every page is read and checked again
+first, so a very long conversation gradually forgets its start; What was sent says when it did. Every page is read and checked again
 for every question, so a change to the exclusion rules applies to the next question.
 
 ### Add a file
@@ -115,7 +120,16 @@ There is no limit on how many pages a chat reads from:
   worth reading from their headings and summaries alone, and only those are sent, with the ones the
   last answers read. **Read N sections from M pages** on each answer lists them, with why each was
   chosen. This is the way in when you do not know the space, such as an unfamiliar system during an
-  incident.
+  incident. When even the best sections share few words with the question, the answer warns that
+  it may rest on weak matches.
+
+For a broad question, tick **Thorough** beside **Send**, or click **Answer this thoroughly** under an
+answer. The question then reads up to 150 sections over as many requests as they need: each batch
+is asked for notes with the page and section they came from, and one last request combines the
+notes into the answer. It runs in the background with **Stop**, and the header shows the batch it is
+on. A batch whose reply comes back empty twice has its pages named in the answer as not read.
+
+![A thorough answer reading its sections in batches, with the batch it is on and Stop](../images/thorough-answer.webp)
 
 ![The pages tagged runbook in the sidebar's Tags view, each with where it sits](../images/tags-view.webp)
 
@@ -131,9 +145,15 @@ search reads all of it. Topics are chosen from the ones the space already uses w
 pages about one subject share a tag wherever they sit. A chat says how many of its pages are indexed
 and offers **Index the rest**, which runs in the background and shows in the header.
 
-With **ChatGPT** or **Gemini (Google API)**, indexing also makes an embedding of each section,
-which lets a question find a section by meaning when it shares none of its words. Claude and the
-Gemini CLI offer no embeddings, so with them the search uses words and summaries alone.
+Small pages are indexed several to a request, up to about 60,000 characters, and a few requests run
+at once: 2 for the Gemini CLI and 4 for an API provider, set by **Requests at once** in Settings.
+The Space menu says how many requests a run will take before it starts. A failed request is tried
+again; a page still left out is listed with its reason under **See why**, and the next run retries it.
+
+Indexing can also make an embedding of each section, which lets a question find a section by meaning
+when it shares none of its words. **Search by meaning** in Settings chooses who makes them: ChatGPT
+or Gemini (Google API) when it is the provider, or a Gemini or OpenAI key of its own, so the Gemini
+CLI can answer while a Gemini key makes embeddings. Claude and the Gemini CLI make none themselves.
 [What leaves your computer](/guides/data-safety/) says what this sends.
 
 The **Details** tab of a page has **Index this page** for that page alone, and shows its summary,
@@ -147,7 +167,9 @@ AI index** redoes only those pages.
 and that a missing key or model is reported before anything is sent. `test/sessions.test.ts` checks
 conversations, the history limit, file uploads, chosen directories, pages and tags, reading in full
 or by section, and finding a section by meaning. `test/sections.test.ts`, `test/searchIndex.test.ts`,
-`test/metadata.test.ts` and `test/embeddings.test.ts` check how pages are split, searched, summarised
-and embedded. `test/aiRoutes.test.ts` checks that excluded pages are refused and that summaries reach
+`test/metadata.test.ts`, `test/indexPacks.test.ts` and `test/embeddings.test.ts` check how pages are
+split, searched, summarised, packed and embedded, and `test/retrievalEval.test.ts` measures whether
+fixed questions find the right pages. `test/contextDelivery.test.ts` checks What was sent and that
+every item it lists reached the AI, and `test/thoroughAnswer.test.ts` checks thorough answers. `test/aiRoutes.test.ts` checks that excluded pages are refused and that summaries reach
 the table of contents. `test/e2e/ai.e2e.ts` asks questions against a real Confluence Data Center,
 with a stand-in for the AI provider.

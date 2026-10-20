@@ -45,6 +45,16 @@ export type TestApp = {
   close: () => Promise<void>;
 };
 
+/**
+ * A metadata reply in the shape the request asked for: one entry for a single page, or an entry for
+ * every page of a pack, keyed by the ids the request lists.
+ */
+export function metadataReply(payload: GuardedPayload, entry: Record<string, unknown>): string {
+  const text = payload.messages.map((m) => m.content).join('\n');
+  const ids = [...text.matchAll(/^=== PAGE (\S+): /gm)].map((m) => m[1]);
+  return JSON.stringify(ids.length ? { pages: ids.map((id) => ({ id, ...entry })) } : entry);
+}
+
 /** Replies with the request's placeholders echoed back, so a test can see them restored. */
 const echo = (payload: GuardedPayload, n: number): string => {
   const placeholders =
@@ -53,7 +63,12 @@ const echo = (payload: GuardedPayload, n: number): string => {
       .join('\n')
       .match(/\[[A-Z_]+-\d+\]/g) ?? [];
   if (payload.system.includes('return a JSON object')) {
-    return '{"summary":"A page about operations.","tags":["ops"],"documentType":"runbook","systemsMentioned":["Postgres"]}';
+    return metadataReply(payload, {
+      summary: 'A page about operations.',
+      tags: ['ops'],
+      documentType: 'runbook',
+      systemsMentioned: ['Postgres'],
+    });
   }
   return `answer ${n} ${placeholders.join(' ')}`.trim();
 };
@@ -83,6 +98,9 @@ export async function startTestApp(
       return Promise.resolve(reply(payload, sent.length, signal));
     },
     contextChars: options.contextChars,
+    // Records are written at once, so a test can read them back straight after an action.
+    telemetryTimers: false,
+    indexRetryMs: 0,
     ...(options.embeddings
       ? {
           embedTransport: (payload: GuardedPayload): Promise<number[][]> => {

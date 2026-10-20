@@ -138,13 +138,25 @@ export const REVIEW_GUIDE = [
         file: `${SRC}/ai/providers.ts`,
         symbol: 'embed',
         check:
-          'Sends section text for embeddings, again only as a `GuardedPayload`, and only to OpenAI or Gemini; Claude and the Gemini CLI offer none, so nothing is sent.',
+          'Sends section text for embeddings, again only as a `GuardedPayload`, and only to OpenAI or Gemini as Search by meaning chooses; Claude and the Gemini CLI offer none, and with it off nothing is sent.',
+      },
+      {
+        file: `${SRC}/spaces/indexPacks.ts`,
+        symbol: 'generateMetadataPack',
+        check:
+          'Sends several pages per indexing request, only pages the index run was given, which never include an excluded page, and through the engine and its guard. A page missing from the reply is retried alone, then recorded as failed.',
       },
       {
         file: `${SRC}/branches/corpusReview.ts`,
         symbol: 'CorpusReviews',
         check:
           'A review of more pages than one request carries sends each batch only after `contextCollector` has left out excluded pages and pages holding a secret. A stopped run writes nothing.',
+      },
+      {
+        file: `${SRC}/branches/corpusReview.ts`,
+        symbol: 'startAnswer',
+        check:
+          "A thorough answer reads each batch of sections through `readBatch`, which leaves out a page holding a secret, and sends the batches' notes through the guard again when it combines them.",
       },
     ],
   },
@@ -166,6 +178,12 @@ export const REVIEW_GUIDE = [
         file: `${SRC}/ai/engine.ts`,
         check:
           'Runs the guard on every question and every embedding request, and records each in the audit log. No path to an AI skips it.',
+      },
+      {
+        file: `${SRC}/ai/manifest.ts`,
+        symbol: 'checkPayload',
+        check:
+          'Every piece of context a request was built to carry must be in the guarded payload whole, or the engine refuses to send it. An excluded page is counted in the manifest, never named.',
       },
     ],
   },
@@ -193,6 +211,22 @@ export const REVIEW_GUIDE = [
         file: `${SRC}/ai/settings.ts`,
         symbol: 'publicView',
         check: '`publicView` tells the browser only whether a key is set, never the key itself.',
+      },
+    ],
+  },
+  {
+    surface: 'Telemetry kept on disk',
+    about: "The app's own traces, logs and health numbers, kept in the data folder and shown on the Observability page.",
+    items: [
+      {
+        file: `${SRC}/telemetry/telemetry.ts`,
+        symbol: 'Telemetry',
+        check:
+          'Records counts, ids, durations, titles of allowed pages and error messages, never page text, prompts, answers, credentials or the title of an excluded page. Keeps 14 days, up to 200 MB.',
+      },
+      {
+        file: `${SRC}/routes/observe.ts`,
+        check: 'Only reads what was recorded, and a trace id from the request is validated before it is used.',
       },
     ],
   },
@@ -294,7 +328,7 @@ export const REVIEW_GUIDE = [
  * @returns {number | undefined} The 1-based line, or undefined when it is not declared there.
  */
 export function lineOf(text, symbol) {
-  const declaration = new RegExp(`\\b(function|class|const|public|private)\\s+${symbol}\\b`);
+  const declaration = new RegExp(`\\b(function|class|const|public|private)\\s+(async\\s+)?${symbol}\\b`);
   const index = text.split('\n').findIndex((line) => declaration.test(line));
   return index === -1 ? undefined : index + 1;
 }

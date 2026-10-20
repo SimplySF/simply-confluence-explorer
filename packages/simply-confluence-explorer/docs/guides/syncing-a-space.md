@@ -109,7 +109,7 @@ Removing a page here deletes only your copy. Nothing changes in Confluence.
 ## Where the files are
 
 Each synced space has its own folder inside the app's data folder (`~/.confluence-explorer` unless
-you chose another with `--data-dir`):
+you chose another with `--data-dir`), beside `telemetry/`, the app's own logs and traces:
 
 ```
 spaces/PLAT/
@@ -117,7 +117,7 @@ spaces/PLAT/
   pages/.../Title_attachments/   each page's attachments
   pages_cache/           each page as Confluence sent it
   metadata/              the AI index: summaries, topics, questions
-  vectors/               section embeddings, when the provider makes them
+  vectors/               section embeddings, when a provider makes them
   TOC.md, toc.json       the table of contents
   manifest.json          when the space was last synced
   .confluenceignore      the space's exclusion rules

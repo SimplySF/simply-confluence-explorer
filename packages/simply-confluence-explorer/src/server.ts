@@ -35,11 +35,13 @@ import { CONTEXT_CHAR_LIMIT } from './spaces/branchContext.js';
 import { corpusSize } from './spaces/contextRetriever.js';
 import { SearchIndex } from './spaces/searchIndex.js';
 import { tagsOf } from './spaces/tags.js';
+import { Telemetry } from './telemetry/telemetry.js';
 import { VectorIndex } from './spaces/vectors.js';
 import { GitLabStore } from './gitlab/client.js';
 import { SpaceStore } from './spaces/spaceStore.js';
 import { SpaceSync } from './spaces/sync.js';
 import { resolveDataDir } from './util/dataDir.js';
+import { errorMessage } from './util/errors.js';
 
 export type { HealthResponse } from './routes/api.js';
 
@@ -81,6 +83,10 @@ export type ServerOptions = {
    * spaces are retrieved from as a large space is.
    */
   contextChars?: number;
+  /** Whether telemetry samples health and writes in batches; tests that read it back at once turn it off. */
+  telemetryTimers?: boolean;
+  /** How long the AI index waits before trying a failed request again; tests set it to 0. */
+  indexRetryMs?: number;
 };
 
 // Sent with every response. They stop the app being framed by another site, stop a browser
@@ -109,23 +115,59 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const version = options.version ?? readPackageVersion();
   const env = options.env ?? process.env;
   const dataDir = options.dataDir ?? resolveDataDir(undefined, env);
-  const log = options.log ?? ((): void => {});
+  // Everything the server reports goes through telemetry, which also prints warnings and errors to
+  // the given log, so a message is kept on disk as well as shown in the console (ADR-054).
+  const telemetry = new Telemetry({ dataDir, console: options.log, timers: options.telemetryTimers });
+  const log = telemetry.sink('server');
   const connection = new ConnectionStore(dataDir, env);
   const client = (): ConfluenceClient => new ConfluenceClient(connection.resolve());
   const exclusions = new ExclusionManager(dataDir, log);
-  const store = new SpaceStore(dataDir, exclusions, log);
+  const store = new SpaceStore(dataDir, exclusions, telemetry.sink('sync'));
   const gitlab = new GitLabStore(dataDir);
   const ai = new ConfiguredAi(new AiSettingsStore(dataDir, env), {
     dataDir,
     env,
-    log,
+    log: telemetry.sink('ai'),
     transport: options.aiTransport,
     embedTransport: options.embedTransport,
+    tracer: telemetry,
   });
   const vectors = new VectorIndex(store);
   const index = new SearchIndex(store);
   const sessions = new SessionStore(dataDir);
   const contextChars = options.contextChars ?? CONTEXT_CHAR_LIMIT;
+  const sync = new SpaceSync(store, exclusions, client, telemetry.sink('sync'), telemetry);
+  const metadata = new MetadataPipeline(store, exclusions, () => ai, telemetry.sink('index'), vectors, telemetry, {
+    retryDelayMs: options.indexRetryMs,
+  });
+  const reviews = new CorpusReviews({
+    ai,
+    sessions,
+    exclusions,
+    readMetadataTopics: (key, page): string[] => tagsOf(page, store.readMetadata(key, page.id)),
+    pageSize: (key, page): number => corpusSize(key, [page], index),
+    dataDir,
+    budget: contextChars,
+    log: telemetry.sink('review'),
+    tracer: telemetry,
+  });
+  for (const source of [sync, metadata, reviews]) telemetry.addJobSource(() => source.liveJobs());
+  telemetry.addJobSource(() =>
+    index.building().map((b) => ({
+      jobId: `index-${b.spaceKey}`,
+      kind: 'search-index',
+      label: `Building the search index for ${b.spaceKey}`,
+      processed: b.done,
+      total: b.total,
+    })),
+  );
+  // Synced spaces are indexed as soon as the server starts, so the first question does not wait for it.
+  setImmediate(() => {
+    store.listSynced().then(
+      (spaces) => spaces.forEach((space) => void index.ready(space.spaceKey)),
+      (error: unknown) => log(`could not list the synced spaces to index them: ${errorMessage(error)}`),
+    );
+  });
   const api = createApi({
     version,
     dataDir,
@@ -135,29 +177,21 @@ export function createServer(options: ServerOptions = {}): http.Server {
     client,
     exclusions,
     store,
-    sync: new SpaceSync(store, exclusions, client, log),
+    sync,
     ai,
     sessions,
-    metadata: new MetadataPipeline(store, exclusions, () => ai, log, vectors),
-    branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log }),
+    metadata,
+    branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log: telemetry.sink('review') }),
     index,
     vectors,
     contextChars,
-    reviews: new CorpusReviews({
-      ai,
-      sessions,
-      exclusions,
-      readMetadataTopics: (key, page): string[] => tagsOf(page, store.readMetadata(key, page.id)),
-      pageSize: (key, page): number => corpusSize(key, [page], index),
-      dataDir,
-      budget: contextChars,
-      log,
-    }),
+    reviews,
     gitlab,
+    telemetry,
   });
   const isLocal = localOnly(env);
 
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     if (!isLocal(req)) {
       sendJson(res, 403, { error: 'request refused: not from this machine' });
@@ -171,6 +205,8 @@ export function createServer(options: ServerOptions = {}): http.Server {
       }
     });
   });
+  server.on('close', () => telemetry.close());
+  return server;
 }
 
 async function handleRequest(
