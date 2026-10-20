@@ -64,8 +64,9 @@ only "Thinking…" for up to a minute, and failures were counted but never expla
 
 ## Testing
 
-A generated 3,200-page space is used to measure requests per index run and the server's
-responsiveness, and a test fails if a health check waits over 250 ms while the index builds. Route
+A generated 3,200-page space is indexed and asked about. The fast suite fails if indexing it takes
+more than 640 requests or leaves a page out, and the scale check, `pnpm run test:scale`, fails if a
+health check waits 250 ms while it runs; the scale check runs on a real machine, not in CI (ADR-057). Route
 tests check that every item the manifest includes is in what was sent, that a stand-in Gemini CLI
 receives every byte, that no telemetry file holds page text or an excluded title, and that retrieval
 finds the expected pages for a fixed set of questions.

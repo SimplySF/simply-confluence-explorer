@@ -27,6 +27,7 @@
     "standard": "node scripts/standard.mjs",
     "test": "lerna run test",
     "test:e2e": "pnpm --filter @simplysf/simply-confluence-explorer run test:e2e",
+    "test:scale": "pnpm --filter @simplysf/simply-confluence-explorer run test:scale",
     "test:only": "lerna run test:only",
     "testenv:down": "node test-env/testenv.mjs down",
     "testenv:logs": "node test-env/testenv.mjs logs",

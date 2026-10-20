@@ -1622,3 +1622,29 @@ A Gemini CLI user can then add a Gemini or OpenAI key for embeddings alone.
 **The argument against:** a user with no embedding key gets no match on meaning at all. That is
 accepted because a table of synonyms kept by the app would be a guess about every team's vocabulary,
 and the weak-match warning tells the user when a search found little.
+
+---
+
+## ADR-057 — Timing checks on large spaces run on a real machine, not in CI
+
+**Status:** accepted, 2026-10-20.
+
+Design doc 0008 promises that the server keeps answering while a 3,200-page space is indexed. The
+test for it timed health checks during the walk and failed on any wait of 250 ms or more. In CI it
+failed on the Windows runners again and again after the code that held the server had been fixed.
+Each failing wait was recorded with the CPU time the test's process used in it, and the longest
+waits used a third of their time or less: the runner, sharing two cores among some forty test
+files, was not giving the process a turn. On a real machine, pinned to a single core, the longest
+wait was under 75 ms.
+
+- **The fast suite keeps what does not depend on timing.** `test/largeSpace.test.ts` indexes the
+  generated space and fails if a page is left out, if indexing takes more than one request per five
+  pages, or if a question about the space is not answered.
+- **The timing moves to a scale check** in `test/scale/`, run with `pnpm run test:scale`. It is run
+  on a real machine after changing code that reads a whole space, and the result is reported in the
+  pull request.
+
+**The argument against:** with the timing out of CI, a change that brings back a freeze is caught
+only if someone runs the scale check. This is accepted because a check that fails at random teaches
+people to ignore it, which is worse; the code that reads whole spaces goes through `mapChunked` in
+`src/util/pause.ts`, and the scale check is named in AGENTS.md beside the other suites.

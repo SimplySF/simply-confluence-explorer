@@ -123,7 +123,7 @@ Run the doctor with `--json` and include its output, with any tokens removed, wh
 
 `test/doctor.test.ts` checks every doctor check, and that every warning and failure carries a fix.
 `test/telemetry.test.ts` checks what is kept, that nothing on the never-recorded list is, and the
-problems flagged; `test/responsiveness.test.ts` checks the server answers while a 3,200-page index
-builds.
+problems flagged; `test/scale/responsiveness.scale.ts`, run with `pnpm run test:scale`, checks the
+server answers while a 3,200-page index builds.
 `test/cli.test.ts` checks the port handling and that the doctor exits with an error when a check
 fails.

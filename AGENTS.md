@@ -101,8 +101,10 @@ template's wording; our additions to them follow this rule.
   record that argues for the new number.
 - **Say which suite ran.** `pnpm test` is the fast suite and does not include the end-to-end suite.
   `pnpm run test:e2e` runs against the Confluence test environment (`pnpm run testenv:start`) and
-  skips itself when no environment is running. A report that "all tests pass" names the suite, so
-  that a skipped end-to-end run is not mistaken for a passing one.
+  skips itself when no environment is running. `pnpm run test:scale` times the server on a generated
+  3,200-page space; it runs on a real machine, never in CI, and is run after changing code that reads
+  a whole space (ADR-057). A report that "all tests pass" names the suite, so that a skipped
+  end-to-end run is not mistaken for a passing one.
 - **Every claim made to users names the test or CI job that proves it.** If nothing proves a claim,
   remove the claim.
 - **Closed-world results go in the expectation table.** Some tests check a fixed, known set of

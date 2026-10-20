@@ -67,6 +67,7 @@
     "test:coverage": "vitest run --coverage --project simply-confluence-explorer",
     "test:e2e": "vitest run --project simply-confluence-explorer-e2e",
     "test:only": "wireit",
+    "test:scale": "vitest run --project simply-confluence-explorer-scale",
     "test:watch": "vitest watch --project simply-confluence-explorer"
   },
   "wireit": {
