@@ -26,13 +26,13 @@ describe('the Space menu, for AI summaries', () => {
 
   it('offers to update when some pages have no up-to-date summary', () => {
     expect(summaryAction({ pageCount: 12, metadataCount: 5 })).toMatchObject({
-      label: 'Update AI summaries (5/12)',
+      label: 'Update the AI index (5/12)',
       done: false,
     });
   });
 
   it('offers to generate for a space with no summaries, or no synced copy', () => {
-    expect(summaryAction({ pageCount: 12, metadataCount: 0 }).label).toBe('Generate AI summaries');
+    expect(summaryAction({ pageCount: 12, metadataCount: 0 }).label).toBe('Build the AI index');
     expect(summaryAction(undefined).done).toBe(false);
   });
 });

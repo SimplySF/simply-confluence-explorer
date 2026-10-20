@@ -37,7 +37,7 @@
     {#if busy}<RefreshCw size={13} class="spin" />{:else}<Trash2 size={13} />{/if} Remove from this machine
   {/snippet}
   <p>
-    Deletes the synced copy of this page (its Markdown file, cache and AI summary) and removes it from the table of
+    Deletes the synced copy of this page (its Markdown file, cache and AI index entry) and removes it from the table of
     contents. <strong>The page in Confluence is not changed.</strong>
   </p>
   {#if descendantCount > 0}

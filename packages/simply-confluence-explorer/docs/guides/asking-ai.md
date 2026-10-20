@@ -117,27 +117,26 @@ There is no limit on how many pages a chat reads from:
 ![The pages tagged runbook in the sidebar's Tags view, each with where it sits](../images/tags-view.webp)
 
 **Chat about** on a tag in the sidebar's **Tags** view opens a chat on that tag's pages. A page's tags
-are its Confluence labels together with the topics of its AI summary. Excluded pages are never
+are its Confluence labels together with its topics from the AI index. Excluded pages are never
 listed, found or read, and a page holding a secret is left out and named.
 
-## Summaries, topics and embeddings
+## The AI index: summaries, topics and embeddings
 
-Chats find more when their pages have AI summaries. A summary says what a page is for, gives it
-topics, lists the questions it answers and who it is for, and describes each section in a line, and
-the search reads all of it. Topics are chosen from the ones the space already uses where one fits,
-so pages about one subject share a tag wherever they sit. A chat says how many of its pages have an
-up-to-date summary and offers **Generate the missing summaries**, which runs in the background and
-shows in the header.
+Chats find more in pages that are in the **AI index**. Indexing a page asks the AI what the page is
+for, its topics, the questions it answers and who it is for, and for a line on each section, and the
+search reads all of it. Topics are chosen from the ones the space already uses where one fits, so
+pages about one subject share a tag wherever they sit. A chat says how many of its pages are indexed
+and offers **Index the rest**, which runs in the background and shows in the header.
 
-With **ChatGPT** or **Gemini (Google API)**, the same run also makes an embedding of each section,
+With **ChatGPT** or **Gemini (Google API)**, indexing also makes an embedding of each section,
 which lets a question find a section by meaning when it shares none of its words. Claude and the
 Gemini CLI offer no embeddings, so with them the search uses words and summaries alone.
 [What leaves your computer](/guides/data-safety/) says what this sends.
 
-The **Details** tab of a page has **Generate summary** for that page alone, and shows the summary,
-its topics and the questions it answers. **Space → Generate AI summaries** runs for every page that
-has no up-to-date summary. A page that changes in Confluence loses its summary and embeddings at the
-next sync, and **Update AI summaries** redoes only those pages.
+The **Details** tab of a page has **Index this page** for that page alone, and shows its summary,
+topics and the questions it answers. **Space → Build the AI index** indexes every page that is not
+indexed yet. A page that changes in Confluence leaves the index at the next sync, and **Update the
+AI index** redoes only those pages.
 
 ## How this is checked
 

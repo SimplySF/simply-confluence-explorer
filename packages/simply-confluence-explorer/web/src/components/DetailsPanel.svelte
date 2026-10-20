@@ -7,7 +7,7 @@
   import JobProgress from './ui/JobProgress.svelte';
   import Menu from './ui/Menu.svelte';
 
-  // The AI summary of a page, its frontmatter, and its attachments.
+  // The page's entry in the AI index (its summary, topics and questions), its frontmatter, and its attachments.
   type Props = {
     page: PageResponse;
     spaceKey: string;
@@ -41,19 +41,19 @@
     try {
       onMetadata(pageId, await api.generatePageMetadata(spaceKey, pageId));
     } catch (e) {
-      toast(`Could not generate the summary: ${messageOf(e)}`, 'error');
+      toast(`The page was not indexed: ${messageOf(e)}`, 'error');
     } finally {
       onMetadataLoading(pageId, false);
     }
   }
 
-  const generateLabel = $derived(metadataLoading ? 'Generating…' : metadata ? 'Regenerate' : 'Generate summary');
+  const generateLabel = $derived(metadataLoading ? 'Indexing…' : metadata ? 'Re-index' : 'Index this page');
 </script>
 
 <div class="details-panel">
   <section class="card">
     <div class="card-head">
-      <h4><Sparkles size={15} /> AI summary</h4>
+      <h4><Sparkles size={15} /> AI index</h4>
       {#if job}
         <JobProgress processed={job.processed} total={job.total} current={job.current} onStop={() => jobs.stop(job!)} />
       {:else if descendantCount > 0}
@@ -101,7 +101,7 @@
       <p class="muted">
         {metadataLoading
           ? 'Loading…'
-          : 'No summary yet. Generate one for a short summary, topics, and the questions this page answers.'}
+          : 'Not indexed yet. Indexing gives the page a summary, topics and the questions it answers, which chats use to find it.'}
       </p>
     {/if}
   </section>

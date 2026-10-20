@@ -2403,7 +2403,7 @@ div.disclosure-body {
   gap: 0.5rem;
 }
 
-/* How many of a chat's pages have an AI summary */
+/* How many of a chat's pages are in the AI index */
 .summary-coverage {
   margin: 0.15rem 0 0.35rem;
   display: flex;

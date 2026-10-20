@@ -14,20 +14,24 @@
  * limitations under the License.
  */
 
-// What the Space menu offers for a space's AI summaries. A run only summarises pages that have no
-// up-to-date summary, so once every page has one there is nothing for it to do, and the menu says so.
-// A summary of an older kind, or of an older version of its page, does not count (ADR-051).
+// What the Space menu offers for a space's AI index: each page's summary, topics, section notes and
+// the questions it answers, and its embeddings when the provider makes them (ADR-051). A run only
+// indexes pages that are not indexed yet, so once every page is there is nothing for it to do, and
+// the menu says so. A page indexed by an older kind of run, or at an older version, does not count.
 
 import type { SyncedSpace } from '../../../src/api/types.js';
 
 export type SummaryAction = { label: string; hint: string; done: boolean };
 
 export function summaryAction(manifest?: Pick<SyncedSpace, 'pageCount' | 'metadataCount'>): SummaryAction {
-  const offer = { hint: 'Summaries, topics and the questions each page answers, which chats search', done: false };
-  if (!manifest) return { ...offer, label: 'Generate AI summaries' };
+  const offer = {
+    hint: 'Summaries, topics, section notes and the questions each page answers, which chats search',
+    done: false,
+  };
+  if (!manifest) return { ...offer, label: 'Build the AI index' };
   const { pageCount, metadataCount } = manifest;
   if (pageCount > 0 && metadataCount >= pageCount)
-    return { label: 'Every page has an AI summary', hint: "Redo one page's summary from its Details tab", done: true };
-  if (metadataCount > 0) return { ...offer, label: `Update AI summaries (${metadataCount}/${pageCount})` };
-  return { ...offer, label: 'Generate AI summaries' };
+    return { label: 'The AI index is up to date', hint: 'Re-index one page from its Details tab', done: true };
+  if (metadataCount > 0) return { ...offer, label: `Update the AI index (${metadataCount}/${pageCount})` };
+  return { ...offer, label: 'Build the AI index' };
 }

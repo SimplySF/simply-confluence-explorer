@@ -86,17 +86,17 @@ This is also why some pages cannot be pushed back from Markdown; see
 topics once those exist. Click a title to open the page. The same table is saved as `TOC.md` and
 `toc.json` in the space's folder, so other tools can use it.
 
-**Generate AI summaries** in the same menu asks your AI to summarise each synced page, one at a time:
-what it is for, its topics, the questions it answers, and a line on each section. With a provider
+**Build the AI index** in the same menu asks your AI about each synced page, one at a time: what it
+is for, its topics, the questions it answers, and a line on each section. With a provider
 that offers embeddings, it embeds each section too (see [Asking an AI](/guides/asking-ai/)). It keeps
 going while you open other pages: the header shows how far it has got, and clicking it takes you
 back. Starting it again while it runs shows the same run rather than starting a second one. You can
-pause it and come back later. It only does pages without an up-to-date summary; once every page has
-one, the menu says so; to redo one page, use **Regenerate** on its **Details** tab. A page's summary
-and embeddings are removed when a sync downloads a newer version of it, so they are never out of
-date, and **Update AI summaries** redoes just those pages.
+pause it and come back later. It only does pages that are not indexed yet; once every page is, the
+menu says so; to redo one page, use **Re-index** on its **Details** tab. A page's index entry and
+embeddings are removed when a sync downloads a newer version of it, so they are never out of date,
+and **Update the AI index** redoes just those pages.
 
-![The Details tab, with a page's AI summary and its frontmatter](../images/details.webp)
+![The Details tab, with a page's entry in the AI index and its frontmatter](../images/details.webp)
 
 ## Download a ZIP
 
@@ -124,7 +124,7 @@ spaces/PLAT/
   pages/                 one Markdown file per page, in folders that follow the tree
   pages/.../Title_attachments/   each page's attachments
   pages_cache/           each page as Confluence sent it
-  metadata/              AI summaries
+  metadata/              the AI index: summaries, topics, questions
   vectors/               section embeddings, when the provider makes them
   TOC.md, toc.json       the table of contents
   manifest.json          when the space was last synced

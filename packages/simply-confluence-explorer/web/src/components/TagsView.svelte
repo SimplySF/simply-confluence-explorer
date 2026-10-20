@@ -22,7 +22,7 @@
   let error = $state<string | null>(null);
   let loaded = $state(0);
 
-  // Read again after a sync or a summary run, which can add pages and tags.
+  // Read again after a sync or an indexing run, which can add pages and tags.
   $effect(() => jobs.onFinished((j) => j.spaceKey === spaceKey && loaded++));
 
   // Another space starts at its list of tags.
@@ -92,7 +92,7 @@
     </div>
     {#if tags.length === 0}
       <p class="muted tree-message">
-        No tags yet. Pages get tags from their Confluence labels and from AI summaries (Space menu).
+        No tags yet. Pages get tags from their Confluence labels and from the AI index (Space menu).
       </p>
     {/if}
     <ul class="tags-list">

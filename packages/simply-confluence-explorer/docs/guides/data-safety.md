@@ -109,7 +109,7 @@ guard too; the exclusion rules do not apply to it, because it is not a Confluenc
 
 ## Embeddings
 
-With ChatGPT or Gemini (Google API) as the provider, generating AI summaries also sends the text of
+With ChatGPT or Gemini (Google API) as the provider, building the AI index also sends the text of
 each section of each page to that provider's embedding service, which returns a list of numbers
 describing what the section means. The numbers are stored with the synced copy and let a question
 find a section by meaning. Each question is embedded too, so it can be compared with them. These are

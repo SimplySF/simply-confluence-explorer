@@ -158,7 +158,7 @@ class Jobs {
     try {
       this.watchSummaries(await api.generateMetadata(spaceKey, rootPageId, chosen));
     } catch (e) {
-      toast(`AI summaries did not start: ${messageOf(e)}`, 'error');
+      toast(`Indexing did not start: ${messageOf(e)}`, 'error');
     }
   }
 
@@ -239,7 +239,7 @@ class Jobs {
       jobId: q.jobId,
       spaceKey: q.spaceKey,
       rootPageId: q.rootPageId,
-      label: `AI summaries: ${q.rootTitle ?? q.spaceKey}`,
+      label: `AI index: ${q.rootTitle ?? q.spaceKey}`,
       processed: q.processed,
       total: q.total,
       current: q.currentPageTitle,

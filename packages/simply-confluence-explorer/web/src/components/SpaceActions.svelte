@@ -22,7 +22,7 @@
   import JobProgress from './ui/JobProgress.svelte';
   import Menu from './ui/Menu.svelte';
 
-  // Everything done to a space as a whole: sync, AI summaries, its table of contents, a ZIP, and its rules.
+  // Everything done to a space as a whole: sync, the AI index, its table of contents, a ZIP, and its rules.
   type Props = {
     spaceKey: string;
     /** The space's synced copy, if there is one. */
