@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const MAX_CODE_LINES = 15000; // ADR-021: package src/ and web/src/, tests excluded
 const MAX_COMMENT_RATIO = 25; // ADR-014: a hard ceiling; when it is exceeded, a comment is removed and the limit stays
-const MAX_DOC_LINES = 1700; // ADR-034: every tracked .md except the decision log, history, review and the code of conduct
+const MAX_DOC_LINES = 1850; // ADR-034, ADR-055: every tracked .md except the decision log, history, review and the code of conduct
 const MAX_GUIDE_LINES = 1100; // ADR-042: the user guides in packages/*/docs/, which ship in the package
 const MAX_RUNTIME_DEPS = 7; // ADR-031: direct dependencies across every package.json
 const MAX_DEV_DEPS = 29; // ADR-031: direct devDependencies across every package.json

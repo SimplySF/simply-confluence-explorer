@@ -1,0 +1,65 @@
+# 0008 — Large spaces: packed indexing, context checks, thorough answers, and observability
+
+**Status:** Planned
+**Package:** `packages/simply-confluence-explorer`
+**Date:** 2026-10-20
+
+## Problem
+
+The space the app is built for has about 3,200 pages and uses the Gemini CLI, which has no
+embeddings and starts a process for every request. Indexing it took one request per page, one at a
+time, which is most of a day. A question read at most 12 sections, so a broad one could not be
+answered fully. Nothing showed whether the context meant for the model reached it, a question showed
+only "Thinking…" for up to a minute, and failures were counted but never explained.
+
+## Decision
+
+- **Indexing sends packs of pages** and runs a few requests at once, retrying and recording each
+  failure with its reason (ADR-054).
+- **Every request carries a context manifest**, checked against what is sent; cut-off answers are
+  reported.
+- **Retrieval stems words, expands a question with the space's topics, and flags weak matches**, and a
+  retrieval measurement guards its quality. An embedding provider can be set apart from the chat
+  provider.
+- **"Answer thoroughly"** reads many sections in batches and combines their notes.
+- **The search index builds in the background**, and a question shows the step it is on.
+- **The app keeps traces, logs and a few health numbers**, shown on an Observability page.
+
+## Behavior
+
+| route                               | what it does                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------------- |
+| `GET /api/observe/now`              | Running jobs, requests in flight, the index build, event-loop lag and charts. |
+| `GET /api/observe/logs`             | Events with filters, facet counts, repeated messages grouped, and paging.     |
+| `GET /api/observe/traces/:traceId`  | The spans of one trace.                                                       |
+| `GET /api/ai/sessions/:id/activity` | The step a question is on while it is being answered.                         |
+
+- **The manifest** lists each item meant for the model (pages, sections, files, earlier turns, the
+  question) with its size, whether it was included, and why not. Each answer shows it under **What
+  was sent**, and the engine refuses a request whose included items are missing from its payload.
+- **Packed indexing** fits small pages together up to about 60,000 characters; every page id must
+  come back, or that page is retried alone and then recorded as failed.
+- **Telemetry** is kept in `<data dir>/telemetry/` for 14 days, up to 200 MB. It records counts, ids,
+  durations, allowed page titles and error messages, never page text, prompts, answers, credentials
+  or the title of an excluded page.
+- **Problems are flagged** without setup: the server frozen for over a second, a failed context
+  check, most AI requests failing, or an index run with failures.
+
+## Alternatives considered
+
+- **A copy of Datadog's features**, with dashboards, alert rules and saved views. Declined: the page
+  answers whether the app is stuck, what was sent, where the time went and what failed, and nothing
+  more is needed yet.
+- **A local embedding model.** Declined for now: it would add a large runtime dependency (ADR-021).
+
+## Testing
+
+A generated 3,200-page space is used to measure requests per index run and the server's
+responsiveness, and a test fails if a health check waits over 250 ms while the index builds. Route
+tests check that every item the manifest includes is in what was sent, that a stand-in Gemini CLI
+receives every byte, that no telemetry file holds page text or an excluded title, and that retrieval
+finds the expected pages for a fixed set of questions.
+
+## Open questions
+
+- Real Gemini CLI timings and rate limits, to be measured on the real space.
