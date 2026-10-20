@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen, ChevronDown, ChevronUp, FileText, Folder, Plus, Tag, X } from '@lucide/svelte';
+  import { BookOpen, ChevronDown, ChevronUp, FileText, Folder, Plus, Search, Tag, X } from '@lucide/svelte';
   import type { SessionScope, TaggedPages } from '../../../src/api/types.js';
   import { api, type Coverage } from '../support/api.js';
   import { directoryLabel, readingLine, searchPages, type SpacePage } from '../support/pages.js';
@@ -88,6 +88,12 @@
   const addDirectory = (p: SpacePage): void =>
     choose({ dirs: [...dirs, p.id], pageIds: singles.filter((id) => id !== p.id) });
   const addPage = (p: SpacePage): void => choose({ pageIds: [...singles, p.id] });
+  let find = $state<HTMLInputElement>();
+  function clearSearch(): void {
+    query = '';
+    find?.focus();
+  }
+
   const toggleTag = (tag: string): void =>
     choose({ tags: chosenTags.includes(tag) ? chosenTags.filter((t) => t !== tag) : [...chosenTags, tag] });
 </script>
@@ -121,13 +127,23 @@
       {:else}
         <div class="chat-context-section">
           <label class="muted" for="chat-context-find">Find a page or directory</label>
-          <input
-            id="chat-context-find"
-            class="form-input input-sm"
-            placeholder="Start typing a title"
-            autocomplete="off"
-            bind:value={query}
-          />
+          <div class="search-field">
+            <Search size={13} />
+            <input
+              id="chat-context-find"
+              class="form-input input-sm"
+              placeholder="Start typing a title"
+              autocomplete="off"
+              bind:this={find}
+              bind:value={query}
+              onkeydown={(e) => e.key === 'Escape' && clearSearch()}
+            />
+            {#if query}
+              <button type="button" class="icon-btn" aria-label="Clear the search" title="Clear" onclick={clearSearch}>
+                <X size={13} />
+              </button>
+            {/if}
+          </div>
           {#if results.length}
             <ul class="chat-context-results">
               {#each results as p (p.id)}
