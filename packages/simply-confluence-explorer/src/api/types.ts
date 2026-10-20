@@ -334,6 +334,8 @@ export type SessionTurn = {
   proposedDraft?: string;
   /** On a co-writer's answer: a proposed series, an overview page then its child pages. */
   proposedSeries?: SeriesPage[];
+  /** The author accepted or dismissed this answer's proposal, so it is not offered again. */
+  proposalClosed?: boolean;
 };
 
 export type SessionFileInfo = {

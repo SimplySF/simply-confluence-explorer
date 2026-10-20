@@ -277,6 +277,8 @@ export const drafts = {
       r.sessions.filter((s) => !s.draft?.createdPageId),
     ),
   recheck: (id: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/recheck`, 'POST'),
+  closeProposal: (id: string, turn: number) =>
+    call<AiSessionView>(`${DRAFTS}/${key(id)}/turns/${turn}/close-proposal`, 'POST'),
   decide: (id: string, decision: RedundancyDecision, linkedPageIds: string[]) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}/decision`, 'POST', { decision, linkedPageIds }),
   addRepository: (id: string, link: string) =>

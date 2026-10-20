@@ -147,6 +147,20 @@ describe('a draft', () => {
     });
   });
 
+  it('does not offer a dismissed proposal again when the draft is opened again', async () => {
+    await withApp(async (app) => {
+      const { body: d } = await start(app, 'Replica Lag', 'Cover lag checks');
+      await app.call('POST', `/drafts/${d.id}/decision`, { decision: 'continue' });
+      await app.call('POST', `/drafts/${d.id}/messages`, { prompt: 'Draft an outline' });
+      expect((await app.call('POST', `/drafts/${d.id}/turns/0/close-proposal`)).status, 'a question').toBe(404);
+      const closed = await app.call<AiSessionView>('POST', `/drafts/${d.id}/turns/1/close-proposal`);
+      expect(closed.status).toBe(200);
+      const reopened = (await app.call<AiSessionView>('GET', `/ai/sessions/${d.id}`)).body;
+      expect(reopened.turns[1].proposedDraft).toContain('## Steps');
+      expect(reopened.turns[1].proposalClosed).toBe(true);
+    });
+  });
+
   it('is refused when its title is already used in the space, with the reason', async () => {
     await withApp(async (app) => {
       const { body: d } = await start(app, 'Database Failover');

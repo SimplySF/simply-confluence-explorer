@@ -68,7 +68,6 @@
   let busy = $state<string | null>(null);
   let error = $state<string | null>(null);
   let checkOk = $state<string | null>(null);
-  let dismissed = $state(new Set<number>());
   let confirmCreate = $state(false);
   let fileInput = $state<HTMLInputElement>();
 
@@ -155,12 +154,14 @@
     return () => clearTimeout(timer);
   });
 
+  // Only the newest proposal is offered, and only until the author accepts or dismisses it; an older
+  // one is never brought back, because it was made from a draft that has changed since.
   const proposal = $derived.by(() => {
     const turns = session?.turns ?? [];
     for (let i = turns.length - 1; i >= 0; i--) {
       const text = turns[i].proposedDraft;
       const series = turns[i].proposedSeries;
-      if ((text || series?.length) && !dismissed.has(i)) return { index: i, text, series };
+      if (text || series?.length) return turns[i].proposalClosed ? null : { index: i, text, series };
     }
     return null;
   });
@@ -169,22 +170,30 @@
     if (!session) return;
     const { id } = session;
     const [overview, ...rest] = series;
-    dismiss(index);
     tab = 0;
-    void act('series', () =>
-      drafts.save(id, {
+    void act('series', async () => {
+      await drafts.closeProposal(id, index);
+      return drafts.save(id, {
         title: overview.title,
         markdown: overview.markdown,
         children: rest.map((p) => ({ title: p.title, markdown: p.markdown })),
-      }),
-    );
+      });
+    });
   }
 
   const decide = (decision: RedundancyDecision): Promise<void> =>
     act(decision, () => drafts.decide(session!.id, decision, decision === 'link' ? linked : []));
 
+  // Only the turns are taken from the answer: the draft's text may hold an accepted proposal that is
+  // not saved yet, and must not be put back to what the server last saved.
   const dismiss = (index: number): void => {
-    dismissed = new Set(dismissed).add(index);
+    if (!session) return;
+    drafts.closeProposal(session.id, index).then(
+      (s) => {
+        if (session) session = { ...session, turns: s.turns };
+      },
+      (e: unknown) => (error = messageOf(e)),
+    );
   };
 
   function send(e: SubmitEvent): void {
