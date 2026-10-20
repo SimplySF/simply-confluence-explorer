@@ -84,4 +84,42 @@ describe('the search index', () => {
     fs.utimesSync(file, new Date(), new Date(before + 1000));
     expect(ids(index, 'quorum')).toEqual(['2']);
   });
+
+  it('finds the section of a page that answers, not only the page', () => {
+    const { index, store } = setup();
+    const runbook = page('4', 'Runbook', '');
+    runbook.storageXml = '<h1>Deploy</h1><p>Ship the build.</p><h1>Rollback</h1><p>Revert the release tag.</p>';
+    store.writePage('PLAT', runbook, '', []);
+    const [hit] = index.searchSections('PLAT', 'revert release', 5);
+    expect([hit.section.pageId, hit.section.path]).toEqual(['4', ['Rollback']]);
+    // The word is only in the heading, which the section is found by.
+    expect(index.searchSections('PLAT', 'rollback', 5)[0].section.path).toEqual(['Rollback']);
+  });
+
+  it('searches only the pages it is given', () => {
+    const { index } = setup();
+    const hits = index.searchSections('PLAT', 'database', 10, new Set(['2']));
+    expect(hits.map((h) => h.section.pageId)).toEqual(['2']);
+  });
+
+  it('splits a page again only when its version changes', () => {
+    const { index, store } = setup();
+    const first = index.sectionsOf('PLAT', '1');
+    // A new summary changes the index stamp but not the page, so the page's sections are reused.
+    store.writeMetadata('PLAT', {
+      pageId: '2',
+      title: 'Gateway Service',
+      summary: 'Routes requests.',
+      tags: [],
+      documentType: 'overview',
+      systemsMentioned: [],
+      generatedAt: new Date(Date.now() + 1000).toISOString(),
+    });
+    expect(index.sectionsOf('PLAT', '1')[0]).toBe(first[0]);
+    store.refreshPage('PLAT', page('1', 'Database Failover', 'Promote the replica.', 2));
+    const file = path.join(store.spaceDir('PLAT'), 'pages_cache', '1.json');
+    fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+    expect(index.sectionsOf('PLAT', '1')[0]).not.toBe(first[0]);
+    expect(index.sectionsOf('PLAT', '1')[0].text).toBe('Promote the replica.');
+  });
 });
