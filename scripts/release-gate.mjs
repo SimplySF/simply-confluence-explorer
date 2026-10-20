@@ -64,11 +64,23 @@ export const REVIEW_GUIDE = [
         file: `${SRC}/confluence/pagePush.ts`,
         symbol: 'writePage',
         check:
-          "Refuses to write when the page changed in Confluence after the user started editing, so nobody's newer edit is lost. Refuses when converting the page from Markdown would drop images, macros, links, mentions or task lists. A dry run writes nothing.",
+          "Refuses to write when the page changed in Confluence after the user started editing, so nobody's newer edit is lost. Builds the storage from the page's edit form, so images, macros, links, mentions and task lists are written back exactly. A dry run writes nothing.",
+      },
+      {
+        file: `${SRC}/parser/editForm.ts`,
+        symbol: 'buildStorage',
+        check:
+          'Writes each untouched block byte for byte and puts each marked part back where its marker stands. Refuses a marker the page does not have, a repeated marker, crossed container markers, and any part missing from the result that the user did not accept removing.',
       },
       {
         file: `${SRC}/branches/branchRuns.ts`,
-        check: 'When the AI proposes edits across a set of pages, only the pages the user accepted are written.',
+        check: 'When the AI proposes edits across a set of pages, only the changes the user accepted are written.',
+      },
+      {
+        file: `${SRC}/branches/pageChanges.ts`,
+        symbol: 'acceptedText',
+        check:
+          'The text pushed is the page with only the accepted changes applied, and only parts those changes remove are passed as removed.',
       },
       {
         file: `${SRC}/drafts/drafts.ts`,
@@ -216,7 +228,8 @@ export const REVIEW_GUIDE = [
   },
   {
     surface: 'Telemetry kept on disk',
-    about: "The app's own traces, logs and health numbers, kept in the data folder and shown on the Observability page.",
+    about:
+      "The app's own traces, logs and health numbers, kept in the data folder and shown on the Observability page.",
     items: [
       {
         file: `${SRC}/telemetry/telemetry.ts`,

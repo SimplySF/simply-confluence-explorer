@@ -69,7 +69,7 @@ rather than dropping them:
 | A code block                        | A fenced code block, with its language        |
 | A task list                         | `- [x]` and `- [ ]`                           |
 
-This is also why some pages cannot be pushed back from Markdown; see
+A change to a page keeps these parts as markers instead and writes each one back exactly; see
 [Changing pages from a chat](/guides/changing-pages/).
 
 ## The table of contents
