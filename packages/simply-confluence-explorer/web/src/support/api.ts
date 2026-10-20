@@ -82,7 +82,6 @@ export const api = {
   resolve: (input: string) => call<ResolveResponse>('/spaces/resolve-url', 'POST', { input }),
   page: (pageId: string, spaceKey: string) =>
     call<PageResponse>(`/pages/${key(pageId)}?${new URLSearchParams({ spaceKey })}`),
-  parse: (storageXml: string) => call<{ markdown: string }>('/parse', 'POST', { storageXml }),
 
   synced: () => call<{ spaces: SyncedSpace[] }>('/space-cache/cached').then((r) => r.spaces),
   sync: (spaceKey: string) => call<SyncProgress>('/space-cache/sync', 'POST', { spaceKey }),

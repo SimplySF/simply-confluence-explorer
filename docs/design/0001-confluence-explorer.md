@@ -48,7 +48,7 @@ its own design doc, named in the last column.
 
 The page layout is the one settled in ADR-026:
 
-- The **header** holds the connection status, New page, Snippet parser, Settings, and the theme
+- The **header** holds the connection status, New page, Settings, and the theme
   switch.
 - The **sidebar** holds the space switcher, the Space menu, and the page tree.
 - A page has three **tabs**: Read, Chat, and Details (ADR-049).

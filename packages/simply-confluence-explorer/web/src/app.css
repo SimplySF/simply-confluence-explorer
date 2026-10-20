@@ -2040,25 +2040,6 @@ body {
   font-size: 0.92rem;
 }
 
-/* Snippet parser */
-.snippet-input {
-  width: 100%;
-  height: 150px;
-  resize: vertical;
-}
-.snippet-output {
-  min-height: 260px;
-}
-.snippet-preview {
-  max-width: none;
-  margin: 0;
-  padding: 0.8rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background-color: var(--bg-panel-secondary);
-  overflow: auto;
-}
-
 @media (max-width: 760px) {
   .two-col {
     grid-template-columns: 1fr;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileCode, FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
+  import { FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
   import { onMount, untrack } from 'svelte';
   import type {
     BranchFinding,
@@ -15,7 +15,6 @@
   import type { SpacePage } from './support/pages.js';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
-  import SnippetDialog from './components/SnippetDialog.svelte';
   import Toasts from './components/ui/Toasts.svelte';
   import { api } from './support/api.js';
   import { jobs, type Job } from './support/jobs.svelte.js';
@@ -68,7 +67,7 @@
 
   let sidebarWidth = $state(Math.max(260, Math.min(850, Number(remembered('sidebar_width')) || 340)));
   let resizing = $state(false);
-  let dialog = $state<'settings' | 'snippet' | 'new-page' | null>(null);
+  let dialog = $state<'settings' | 'new-page' | null>(null);
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
   let view = $state<'page' | 'chat'>('page');
   let chatSeed = $state<ChatSeed | null>(null);
@@ -282,13 +281,6 @@
       </button>
       <button
         class="btn btn-secondary btn-sm"
-        onclick={() => (dialog = 'snippet')}
-        title="Convert a pasted storage-format snippet to Markdown"
-      >
-        <FileCode size={14} /> Snippet parser
-      </button>
-      <button
-        class="btn btn-secondary btn-sm"
         onclick={() => (dialog = 'settings')}
         title="Connection and AI provider (Ctrl+,)"
       >
@@ -389,8 +381,6 @@
 
   {#if dialog === 'settings'}
     <SettingsDialog onClose={() => (dialog = null)} onSaved={() => connectionRev++} />
-  {:else if dialog === 'snippet'}
-    <SnippetDialog onClose={() => (dialog = null)} />
   {:else if dialog === 'new-page' && page}
     <NewPageDialog
       spaceKey={(page.detail.spaceKey || activeSpace).toUpperCase()}

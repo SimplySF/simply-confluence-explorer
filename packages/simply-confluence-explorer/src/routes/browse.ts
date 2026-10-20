@@ -17,7 +17,7 @@
 import type { PageResponse, PageTreeNode, PageTreeResponse, ResolveResponse } from '../api/types.js';
 import { ConfluenceClient } from '../confluence/client.js';
 import { HttpError, type Router } from '../http/router.js';
-import { parsePage, storageToBody } from '../parser/convert.js';
+import { parsePage } from '../parser/convert.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { Services } from './api.js';
 
@@ -124,7 +124,5 @@ export function addBrowseRoutes(router: Router, services: Services): Router {
         }
         return { detail, parsed: parsePage(detail), isLocal: local !== undefined };
       })
-      // Converts a pasted storage-format snippet, for the snippet parser. Nothing is read or stored.
-      .add('POST', '/api/parse', ({ body }) => ({ markdown: storageToBody(optionalString(body, 'storageXml') ?? '') }))
   );
 }

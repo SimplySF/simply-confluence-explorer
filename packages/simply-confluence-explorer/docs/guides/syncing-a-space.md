@@ -49,14 +49,6 @@ page's latest version, sync the space again.
 
 ![A page shown as Markdown, with its frontmatter at the top](../images/read-markdown.webp)
 
-### Convert a snippet
-
-**Snippet parser** in the header converts a piece of Confluence storage format that you paste in, such
-as a macro copied from another page's source, and shows its Markdown beside a rendered preview. It
-reads nothing from Confluence and saves nothing.
-
-![The snippet parser, with storage format above and its Markdown and rendered view below](../images/snippet.webp)
-
 ### What the Markdown looks like
 
 Each page's Markdown starts with a short block of details between `---` lines, called frontmatter:
