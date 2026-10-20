@@ -112,10 +112,15 @@ describe('a 3,200-page space', () => {
     const heartbeat = (async (): Promise<void> => {
       while (working) {
         const at = Date.now();
+        const cpu = process.cpuUsage();
         // eslint-disable-next-line no-await-in-loop -- each check waits for its answer, which is what is measured
         await fetch(`${base}/health`);
-        waits.push(Date.now() - at);
-        if (Date.now() - at > 100) labelled.push(`${step}: ${Date.now() - at} ms`);
+        const wait = Date.now() - at;
+        waits.push(wait);
+        // CPU time near the wait means this process was busy; far less means the machine kept it waiting.
+        const spent = process.cpuUsage(cpu);
+        const used = Math.round((spent.user + spent.system) / 1000);
+        if (wait > 100) labelled.push(`${step}: ${wait} ms (CPU ${used} ms)`);
         // eslint-disable-next-line no-await-in-loop -- as above
         await new Promise((resolve) => setTimeout(resolve, 20));
       }

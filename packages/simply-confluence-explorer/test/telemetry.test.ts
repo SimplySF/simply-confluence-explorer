@@ -176,7 +176,11 @@ describe('a frozen server', () => {
       while (Date.now() < until) {
         // Holds the event loop, as converting a large space all at once would.
       }
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // The check that sees the freeze may be the one after next on a busy machine, so it is waited for.
+      const flagged = (): boolean => t.now().problems.some((p) => p.problem === 'frozen');
+      for (let waited = 0; waited < 3000 && !flagged(); waited += 50)
+        // eslint-disable-next-line no-await-in-loop -- polls until the check has run
+        await new Promise((resolve) => setTimeout(resolve, 50));
       expect(t.now().problems.map((p) => p.problem)).toContain('frozen');
     } finally {
       t.close();
