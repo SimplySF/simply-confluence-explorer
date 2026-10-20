@@ -27,6 +27,7 @@ import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
 import type { MetadataPipeline } from '../spaces/metadata.js';
 import type { SearchIndex } from '../spaces/searchIndex.js';
+import type { VectorIndex } from '../spaces/vectors.js';
 import { GitLabClient, type GitLabStore } from '../gitlab/client.js';
 import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
@@ -52,6 +53,8 @@ export type Services = {
   metadata: MetadataPipeline;
   branches: BranchRunner;
   index: SearchIndex;
+  /** Section embeddings, when the AI provider makes them (ADR-051). */
+  vectors: VectorIndex;
   /** The GitLab connection the server holds (ADR-050). */
   gitlab: GitLabStore;
   /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */

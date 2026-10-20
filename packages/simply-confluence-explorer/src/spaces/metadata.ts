@@ -24,6 +24,7 @@ import type { ExclusionManager } from './exclusionManager.js';
 import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
 import { tagIndex } from './tags.js';
+import type { VectorIndex } from './vectors.js';
 
 /** The kind of metadata this code writes. Metadata of an older kind counts as missing and is regenerated. */
 export const METADATA_VERSION = 2;
@@ -108,7 +109,8 @@ export async function generateMetadata(
  * Generates AI summaries for every synced page in a space, or in one branch of it, as a background
  * job. Excluded pages are never sent, and a page that already has current metadata is skipped, so the
  * job can be run again to fill in what failed, and after a sync it redoes only the pages that changed
- * (a new version of a page removes its metadata). The table of contents is rebuilt afterwards, because it
+ * (a new version of a page removes its metadata). When the AI provider makes embeddings, each page's
+ * sections are embedded after its metadata (ADR-051). The table of contents is rebuilt afterwards, because it
  * shows the summaries.
  */
 export class MetadataPipeline {
@@ -119,6 +121,7 @@ export class MetadataPipeline {
     private readonly exclusions: ExclusionManager,
     private readonly ai: () => AiEngine,
     log: (message: string) => void,
+    private readonly vectors?: VectorIndex,
   ) {
     this.jobs = new JobRunner<MetadataProgress>('meta', (job, error) =>
       log(`AI summaries for ${job.spaceKey} failed: ${errorMessage(error)}`),
@@ -183,11 +186,40 @@ export class MetadataPipeline {
     return this.store.visiblePages(spaceKey);
   }
 
+  /** The model the engine embeds with, when there is an index to keep its vectors in. */
+  private embeddingModel(): string | null {
+    return this.vectors ? (this.ai().embeddingModel?.() ?? null) : null;
+  }
+
+  /** Pages with no current metadata, or, when the engine embeds, no vectors for their version. */
   private missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
+    const model = this.embeddingModel();
     return this.pagesOf(spaceKey, rootPageId, pageIds).filter(
       (p) =>
-        !this.exclusions.isPageExcluded(p, spaceKey) && !isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)),
+        !this.exclusions.isPageExcluded(p, spaceKey) &&
+        (!isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)) || (!!model && !this.vectors?.has(p, model))),
     );
+  }
+
+  /**
+   * Gives one page current metadata if it has none, then section vectors if the engine makes them.
+   * Returns the topics it gave the page, for the run's shared list.
+   */
+  private async index(page: PageDetail, spaceKey: string, ai: AiEngine, vocabulary: string[]): Promise<string[]> {
+    let tags: string[] = [];
+    if (!isCurrentMetadata(this.store.readMetadata(spaceKey, page.id))) {
+      const metadata = await generateMetadata(page, ai, vocabulary);
+      this.store.writeMetadata(spaceKey, metadata);
+      tags = metadata.tags;
+    }
+    const model = this.embeddingModel();
+    if (model && ai.embed && this.vectors && !this.vectors.has(page, model)) {
+      const texts = splitSections(page.id, parsePage(page).markdown).map(
+        (section) => `${sectionName(page.title, section)}\n\n${section.text}`,
+      );
+      this.vectors.write(page, model, await ai.embed(texts, { spaceKey }));
+    }
+    return tags;
   }
 
   private async run(job: MetadataProgress, spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<void> {
@@ -204,9 +236,7 @@ export class MetadataPipeline {
       const vocabulary = [...uses].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
       try {
         // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
-        const metadata = await generateMetadata(page, ai, vocabulary);
-        this.store.writeMetadata(spaceKey, metadata);
-        for (const tag of metadata.tags) uses.set(tag, (uses.get(tag) ?? 0) + 1);
+        for (const tag of await this.index(page, spaceKey, ai, vocabulary)) uses.set(tag, (uses.get(tag) ?? 0) + 1);
       } catch {
         // Counted and skipped; running the job again retries every page still without a summary.
         job.errorCount++;

@@ -23,7 +23,7 @@ import { ConnectionStore } from './confluence/connection.js';
 import { localOnly } from './http/guards.js';
 import { sendJson, type Router } from './http/router.js';
 import { createApi } from './routes/api.js';
-import { ConfiguredAi, type Transport } from './ai/engine.js';
+import { ConfiguredAi, type EmbedTransport, type Transport } from './ai/engine.js';
 import { SessionStore } from './ai/sessions.js';
 import { AiSettingsStore } from './ai/settings.js';
 import { BranchRunner } from './branches/branchRuns.js';
@@ -31,6 +31,7 @@ import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
 import { MetadataPipeline } from './spaces/metadata.js';
 import { SearchIndex } from './spaces/searchIndex.js';
+import { VectorIndex } from './spaces/vectors.js';
 import { GitLabStore } from './gitlab/client.js';
 import { SpaceStore } from './spaces/spaceStore.js';
 import { SpaceSync } from './spaces/sync.js';
@@ -69,6 +70,8 @@ export type ServerOptions = {
    * sent can be checked and nothing leaves the machine.
    */
   aiTransport?: Transport;
+  /** Embeds texts in place of the configured provider, for the same reason. */
+  embedTransport?: EmbedTransport;
 };
 
 // Sent with every response. They stop the app being framed by another site, stop a browser
@@ -103,7 +106,14 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const exclusions = new ExclusionManager(dataDir, log);
   const store = new SpaceStore(dataDir, exclusions, log);
   const gitlab = new GitLabStore(dataDir);
-  const ai = new ConfiguredAi(new AiSettingsStore(dataDir, env), { dataDir, env, log, transport: options.aiTransport });
+  const ai = new ConfiguredAi(new AiSettingsStore(dataDir, env), {
+    dataDir,
+    env,
+    log,
+    transport: options.aiTransport,
+    embedTransport: options.embedTransport,
+  });
+  const vectors = new VectorIndex(store);
   const api = createApi({
     version,
     dataDir,
@@ -116,9 +126,10 @@ export function createServer(options: ServerOptions = {}): http.Server {
     sync: new SpaceSync(store, exclusions, client, log),
     ai,
     sessions: new SessionStore(dataDir),
-    metadata: new MetadataPipeline(store, exclusions, () => ai, log),
+    metadata: new MetadataPipeline(store, exclusions, () => ai, log, vectors),
     branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log }),
     index: new SearchIndex(store),
+    vectors,
     gitlab,
   });
   const isLocal = localOnly(env);

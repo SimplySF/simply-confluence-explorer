@@ -16,8 +16,8 @@
 
 // The only module that talks to the AI providers' APIs, so the question "where do pages go?" is
 // answered by reading one file (ADR-017). Every call here sends Confluence content to a third party.
-// `complete` accepts only a GuardedPayload (ADR-022), and its callers have already applied the
-// space's .confluenceignore.
+// `complete` and `embed` accept only a GuardedPayload (ADR-022), and their callers have already
+// applied the space's .confluenceignore.
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
@@ -114,6 +114,50 @@ export async function complete(
   if (!cfg.model) throw new Error(`no model is chosen for ${provider}`);
   const run = { anthropic, openai, gemini }[provider];
   return run(cfg, payload.system, payload.messages, signal);
+}
+
+/**
+ * The embedding model each provider offers (ADR-051). Claude has none, so a space searched with Claude
+ * is searched by its words and metadata alone.
+ */
+export const EMBEDDING_MODELS: Partial<Record<ApiProvider, string>> = {
+  openai: 'text-embedding-3-small',
+  gemini: 'gemini-embedding-001',
+};
+
+/** The length of every vector, small enough that a large space's vectors fit in memory. */
+export const EMBEDDING_DIMENSIONS = 512;
+
+/**
+ * Embeds each message of a payload the outbound guard has passed, returning one vector per message.
+ *
+ * @param provider A provider in `EMBEDDING_MODELS`.
+ * @param cfg Its settings, including the key.
+ * @param payload The guarded texts, one per message.
+ * @param signal Ends the request when the person stops it.
+ */
+export async function embed(
+  provider: ApiProvider,
+  cfg: ResolvedApi,
+  payload: GuardedPayload,
+  signal?: AbortSignal,
+): Promise<number[][]> {
+  const model = EMBEDDING_MODELS[provider];
+  if (!model) throw new Error(`${provider} offers no embeddings`);
+  if (!cfg.apiKey) throw new Error(`no API key is set for ${provider}`);
+  const input = payload.messages.map((m) => m.content);
+  if (input.length === 0) return [];
+  if (provider === 'openai') {
+    const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
+    const response = await client.embeddings.create({ model, input, dimensions: EMBEDDING_DIMENSIONS }, { signal });
+    return response.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
+  }
+  const response = await geminiClient(cfg).models.embedContent({
+    model,
+    contents: input,
+    config: { outputDimensionality: EMBEDDING_DIMENSIONS, abortSignal: signal },
+  });
+  return (response.embeddings ?? []).map((e) => e.values ?? []);
 }
 
 /**
