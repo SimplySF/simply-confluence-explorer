@@ -1301,7 +1301,7 @@ template, logo and theme as the other SimplySF sites.
 
 ## ADR-044 — A stable release is published when a second person approves its release pull request, instead of answering a written review packet
 
-**Status:** accepted, 2026-10-19. Amends ADR-001 and supersedes the stable-release half of ADR-039.
+**Status:** accepted, 2026-10-19. Amended by ADR-053. Amends ADR-001 and supersedes the stable-release half of ADR-039.
 
 ADR-039 held back stable releases until a second reviewer had written an answer for each
 load-bearing surface into `docs/review/<version>.md`. The maintainer replaced that with a review the
@@ -1526,3 +1526,31 @@ section and screenshot. The converter itself stays: every other part of the app 
 **The argument against:** someone checking how a macro converts loses a quick way to do it. That is
 accepted because the Details tab shows how each real page converts, which is the case that matters,
 and the header is clearer with one button fewer.
+
+---
+
+## ADR-053 — Before 1.0, a release pull request merged by a maintainer is published without a second approval
+
+**Status:** accepted, 2026-10-20. Amends ADR-044, for versions below 1.0.0 only.
+
+The app is in rapid development, and waiting for a second person held back a finished release.
+The release workflow opens release pull requests under the maintainer's own account, so GitHub does
+not let the maintainer approve them. The maintainer chose to be able to release alone until the
+first major version.
+
+- **Below 1.0.0**, `scripts/release-gate.mjs` lets a release through when its pull request came from
+  `release/<version>` and was merged by a maintainer, with or without an approval. Maintainers are
+  listed by their GitHub login in the repository variable `RELEASE_MAINTAINERS`, which the release
+  workflow passes to the gate. The list lives in the repository's settings, not in its files, so no
+  account name is written into this public repository.
+- **From 1.0.0**, the exception ends without any change to the code: ADR-044's approval by someone
+  other than the pull request's author is required again.
+- **A request for changes still stops a release**, whoever merges it.
+
+**The argument against:** a second reviewer is the only human check on code that writes to
+Confluence and sends pages to AI providers, and ADR-001 declared stakes `real` because a team depends
+on the app. Releases below 1.0 that a maintainer merges alone are reviewed by nobody but their
+author. That is accepted for now because the maintainer reviews every pull request before merging
+it, every change to a load-bearing surface is still flagged in its pull request, and the release
+pull request still lists those surfaces for anyone who wants to read them. The project does not lower
+its declared stakes; it records this as a time-limited exception that ends at 1.0.0.
