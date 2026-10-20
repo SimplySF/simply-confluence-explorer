@@ -300,9 +300,9 @@ describe('AI summaries for chosen pages', () => {
     await withApp(async (app) => {
       await sync(app, 'PEOPLE');
       const ids = [fake.page('PEOPLE', 'Travel Policy').id, fake.page('PEOPLE', 'Remote Work Policy').id];
-      const coverage = (body: unknown): Promise<{ body: { pages: number; missing: number } }> =>
+      const coverage = (body: unknown): Promise<{ body: { pages: number; missing: number; fits?: boolean } }> =>
         app.call('POST', '/space-cache/PEOPLE/metadata/coverage', body);
-      expect((await coverage({ pageIds: ids })).body).toEqual({ pages: 2, missing: 2 });
+      expect((await coverage({ pageIds: ids })).body).toMatchObject({ pages: 2, missing: 2 });
       const { body: started } = await app.call<MetadataProgress>('POST', '/space-cache/PEOPLE/metadata/generate', {
         pageIds: ids,
       });
@@ -315,15 +315,15 @@ describe('AI summaries for chosen pages', () => {
       }
       expect(progress.total).toBe(2);
       expect(app.sent).toHaveLength(2);
-      expect((await coverage({ pageIds: ids })).body).toEqual({ pages: 2, missing: 0 });
+      expect((await coverage({ pageIds: ids })).body).toMatchObject({ pages: 2, missing: 0 });
       const whole = (await coverage({})).body;
       expect(whole.missing).toBe(whole.pages - 2);
       const salary = fake.page('PEOPLE', 'Salary Bands').id;
-      expect((await coverage({ pageIds: [salary] })).body).toEqual({ pages: 0, missing: 0 });
+      expect((await coverage({ pageIds: [salary] })).body).toMatchObject({ pages: 0, missing: 0 });
       expect((await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', { pageIds: ['../x'] })).status).toBe(400);
       // A directory counts with every page under it, as a chat on it reads them.
       const policies = fake.page('PEOPLE', 'Policies').id;
-      expect((await coverage({ dirs: [policies] })).body).toEqual({ pages: 3, missing: 1 });
+      expect((await coverage({ dirs: [policies] })).body).toEqual({ pages: 3, missing: 1, fits: true });
     });
   });
 });

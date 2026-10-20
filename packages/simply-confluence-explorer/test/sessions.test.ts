@@ -19,7 +19,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, test } from 'vitest';
+import { afterAll, beforeAll, expect, test } from 'vitest';
 import type { AiSessionView } from '../src/api/types.js';
 import type { RetrievedContext } from '../src/spaces/contextRetriever.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
@@ -534,4 +534,14 @@ test('an excluded page is left out of a corpus, and an excluded directory refuse
     }).map((p) => p.title);
     assert.deepEqual(titles, ['Remote Work Policy']);
   });
+});
+
+test('summary coverage says whether chosen pages fit one request, so the chat can say how it reads them', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const coverage = async (body: unknown): Promise<unknown> =>
+      (await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', body)).body;
+    expect(await coverage({})).toMatchObject({ fits: false });
+    expect(await coverage({ pageIds: [fake.page('PEOPLE', 'Benefits Overview').id] })).toMatchObject({ fits: true });
+  }, RETRIEVING);
 });

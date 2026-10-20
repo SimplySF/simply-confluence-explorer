@@ -3,6 +3,7 @@
   import { untrack } from 'svelte';
   import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
   import { jobs } from '../support/jobs.svelte.js';
+  import type { SpacePage } from '../support/pages.js';
   import { sessions, type DraftSummary } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
@@ -11,12 +12,12 @@
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
 
   // Conversations about a space, kept on this machine and listed beside the one open (ADR-049). A chat
-  // reads the whole space, where each question finds its own pages, or pages the person chose.
+  // reads the whole space or the pages the person chose, and each question finds its sections (ADR-051).
   export type ChatSeed = { title: string; scope: SessionScope };
   type Props = {
     spaceKey: string;
     /** The space's pages, to choose by name; excluded pages are never among them. */
-    pages: Array<{ id: string; title: string }>;
+    pages: SpacePage[];
     /** Start a conversation about these pages, such as a tag's. */
     seed: ChatSeed | null;
     onSeeded: () => void;
@@ -216,8 +217,9 @@
         <MessagesSquare size={32} />
         <strong>Ask about {spaceKey}</strong>
         <p>
-          The chat reads the whole space, finding the pages each question needs, or only the pages you choose under
-          Reading above. Every answer names the pages it read. Chats are saved on this machine.
+          The chat reads the whole space, or the directories, pages and tags you choose under Reading above, however
+          many there are. Each question finds the sections it needs, and every answer names them. Chats are saved on
+          this machine.
         </p>
       {/snippet}
     </ChatThread>

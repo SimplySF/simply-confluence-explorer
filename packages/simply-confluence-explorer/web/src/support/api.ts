@@ -64,6 +64,10 @@ async function call<T>(url: string, method = 'GET', body?: unknown, signal?: Abo
 }
 
 export type Descendants = { count: number; descendantIds: string[]; titles: string[] };
+/** Pages chosen as a chat chooses them: directories with every page under them, single pages, and tags. */
+export type Chosen = { dirs?: string[]; pageIds?: string[]; tags?: string[] };
+/** How many of some pages have an AI summary, and whether all of them fit one request. */
+export type Coverage = { pages: number; missing: number; fits: boolean };
 export type DraftSummary = AiSessionView & { turnCount: number };
 
 export const api = {
@@ -112,15 +116,15 @@ export const api = {
       `/space-cache/${key(spaceKey)}/pages/${key(pageId)}/metadata/generate`,
       'POST',
     ).then((r) => r.metadata),
-  generateMetadata: (spaceKey: string, rootPageId?: string, pageIds?: string[]) =>
-    call<MetadataProgress>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId, pageIds }),
+  generateMetadata: (spaceKey: string, rootPageId?: string, chosen?: Chosen) =>
+    call<MetadataProgress>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId, ...chosen }),
   metadataStatus: (jobId: string) => call<MetadataProgress>(`/space-cache/metadata/status/${key(jobId)}`),
   activeMetadata: (spaceKey: string) =>
     call<{ activeJob: MetadataProgress | null }>(`/space-cache/${key(spaceKey)}/metadata/active`).then(
       (r) => r.activeJob,
     ),
-  summaryCoverage: (spaceKey: string, body: { rootPageId?: string; pageIds?: string[] }) =>
-    call<{ pages: number; missing: number }>(`/space-cache/${key(spaceKey)}/metadata/coverage`, 'POST', body),
+  summaryCoverage: (spaceKey: string, body: { rootPageId?: string } & Chosen) =>
+    call<Coverage>(`/space-cache/${key(spaceKey)}/metadata/coverage`, 'POST', body),
   cancelMetadata: (jobId: string) => call(`/space-cache/metadata/cancel/${key(jobId)}`, 'POST'),
 
   gitlab: () => call<GitLabView>('/gitlab'),

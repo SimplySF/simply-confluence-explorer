@@ -128,6 +128,14 @@ function outlineOf(key: string, deps: RetrieverDeps): string {
   return `${outline}\n---\n\n`;
 }
 
+/**
+ * About how many characters reading every page would take, from the section index, so deciding
+ * whether a corpus fits does not convert every page. Each section counts its heading too.
+ */
+export function corpusSize(spaceKey: string, pages: PageDetail[], index: SearchIndex): number {
+  return pages.reduce((n, p) => n + index.sectionsOf(spaceKey, p.id).reduce((m, s) => m + s.text.length + 20, 0), 0);
+}
+
 type Candidate = { id: string; summary?: string; line: string };
 type Chosen = Array<{ id: string; why?: string }>;
 
@@ -228,11 +236,7 @@ export async function retrieveContext(
 ): Promise<RetrievedContext> {
   const key = spaceKey.toUpperCase();
   const budget = options.budget ?? CONTEXT_CHAR_LIMIT;
-  const size = pages.reduce(
-    (n, p) => n + deps.index.sectionsOf(key, p.id).reduce((m, s) => m + s.text.length + 20, 0),
-    0,
-  );
-  if (size <= budget) return readInFull(key, pages, deps, budget);
+  if (corpusSize(key, pages, deps.index) <= budget) return readInFull(key, pages, deps, budget);
 
   const byId = new Map(pages.map((p) => [p.id, p]));
   const candidates = await candidatesFor(key, byId, [query.question, query.previous].filter(Boolean).join(' '), deps);

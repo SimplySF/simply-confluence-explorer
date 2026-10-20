@@ -135,7 +135,7 @@
     <SummaryCoverage
       {spaceKey}
       rootPageId={effective === 'branch' ? detail.id : undefined}
-      pageIds={effective === 'page' ? [detail.id] : undefined}
+      chosen={effective === 'page' ? { pageIds: [detail.id] } : undefined}
     />
   {/if}
   {#if engine && !engine.available}

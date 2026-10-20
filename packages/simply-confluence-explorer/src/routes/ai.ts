@@ -25,7 +25,7 @@ import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
-import { retrieveContext } from '../spaces/contextRetriever.js';
+import { corpusSize, retrieveContext } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { generateMetadata } from '../spaces/metadata.js';
@@ -227,14 +227,15 @@ export function addAiRoutes(router: Router, services: Services): Router {
           chosenIdsOf(body, params.spaceKey, store, exclusions),
         ),
       )
-      // How many of a space's, a section's or a list's pages have an AI summary, for a chat to show.
-      .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', ({ params, body }) =>
-        metadata.coverage(
-          params.spaceKey,
-          optionalString(body, 'rootPageId'),
-          chosenIdsOf(body, params.spaceKey, store, exclusions),
-        ),
-      )
+      // How many of a space's, a section's or chosen pages have an AI summary, for a chat to show, and
+      // whether they fit one request, so the chat can say whether it reads them all (ADR-051).
+      .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', ({ params, body }) => {
+        const key = params.spaceKey.toUpperCase();
+        const rootPageId = optionalString(body, 'rootPageId');
+        const ids = chosenIdsOf(body, key, store, exclusions);
+        const size = corpusSize(key, metadata.allowedPages(key, rootPageId, ids), index);
+        return { ...metadata.coverage(key, rootPageId, ids), fits: size <= services.contextChars };
+      })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);
         if (!job) throw new HttpError(404, `no metadata job ${params.jobId}`);

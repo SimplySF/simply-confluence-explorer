@@ -12,6 +12,7 @@
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
+  import type { SpacePage } from './support/pages.js';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import SnippetDialog from './components/SnippetDialog.svelte';
@@ -71,8 +72,13 @@
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
   let view = $state<'page' | 'chat'>('page');
   let chatSeed = $state<ChatSeed | null>(null);
-  const flatten = (nodes: PageTreeNode[]): Array<{ id: string; title: string }> =>
-    nodes.flatMap((n) => [{ id: n.id, title: n.title }, ...flatten(n.children)]);
+  // Every page with where it sits and the pages under it, so a chat can add a directory in one step.
+  const flatten = (nodes: PageTreeNode[], path: string[] = []): SpacePage[] =>
+    nodes.flatMap((n) => {
+      const below = flatten(n.children, [...path, n.title]);
+      const under = below.map((p) => p.id);
+      return [{ id: n.id, title: n.title, path: path.join(' › '), under }, ...below];
+    });
   const allPages = $derived(flatten(tree));
 
   function openPage(id: string): void {
@@ -320,7 +326,6 @@
             scope: {
               kind: 'pages',
               spaceKey: activeSpace,
-              pageIds: t.pages.slice(0, 50).map((p) => p.id),
               tags: [t.tag],
             },
           };

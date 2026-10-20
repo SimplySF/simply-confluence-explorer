@@ -19,7 +19,7 @@
 // show it and lead back to it.
 
 import type { BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
-import { api, branches } from './api.js';
+import { api, branches, type Chosen } from './api.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
@@ -106,9 +106,9 @@ class Jobs {
     return () => this.listeners.delete(listener);
   }
 
-  public async startSummaries(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<void> {
+  public async startSummaries(spaceKey: string, rootPageId?: string, chosen?: Chosen): Promise<void> {
     try {
-      this.watchSummaries(await api.generateMetadata(spaceKey, rootPageId, pageIds));
+      this.watchSummaries(await api.generateMetadata(spaceKey, rootPageId, chosen));
     } catch (e) {
       toast(`AI summaries did not start: ${messageOf(e)}`, 'error');
     }

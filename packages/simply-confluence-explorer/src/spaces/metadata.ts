@@ -172,8 +172,16 @@ export class MetadataPipeline {
    */
   public coverage(spaceKey: string, rootPageId?: string, pageIds?: string[]): { pages: number; missing: number } {
     const key = spaceKey.toUpperCase();
-    const pages = this.pagesOf(key, rootPageId, pageIds).filter((p) => !this.exclusions.isPageExcluded(p, key));
-    return { pages: pages.length, missing: this.missing(key, rootPageId, pageIds).length };
+    return {
+      pages: this.allowedPages(key, rootPageId, pageIds).length,
+      missing: this.missing(key, rootPageId, pageIds).length,
+    };
+  }
+
+  /** The synced pages of a space, a section or a list, leaving out excluded pages. */
+  public allowedPages(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
+    const key = spaceKey.toUpperCase();
+    return this.pagesOf(key, rootPageId, pageIds).filter((p) => !this.exclusions.isPageExcluded(p, key));
   }
 
   private pagesOf(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
