@@ -3,11 +3,21 @@
 </script>
 
 <script lang="ts">
-  import { Bot, FileText, Lightbulb, ListOrdered, RotateCcw, ShieldCheck, ShieldOff, UserCheck } from '@lucide/svelte';
+  import {
+    Bot,
+    FileText,
+    Lightbulb,
+    ListOrdered,
+    RotateCcw,
+    Search,
+    ShieldCheck,
+    ShieldOff,
+    UserCheck,
+  } from '@lucide/svelte';
   import type { BranchFinding, PageDetail } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
-  import ChatThread from './ChatThread.svelte';
+  import ChatThread, { type Starter } from './ChatThread.svelte';
   import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
 
@@ -41,32 +51,38 @@
     onWriteNewPage,
   }: Props = $props();
 
-  const QUICK = [
+  // Questions to begin with, offered beside the review until the first question is asked.
+  const QUICK: Starter[] = [
     {
       label: 'Summary',
+      detail: 'Key takeaways, who it is for, and what it sets out to do.',
       icon: FileText,
       prompt:
         'Provide an executive summary of this documentation with key takeaways, target audience, and primary objectives.',
     },
     {
       label: 'Action items & decisions',
+      detail: 'The decisions, owners and dates it records.',
       icon: UserCheck,
       prompt:
         'Extract all action items, decisions made, designated owners, and upcoming milestones from this documentation.',
     },
     {
       label: 'Technical review',
+      detail: 'Responsibilities, data flow, security and failure modes.',
       icon: ShieldCheck,
       prompt:
         'Perform a technical architecture review: analyze component responsibilities, data flow, security considerations, and potential edge cases or failure modes.',
     },
     {
       label: 'Runbook checklist',
+      detail: 'Its operational steps as a numbered checklist.',
       icon: ListOrdered,
       prompt: 'Transform all procedural or operational steps into a concise, numbered runbook checklist.',
     },
     {
       label: 'Explain simply',
+      detail: 'What it describes, without the jargon.',
       icon: Lightbulb,
       prompt:
         'Explain what this system or documentation describes in simple, beginner-friendly terms without excessive technical jargon.',
@@ -94,9 +110,22 @@
     );
   });
 
-  function ask(prompt: string): void {
-    if (!chat.sending && !blocked) void chat.send(prompt);
-  }
+  const review = $derived<Starter>(
+    effective === 'branch'
+      ? {
+          label: 'Review for problems',
+          detail:
+            'Repeats, contradictions, out-of-date and missing pages across these pages, as suggestions you can tick and queue as edits.',
+          icon: Search,
+          review: true,
+        }
+      : {
+          label: 'Suggest improvements',
+          detail: 'Clarity, missing detail and structure, as suggestions you can tick and queue as edits.',
+          icon: Search,
+          review: true,
+        },
+  );
 
   const turns = $derived(chat.session?.turns ?? []);
 </script>
@@ -148,15 +177,6 @@
     </div>
   {/if}
 
-  <div class="quick-actions">
-    {#each QUICK as q (q.label)}
-      <button class="btn btn-secondary btn-sm" disabled={chat.sending || blocked} onclick={() => ask(q.prompt)}>
-        <q.icon size={13} />
-        {q.label}
-      </button>
-    {/each}
-  </div>
-
   <ChatThread
     {chat}
     {subject}
@@ -165,13 +185,14 @@
     {onSelectPage}
     {onPushed}
     {onWriteNewPage}
-    reviewLabel={effective === 'branch' ? 'Review for problems' : 'Suggest improvements'}
+    starters={[review, ...QUICK]}
   >
     {#snippet empty()}
       <Bot size={32} />
       <strong>Ask about {subject}</strong>
       <p>
-        Use a quick action above or ask your own question. The conversation is saved and picks up where you left off.
+        Start with one of these, or ask your own question below. The conversation is saved and picks up where you left
+        off; <strong>New conversation</strong> brings these back.
       </p>
     {/snippet}
   </ChatThread>

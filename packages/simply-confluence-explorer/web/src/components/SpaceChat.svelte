@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MessagesSquare, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
+  import { Compass, FileText, MessagesSquare, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
   import { untrack } from 'svelte';
   import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
   import { jobs } from '../support/jobs.svelte.js';
@@ -8,7 +8,7 @@
   import { AiChat } from '../support/chat.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChatContext from './ChatContext.svelte';
-  import ChatThread from './ChatThread.svelte';
+  import ChatThread, { type Starter } from './ChatThread.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
 
   // Conversations about a space, kept on this machine and listed beside the one open (ADR-049). A chat
@@ -124,6 +124,41 @@
       ? chat.session.title
       : `New chat about ${spaceKey}`,
   );
+  // Ways to begin a chat without a question of one's own. Chosen pages can be reviewed together; a
+  // whole space is many requests to review, so it offers questions that find their way around it.
+  const starters = $derived<Starter[]>(
+    (chat.session?.scope ?? scope).kind === 'pages'
+      ? [
+          {
+            label: 'Review for problems',
+            detail:
+              'Repeats, contradictions, out-of-date and missing pages across these pages, as suggestions you can tick and queue as edits.',
+            icon: Search,
+            review: true,
+          },
+          {
+            label: 'Summarise these pages',
+            detail: 'What they cover together, and how they relate.',
+            icon: FileText,
+            prompt: 'Summarise what these pages cover together, how they relate to each other, and where they overlap.',
+          },
+        ]
+      : [
+          {
+            label: 'What does this space cover?',
+            detail: 'Its main areas, and the pages where each is documented.',
+            icon: Compass,
+            prompt:
+              'What does this space cover? Give an overview of its main areas and name the pages where each is documented.',
+          },
+          {
+            label: 'Where should I start?',
+            detail: 'The pages a newcomer should read first, in order.',
+            icon: FileText,
+            prompt: 'I am new to this space. Which pages should I read first, and in what order?',
+          },
+        ],
+  );
   const shown = $derived(list.filter((s) => s.title.toLowerCase().includes(search.trim().toLowerCase())));
 </script>
 
@@ -209,7 +244,7 @@
       {active}
       {onSelectPage}
       placeholder="Ask anything about {spaceKey}…"
-      reviewLabel={(chat.session?.scope ?? scope).kind === 'pages' ? 'Review for problems' : undefined}
+      {starters}
       {onPushed}
       {onWriteNewPage}
     >
@@ -218,8 +253,8 @@
         <strong>Ask about {spaceKey}</strong>
         <p>
           The chat reads the whole space, or the directories, pages and tags you choose under Reading above, however
-          many there are. Each question finds the sections it needs, and every answer names them. Chats are saved on
-          this machine.
+          many there are. Each question finds the sections it needs, and every answer names them. Start with one of
+          these, or ask your own question below. Chats are saved on this machine.
         </p>
       {/snippet}
     </ChatThread>

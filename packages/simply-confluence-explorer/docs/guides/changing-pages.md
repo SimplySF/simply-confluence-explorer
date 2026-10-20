@@ -13,14 +13,16 @@ what you accept. Nothing changes in Confluence until you confirm a push.
 
 ## Get suggestions
 
-In a chat, ask for them in one of three ways:
+There are two ways to get them:
 
-- **Review for problems**, in a chat on a directory or on chosen pages: the AI reads the pages
-  together and lists what is wrong across them, such as pages that contradict or repeat each other,
-  content that is out of date, and pages that are missing or in the wrong place.
-- **Suggest improvements**, in a chat on one page: clarity, missing detail, structure and the like.
-- **Turn this into changes**, at any point in a conversation: the AI lists the changes the
-  conversation found or agreed. Talk it through first, then turn it into changes.
+- **Start a chat with a review.** A new chat on a directory or on chosen pages offers **Review for
+  problems**: the AI reads the pages together and lists what is wrong across them, such as pages
+  that contradict or repeat each other, content that is out of date, and pages that are missing or
+  in the wrong place. A new chat on one page offers **Suggest improvements**: clarity, missing
+  detail, structure and the like. To review again later, start a new chat.
+- **Turn a conversation into changes.** Once a chat has begun, **Turn this into changes** under it
+  lists the changes the conversation found or agreed. Talk it through first, then turn it into
+  changes.
 
 ![Suggestions from a chat on a tag's pages, two of them ticked](../images/chat-suggestions.webp)
 

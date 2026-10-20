@@ -51,8 +51,11 @@ Open a page and choose the **Chat** tab.
    - **With sub-pages**: the page and every page under it, if the space is synced. This is chosen
      whenever the page has sub-pages, so a directory is read as a whole.
    - **This page**: the page you are looking at, on its own.
-2. Click one of the quick questions (**Summary**, **Action items & decisions**, **Technical
-   review**, **Runbook checklist**, **Explain simply**), or type your own and click **Send**.
+2. Before the first question, the chat offers ways to begin, each with a line saying what it gives:
+   **Review for problems** (or **Suggest improvements** for one page), **Summary**, **Action items &
+   decisions**, **Technical review**, **Runbook checklist** and **Explain simply**. Click one, or
+   type your own question and click **Send**. Space chat offers its own: **Review for problems** and
+   **Summarise these pages** on chosen pages, and questions that find your way around a whole space.
 
 The answer appears under your question, with the provider's name and the time, a line saying what
 the leak guard did, and **Read N pages**, which lists the pages it read. **Markdown** shows the

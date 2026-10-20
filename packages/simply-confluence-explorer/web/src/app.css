@@ -1869,11 +1869,46 @@ body {
   flex: 1;
   min-height: 0;
 }
-.quick-actions {
+/* Ways to begin a chat, shown until the first question */
+.chat-starters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
+  max-width: 52rem;
+  margin: 0 auto 1rem;
+  width: 100%;
+}
+.chat-starter {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-starter:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background: var(--accent-light);
+}
+.chat-starter:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.chat-starter-label {
+  display: inline-flex;
+  align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.8rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.chat-starter-detail {
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 .chat-stream {
   flex: 1;
@@ -2392,7 +2427,11 @@ div.disclosure-body {
 .chat-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem;
+}
+.chat-actions-note {
+  font-size: 0.78rem;
 }
 .change-queue {
   margin-top: 0.75rem;

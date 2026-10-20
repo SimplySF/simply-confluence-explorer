@@ -1,3 +1,13 @@
+<script lang="ts" module>
+  import type { Component } from 'svelte';
+
+  /**
+   * A way to begin a chat without writing a question: a question to ask, or a review, whose answer is
+   * a list of suggestions to tick and queue as edits (ADR-049).
+   */
+  export type Starter = { label: string; detail: string; icon: Component; prompt?: string; review?: boolean };
+</script>
+
 <script lang="ts">
   import {
     Check,
@@ -6,7 +16,6 @@
     Copy,
     ListChecks,
     Paperclip,
-    Search,
     Send,
     ShieldCheck,
     Sparkles,
@@ -41,8 +50,8 @@
     placeholder?: string;
     /** Shown before the first question. */
     empty?: Snippet;
-    /** The label of the review this chat offers, such as "Review for problems"; none hides it. */
-    reviewLabel?: string;
+    /** Ways to begin, shown until the first question is asked. */
+    starters?: Starter[];
     /** Pages were written from a queue, so the tree and the page reload. */
     onPushed: () => void;
     /** A suggestion for a page that does not exist yet: start writing it. */
@@ -57,7 +66,7 @@
     onSelectPage,
     placeholder,
     empty,
-    reviewLabel,
+    starters = [],
     onPushed,
     onWriteNewPage,
   }: Props = $props();
@@ -140,6 +149,21 @@
 <div class="chat-stream">
   {#if turns.length === 0 && !chat.pending && !batch}
     <div class="empty-state">{@render empty?.()}</div>
+    {#if starters.length && !blocked}
+      <div class="chat-starters">
+        {#each starters as s (s.label)}
+          <button
+            type="button"
+            class="chat-starter"
+            disabled={chat.sending}
+            onclick={() => (s.review ? void chat.suggest('review', s.label) : s.prompt && ask(s.prompt))}
+          >
+            <span class="chat-starter-label"><s.icon size={14} /> {s.label}</span>
+            <span class="chat-starter-detail">{s.detail}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/if}
   {#each turns as t, i (i)}
     {#if t.role === 'user'}
@@ -243,29 +267,19 @@
   <div bind:this={bottom}></div>
 </div>
 
-{#if !blocked && (reviewLabel || turns.length > 0)}
+<!-- Once a conversation has begun, what it found or agreed can become suggestions; a fresh review
+     belongs in a new chat, where the starters offer it. -->
+{#if !blocked && turns.length > 0}
   <div class="chat-actions">
-    {#if reviewLabel}
-      <button
-        class="btn btn-secondary btn-sm"
-        disabled={chat.sending}
-        onclick={() => chat.suggest('review', reviewLabel)}
-        title="Suggestions you can tick and queue as edits"
-      >
-        <Search size={13} />
-        {reviewLabel}
-      </button>
-    {/if}
-    {#if turns.length > 0}
-      <button
-        class="btn btn-secondary btn-sm"
-        disabled={chat.sending}
-        onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
-        title="List the changes this conversation found or agreed, to tick and queue as edits"
-      >
-        <Wand2 size={13} /> Turn this into changes
-      </button>
-    {/if}
+    <button
+      class="btn btn-secondary btn-sm"
+      disabled={chat.sending || !!batch}
+      onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
+      title="List the changes this conversation found or agreed, as suggestions to tick and queue as edits"
+    >
+      <Wand2 size={13} /> Turn this into changes
+    </button>
+    <span class="muted chat-actions-note">Lists what this chat found or agreed as edits you can tick and queue.</span>
   </div>
 {/if}
 
