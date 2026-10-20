@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PageDetail } from '../src/api/types.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SearchIndex, tokens } from '../src/spaces/searchIndex.js';
@@ -125,6 +125,8 @@ describe('the search index', () => {
 
   it('finds a section by its summary and a page by the questions it answers', () => {
     const { index, store } = setup();
+    // Searched once first, so the summary must reach an index that was already built.
+    expect(index.searchSections('PLAT', 'keystore', 5)).toEqual([]);
     store.writeMetadata('PLAT', {
       pageId: '3',
       title: 'Production Credentials',
@@ -163,5 +165,31 @@ describe('reading a corpus in full', () => {
       { budget },
     );
     expect(r.corpus.mode).toBe('retrieved');
+  });
+});
+
+describe('checking a large space', () => {
+  it('does not look at every file in the space again for each page it reads, which froze the app on large spaces', async () => {
+    const { corpusSize } = await import('../src/spaces/contextRetriever.js');
+    const { store, index } = setup();
+    for (let i = 10; i < 210; i++) store.writePage('PLAT', page(String(i), `Page ${i}`, `Text ${i}.`), '', []);
+    const pages = store.visiblePages('PLAT');
+    corpusSize('PLAT', pages, index);
+    const stat = vi.spyOn(fs, 'statSync');
+    try {
+      corpusSize('PLAT', pages, index);
+      // One look at the rules file per page read is the most a check may cost; looking at every file
+      // for every page grows with the square of the space's size.
+      expect(stat.mock.calls.length).toBeLessThanOrEqual(pages.length);
+    } finally {
+      stat.mockRestore();
+    }
+  });
+
+  it('still notices a page written through the store', () => {
+    const { store, index } = setup();
+    expect(index.search('PLAT', 'zeppelin')).toEqual([]);
+    store.writePage('PLAT', page('20', 'Airships', 'The zeppelin docks here.'), '', []);
+    expect(index.search('PLAT', 'zeppelin').map((h) => h.pageId)).toEqual(['20']);
   });
 });
