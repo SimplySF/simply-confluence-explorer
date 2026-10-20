@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.3.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.2.0...%40simplysf%2Fsimply-confluence-explorer%400.3.0) (2026-10-20)
+
+### Bug Fixes
+
+- a frozen server is flagged from how late the check ran, not only from Node's delay monitor ([#31](https://github.com/SimplySF/simply-confluence-explorer/issues/31)) ([06f6a52](https://github.com/SimplySF/simply-confluence-explorer/commit/06f6a52b57f8c099979fca0252c6085f559d4dee))
+- a large synced space no longer freezes the app; the status shows Connected when signing in works ([#29](https://github.com/SimplySF/simply-confluence-explorer/issues/29)) ([c95fe10](https://github.com/SimplySF/simply-confluence-explorer/commit/c95fe10284d48d749efdef4aa8c5e3e9b5b7209d))
+
+### Features
+
+- large spaces: packed indexing, context checks, thorough answers, and an Observability page ([#30](https://github.com/SimplySF/simply-confluence-explorer/issues/30)) ([a003bda](https://github.com/SimplySF/simply-confluence-explorer/commit/a003bda6c66bf35fa69e28c3ba3dc5b903557662))
+
 # [0.2.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.1.0...%40simplysf%2Fsimply-confluence-explorer%400.2.0) (2026-10-20)
 
 ### Features
