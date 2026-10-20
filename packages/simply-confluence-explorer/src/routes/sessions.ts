@@ -24,7 +24,7 @@ import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
-import { corpusSize, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
+import { corpusSize, pause, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
@@ -213,7 +213,10 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     } else {
       // A directory chat refuses an excluded directory page outright, as a page chat does.
       if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' }, new ManifestBuilder());
+      // Waits for the search index without holding up the server, if the space is still being indexed.
+      await index.ready(scope.spaceKey);
       const corpus = corpusPages(store, exclusions, scope);
+      await pause();
       // A chosen page the synced copy does not hold yet is read from Confluence, through the gate.
       for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
         if (corpus.some((p) => p.id === id)) continue;
@@ -260,9 +263,10 @@ export function addSessionRoutes(router: Router, services: Services): Router {
    * The pages of a chat that are too many for one request, which a review reads in batches instead
    * (ADR-051); `null` when they fit, or the chat reads one page or a space not synced.
    */
-  const tooManyForOne = (session: AiSessionView): PageDetail[] | null => {
+  const tooManyForOne = async (session: AiSessionView): Promise<PageDetail[] | null> => {
     const { scope } = session;
     if (scope.kind === 'page' || !store.isSynced(scope.spaceKey)) return null;
+    await index.ready(scope.spaceKey);
     const pages = corpusPages(store, exclusions, scope);
     return corpusSize(scope.spaceKey, pages, index) > services.contextChars ? pages : null;
   };
@@ -395,7 +399,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       })
       // Asks for suggestions the person can tick and queue: a review of what the chat reads, or the
       // changes the conversation so far has agreed. The answer's suggestions are stored with the turn.
-      .add('POST', '/api/ai/sessions/:sessionId/suggest', ({ params, body, signal }) => {
+      .add('POST', '/api/ai/sessions/:sessionId/suggest', async ({ params, body, signal }) => {
         const session = chat(params.sessionId);
         const fields = fieldsOf(body);
         const notes = optionalString(body, 'notes')?.trim().slice(0, 2000);
@@ -405,7 +409,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           throw new HttpError(400, 'there is no conversation to turn into changes yet');
         const several = session.scope.kind !== 'page';
         const sent = fields.kind === 'changes' ? CHANGES_PROMPT : reviewPrompt(REVIEW_ASPECTS, several ? 2 : 1, notes);
-        const large = tooManyForOne(session);
+        const large = await tooManyForOne(session);
         let shown =
           fields.kind === 'changes'
             ? 'Turn this conversation into changes'

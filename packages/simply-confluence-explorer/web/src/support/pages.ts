@@ -37,7 +37,13 @@ export function directoryLabel(page: Pick<SpacePage, 'title' | 'under'>): string
 }
 
 /** How a chat will read its pages, from the server's count and whether they fit one request. */
-export function readingLine(counts: { pages: number; fits: boolean }): string {
+export function readingLine(counts: {
+  pages: number;
+  fits?: boolean;
+  indexing?: { done: number; total: number };
+}): string {
+  if (counts.indexing)
+    return `Building the search index: ${counts.indexing.total ? Math.floor((counts.indexing.done / counts.indexing.total) * 100) : 0}% of ${plural(counts.indexing.total, 'page')}.`;
   if (counts.pages === 0) return 'No pages are chosen yet.';
   return counts.fits
     ? `${plural(counts.pages, 'page')}: each question reads all of them.`

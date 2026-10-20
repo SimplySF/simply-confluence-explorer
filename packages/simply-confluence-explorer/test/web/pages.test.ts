@@ -42,5 +42,8 @@ describe('choosing the pages a chat reads', () => {
       '312 pages: each question finds the sections it needs in them.',
     );
     expect(readingLine({ pages: 0, fits: true })).toBe('No pages are chosen yet.');
+    expect(readingLine({ pages: 3200, indexing: { done: 1600, total: 3200 } })).toBe(
+      'Building the search index: 50% of 3200 pages.',
+    );
   });
 });

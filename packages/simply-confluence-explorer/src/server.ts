@@ -147,6 +147,19 @@ export function createServer(options: ServerOptions = {}): http.Server {
     tracer: telemetry,
   });
   for (const source of [sync, metadata, reviews]) telemetry.addJobSource(() => source.liveJobs());
+  telemetry.addJobSource(() =>
+    index.building().map((b) => ({
+      jobId: `index-${b.spaceKey}`,
+      kind: 'search-index',
+      label: `Building the search index for ${b.spaceKey}`,
+      processed: b.done,
+      total: b.total,
+    })),
+  );
+  // Synced spaces are indexed as soon as the server starts, so the first question does not wait for it.
+  setImmediate(() => {
+    for (const space of store.listSynced()) void index.ready(space.spaceKey);
+  });
   const api = createApi({
     version,
     dataDir,

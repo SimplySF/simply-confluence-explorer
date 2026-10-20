@@ -20,12 +20,23 @@
 
   $effect(() => jobs.onFinished((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && finished++));
 
+  // While the space's search index is still being built, the count is asked for again until it is done.
+  let again = $state(0);
   $effect(() => {
     void finished;
+    void again;
+    let live = true;
     api.summaryCoverage(spaceKey, { rootPageId, ...chosen }).then(
-      (c) => (counts = c),
+      (c) => {
+        if (!live) return;
+        counts = c;
+        if (c.indexing) setTimeout(() => live && again++, 2000);
+      },
       () => (counts = null), // An unsynced space has no summaries to count; the line stays hidden.
     );
+    return () => {
+      live = false;
+    };
   });
 
   const running = $derived(jobs.list.some((j) => j.kind === 'summaries' && j.spaceKey === spaceKey));

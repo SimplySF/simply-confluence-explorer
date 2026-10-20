@@ -193,3 +193,17 @@ describe('checking a large space', () => {
     expect(index.search('PLAT', 'zeppelin').map((h) => h.pageId)).toEqual(['20']);
   });
 });
+
+describe('building the index', () => {
+  it('reports its progress while it runs, and answers sizes from what it kept once done', async () => {
+    const { store, index } = setup();
+    const ready = index.ready('PLAT');
+    expect(index.building()).toMatchObject([{ spaceKey: 'PLAT', total: 3 }]);
+    await ready;
+    expect(index.building()).toEqual([]);
+    expect(index.sizeOf('PLAT', store.visiblePages('PLAT'))).toBeGreaterThan(0);
+    // Already up to date, so nothing is built again.
+    await index.ready('PLAT');
+    expect(index.building()).toEqual([]);
+  });
+});

@@ -18,7 +18,6 @@ import type { PageDetail, SpaceTocNode } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
 import { ManifestBuilder } from '../ai/manifest.js';
-import { frontmatterOf } from '../parser/convert.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SearchIndex } from './searchIndex.js';
@@ -70,6 +69,9 @@ export type RetrieverDeps = {
   ai?: Pick<AiEngine, 'analyzeDocument' | 'embed' | 'embeddingModel'>;
   signal?: AbortSignal;
 };
+
+/** Lets other requests run between the steps of answering one, so a large space never holds the server long. */
+export const pause = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /** How many candidate sections the search offers the AI to choose from. */
 const CANDIDATES = 40;
@@ -136,11 +138,7 @@ function outlineOf(key: string, deps: RetrieverDeps): string {
  * every page.
  */
 export function corpusSize(spaceKey: string, pages: PageDetail[], index: SearchIndex): number {
-  return pages.reduce(
-    (n, p) =>
-      n + frontmatterOf(p).length + index.sectionsOf(spaceKey, p.id).reduce((m, s) => m + s.text.length + 20, 0),
-    0,
-  );
+  return index.sizeOf(spaceKey, pages);
 }
 
 type Candidate = { id: string; summary?: string; line: string };
@@ -258,6 +256,7 @@ export async function retrieveContext(
   const whole = corpusSize(key, pages, deps.index) <= budget ? readInFull(key, pages, deps, budget, manifest) : null;
   if (whole) return whole;
 
+  await pause();
   const byId = new Map(pages.map((p) => [p.id, p]));
   const candidates = await candidatesFor(key, byId, [query.question, query.previous].filter(Boolean).join(' '), deps);
   let chosen: Chosen =
@@ -274,6 +273,7 @@ export async function retrieveContext(
       : [refKey({ pageId: ref.pageId, index: ref.index })],
   );
   // The outline helps an answer place what it reads, but never at the cost of most of what it reads.
+  await pause();
   const outlined = options.outline ? outlineOf(key, deps) : '';
   const outline = outlined.length <= budget / 4 ? outlined : '';
   const read = readSections(

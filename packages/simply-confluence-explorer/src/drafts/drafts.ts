@@ -92,6 +92,7 @@ export async function checkRedundancy(
   judge = true,
 ): Promise<NonNullable<DraftState['redundancy']>> {
   const found = new Map<string, SimilarPage>();
+  await deps.index.ready(spaceKey);
   for (const hit of deps.index.search(spaceKey, `${title} ${title} ${notes}`, CANDIDATES)) {
     found.set(hit.pageId, { ...hit, spaceKey, source: 'synced' });
   }

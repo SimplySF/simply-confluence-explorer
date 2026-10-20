@@ -56,11 +56,13 @@ export function corpusPages(
     const tags = new Set(scope.tags ?? []);
     for (const tagged of tagIndex(store, key)) if (tags.has(tagged.tag)) tagged.pages.forEach((p) => wanted.add(p.id));
   }
-  // Pages in the tree come in its order; any chosen page the tree does not hold yet comes last.
+  // Pages in the tree come in its order; any chosen page the tree does not hold yet comes last. Pages
+  // are read once, from the store's list of the pages the exclusion rules allow.
   const inTree = new Set(order);
   const ids = [...order.filter((id) => wanted.has(id)), ...[...wanted].filter((id) => !inTree.has(id))];
+  const visible = new Map(store.visiblePages(key).map((p) => [p.id, p]));
   return ids.flatMap((id) => {
-    const page = store.readPage(key, id);
+    const page = visible.get(id);
     return page && !exclusions.isPageExcluded(page, key) ? [page] : [];
   });
 }

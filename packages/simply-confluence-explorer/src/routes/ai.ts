@@ -35,6 +35,9 @@ import { errorMessage } from '../util/errors.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
+/** How long the summary count waits for a space's search index before answering with its progress. */
+const INDEX_WAIT_MS = 1500;
+
 /**
  * The pages a request chooses by directory, tag and page, as a chat's chosen pages are (ADR-051), or
  * `undefined` when it chooses none. Directories and tags are resolved from the synced copy.
@@ -189,6 +192,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body, signal }): Promise<AnalyzeResponse> => {
         const prompt = requiredPrompt(body);
         const key = params.spaceKey.toUpperCase();
+        await index.ready(key);
         const context = await retrieveContext(
           key,
           store.visiblePages(key),
@@ -229,10 +233,23 @@ export function addAiRoutes(router: Router, services: Services): Router {
       )
       // How many of a space's, a section's or chosen pages have an AI summary, for a chat to show, and
       // whether they fit one request, so the chat can say whether it reads them all (ADR-051).
-      .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', ({ params, body }) => {
+      .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', async ({ params, body }) => {
         const key = params.spaceKey.toUpperCase();
         const rootPageId = optionalString(body, 'rootPageId');
         const ids = chosenIdsOf(body, key, store, exclusions);
+        // A space still being indexed answers with how far it has got rather than keep the chat waiting;
+        // the chat asks again until it is done.
+        const built = await Promise.race([
+          index.ready(key).then(() => true),
+          new Promise<false>((resolve) => setTimeout(() => resolve(false), INDEX_WAIT_MS).unref()),
+        ]);
+        if (!built) {
+          const progress = index.building().find((b) => b.spaceKey === key);
+          return {
+            ...metadata.coverage(key, rootPageId, ids),
+            indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 },
+          };
+        }
         const size = corpusSize(key, metadata.allowedPages(key, rootPageId, ids), index);
         return { ...metadata.coverage(key, rootPageId, ids), fits: size <= services.contextChars };
       })

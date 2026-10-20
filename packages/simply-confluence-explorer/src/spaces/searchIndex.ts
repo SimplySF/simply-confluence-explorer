@@ -16,7 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { parsePage } from '../parser/convert.js';
+import { frontmatterOf, parsePage } from '../parser/convert.js';
 import type { PageDetail, PageMetadata } from '../api/types.js';
 import { splitSections, type Section } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
@@ -50,15 +50,16 @@ export type SectionHit = { section: Section; title: string; score: number };
 const TITLE_WEIGHT = 3;
 const TAG_WEIGHT = 2;
 const HEADING_WEIGHT = 2;
+/** How many pages a build reads before letting other requests through. */
+const BUILD_CHUNK = 50;
 const K1 = 1.2;
 const B = 0.75;
 
-type PageDocs = { stamp: string; docs: Doc[] };
+type PageDocs = { stamp: string; docs: Doc[]; size: number };
 type Index = { docs: Doc[]; df: Map<string, number>; avgLength: number };
 
 /** One page's sections as search documents. Each carries its page's title, labels, tags, summary and questions. */
-function pageDocs(page: PageDetail, meta?: PageMetadata): Doc[] {
-  const sections = splitSections(page.id, parsePage(page).markdown);
+function pageDocs(page: PageDetail, sections: Section[], meta?: PageMetadata): Doc[] {
   const pageTerms = new Map<string, number>();
   const add = (terms: Map<string, number>, text: string, weight: number): void =>
     tokens(text).forEach((t) => terms.set(t, (terms.get(t) ?? 0) + weight));
@@ -92,6 +93,10 @@ function pageDocs(page: PageDetail, meta?: PageMetadata): Doc[] {
 export class SearchIndex {
   private readonly cache = new Map<string, { stamp: string; index: Index }>();
   private readonly pages = new Map<string, PageDocs>();
+  // Converting a page to sections is the slow part, so it is kept per page version, apart from the
+  // search documents, which a new summary changes.
+  private readonly split = new Map<string, { stamp: string; sections: Section[] }>();
+  private readonly builds = new Map<string, { done: number; total: number; promise: Promise<void> }>();
 
   public constructor(private readonly store: SpaceStore) {}
 
@@ -131,6 +136,34 @@ export class SearchIndex {
       .filter((s) => s.text);
   }
 
+  /**
+   * Resolves when a space's index is up to date, building it first if not. The build reads the pages
+   * in small chunks and lets other requests through between them, so a large space never stops the
+   * server answering while it is indexed.
+   */
+  public ready(spaceKey: string): Promise<void> {
+    const key = spaceKey.toUpperCase();
+    const running = this.builds.get(key);
+    if (running) return running.promise;
+    if (!this.store.isSynced(key) || this.cache.get(key)?.stamp === this.stamp(key)) return Promise.resolve();
+    const build = { done: 0, total: 0, promise: Promise.resolve() };
+    build.promise = this.warm(key, build).finally(() => this.builds.delete(key));
+    this.builds.set(key, build);
+    return build.promise;
+  }
+
+  /** About how many characters reading these pages in full would take, from what the index has kept. */
+  public sizeOf(spaceKey: string, pages: PageDetail[]): number {
+    const key = spaceKey.toUpperCase();
+    this.indexFor(key);
+    return pages.reduce((n, p) => n + (this.pages.get(`${key}/${p.id}`)?.size ?? 0), 0);
+  }
+
+  /** The builds under way, with how far each has got. */
+  public building(): Array<{ spaceKey: string; done: number; total: number }> {
+    return [...this.builds].map(([spaceKey, b]) => ({ spaceKey, done: b.done, total: b.total }));
+  }
+
   private rank(spaceKey: string, query: string): Array<{ doc: Doc; score: number }> {
     if (!this.store.isSynced(spaceKey)) return [];
     const { docs, df, avgLength } = this.indexFor(spaceKey.toUpperCase());
@@ -151,6 +184,38 @@ export class SearchIndex {
       .sort((a, b) => b.score - a.score);
   }
 
+  private async warm(key: string, progress: { done: number; total: number }): Promise<void> {
+    const pages = this.store.visiblePages(key);
+    progress.total = pages.length;
+    for (let i = 0; i < pages.length; i += BUILD_CHUNK) {
+      for (const page of pages.slice(i, i + BUILD_CHUNK)) this.docsFor(key, page);
+      progress.done = Math.min(pages.length, i + BUILD_CHUNK);
+      // eslint-disable-next-line no-await-in-loop -- the pause between chunks is the point: other requests run in it
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    this.indexFor(key);
+  }
+
+  private docsFor(key: string, page: PageDetail): Doc[] {
+    const meta = this.store.readMetadata(key, page.id);
+    const id = `${key}/${page.id}`;
+    const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}`;
+    let cached = this.pages.get(id);
+    if (cached?.stamp !== pageStamp) {
+      const splitStamp = `${page.version}|${page.storageXml.length}`;
+      let split = this.split.get(id);
+      if (split?.stamp !== splitStamp) {
+        split = { stamp: splitStamp, sections: splitSections(page.id, parsePage(page).markdown) };
+        this.split.set(id, split);
+      }
+      // About how many characters the page takes when read in full: its frontmatter and each section with its heading.
+      const size = frontmatterOf(page).length + split.sections.reduce((n, s) => n + s.text.length + 20, 0);
+      cached = { stamp: pageStamp, docs: pageDocs(page, split.sections, meta), size };
+      this.pages.set(id, cached);
+    }
+    return cached.docs;
+  }
+
   private indexFor(key: string): Index {
     const stamp = this.stamp(key);
     let entry = this.cache.get(key);
@@ -166,22 +231,16 @@ export class SearchIndex {
     const df = new Map<string, number>();
     const seen = new Set<string>();
     for (const page of this.store.visiblePages(key)) {
-      const meta = this.store.readMetadata(key, page.id);
       const id = `${key}/${page.id}`;
-      const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}`;
-      let cached = this.pages.get(id);
-      if (cached?.stamp !== pageStamp) {
-        cached = { stamp: pageStamp, docs: pageDocs(page, meta) };
-        this.pages.set(id, cached);
-      }
       seen.add(id);
-      for (const doc of cached.docs) {
+      for (const doc of this.docsFor(key, page)) {
         docs.push(doc);
         for (const t of doc.terms.keys()) df.set(t, (df.get(t) ?? 0) + 1);
       }
     }
     // A page that left the space, or is now excluded, is dropped from the cache too.
-    for (const id of this.pages.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) this.pages.delete(id);
+    for (const cache of [this.pages, this.split])
+      for (const id of cache.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) cache.delete(id);
     return { docs, df, avgLength: docs.reduce((a, d) => a + d.length, 0) / Math.max(1, docs.length) };
   }
 

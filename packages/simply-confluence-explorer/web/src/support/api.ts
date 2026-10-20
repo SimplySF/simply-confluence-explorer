@@ -47,13 +47,37 @@ import type { LiveJob, MetricRecord, ProblemRecord, SpanRecord } from '../../../
 
 const key = encodeURIComponent;
 
+/** How long a read waits for the server before saying it did not answer, rather than spinning forever. */
+export const READ_TIMEOUT_MS = 30_000;
+
+/** A request the server did not answer in time; it is usually busy, which the Observability page shows. */
+export class ServerBusyError extends Error {
+  public constructor() {
+    super(
+      `The server did not answer in ${READ_TIMEOUT_MS / 1000} s; it may be busy. Observability → Now shows what it is doing.`,
+    );
+  }
+}
+
+// Reads time out; a request that asks an AI or changes something waits as long as it takes, and has
+// its own Stop where it can run long.
+const isRead = (method: string, url: string): boolean =>
+  method === 'GET' || /\/(auth\/verify|metadata\/coverage)$/.test(url);
+
 async function call<T>(url: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`/api${url}`, {
-    method,
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
+  const timeout = !signal && isRead(method, url) ? AbortSignal.timeout(READ_TIMEOUT_MS) : undefined;
+  let res: Response;
+  try {
+    res = await fetch(`/api${url}`, {
+      method,
+      headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: signal ?? timeout,
+    });
+  } catch (error) {
+    if (timeout?.aborted) throw new ServerBusyError();
+    throw error;
+  }
   const text = await res.text();
   let parsed: unknown;
   try {
@@ -69,8 +93,11 @@ async function call<T>(url: string, method = 'GET', body?: unknown, signal?: Abo
 export type Descendants = { count: number; descendantIds: string[]; titles: string[] };
 /** Pages chosen as a chat chooses them: directories with every page under them, single pages, and tags. */
 export type Chosen = { dirs?: string[]; pageIds?: string[]; tags?: string[] };
-/** How many of some pages are in the AI index, and whether all of them fit one request. */
-export type Coverage = { pages: number; missing: number; fits: boolean };
+/**
+ * How many of some pages are in the AI index, and whether all of them fit one request; while the
+ * space's search index is still being built, how far that has got instead.
+ */
+export type Coverage = { pages: number; missing: number; fits?: boolean; indexing?: { done: number; total: number } };
 export type DraftSummary = AiSessionView & { turnCount: number };
 
 export const api = {
