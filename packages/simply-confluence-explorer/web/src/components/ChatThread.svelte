@@ -15,6 +15,7 @@
     Clock,
     Code2,
     Copy,
+    Layers,
     ListChecks,
     Paperclip,
     Send,
@@ -136,8 +137,15 @@
     const clean = prompt.trim();
     if (!clean || chat.sending || blocked) return;
     input = '';
-    void chat.send(clean);
+    void chat.send(clean, thorough && canBeThorough);
   }
+
+  // A chat over many pages can read far more of them for one question, over several requests.
+  let thorough = $state(false);
+  const canBeThorough = $derived(chat.scopeKind !== undefined && chat.scopeKind !== 'page');
+  const sectionsOf = (t: { matchedPages?: Array<{ sections?: unknown[] }> }): number =>
+    (t.matchedPages ?? []).reduce((n, p) => n + (p.sections?.length ?? 0), 0);
+  const plural = (n: number, word: string): string => `${n} ${n === 1 ? word : `${word}s`}`;
 
   function copy(i: number, text: string): void {
     navigator.clipboard.writeText(text).then(
@@ -245,6 +253,19 @@
             {/if}
           </details>
         {/if}
+        {#if t.corpus?.mode === 'retrieved' && !t.corpus.batches && i === turns.length - 1 && turns[i - 1]?.role === 'user' && !batch}
+          <div class="chat-thorough-offer">
+            <span class="muted">This answer read {plural(sectionsOf(t), 'section')} of many.</span>
+            <button
+              class="btn btn-secondary btn-xs"
+              disabled={chat.sending}
+              title="Read many more sections over several requests and combine what each found"
+              onclick={() => void chat.send(turns[i - 1].text, true)}
+            >
+              <Layers size={11} /> Answer this thoroughly
+            </button>
+          </div>
+        {/if}
         {#if t.corpus?.mode === 'batched'}
           <p class="chat-read">{readLabel(t)}</p>
         {:else if t.matchedPages?.length}
@@ -307,13 +328,14 @@
   {#if batch}
     <div class="ai-thinking-card">
       <div class="ai-thinking-header">
-        <span
-          ><Sparkles size={15} class="spin" />
-          {batch.label}: batch {Math.min(batch.processed + 1, batch.total)} of {batch.total}</span
-        >
+        <span><Sparkles size={15} class="spin" /> {batch.label}: {batch.step}</span>
         <button class="btn btn-secondary btn-xs" onclick={() => jobs.stop(batch!)}><Square size={11} /> Stop</button>
       </div>
-      <p class="muted">Related pages are read together. You can leave this chat; the header shows the progress.</p>
+      <p class="muted">
+        {batch.label.startsWith('Answering')
+          ? "Each batch's notes are combined into one answer."
+          : 'Related pages are read together.'} You can leave this chat; the header shows the progress.
+      </p>
     </div>
   {/if}
   {#if chat.error}<div class="alert alert-error">Not answered: {chat.error}</div>{/if}
@@ -398,7 +420,15 @@
       <Square size={13} /> Stop
     </button>
   {:else}
-    <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked}>
+    {#if canBeThorough}
+      <label
+        class="chat-thorough"
+        title="Read up to 150 sections over several requests and combine what each found. Slower, for broad questions."
+      >
+        <input type="checkbox" bind:checked={thorough} disabled={blocked || !!batch} /> Thorough
+      </label>
+    {/if}
+    <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked || (thorough && !!batch)}>
       <Send size={15} /> Send
     </button>
   {/if}

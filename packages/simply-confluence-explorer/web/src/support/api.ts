@@ -208,8 +208,14 @@ export const sessions = {
   update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
-  send: (id: string, prompt: string, signal?: AbortSignal) =>
-    call<AiSessionView>(`${SESSIONS}/${key(id)}/messages`, 'POST', { prompt }, signal),
+  /** Asks a question; `thorough` reads many sections over several requests, as a job (design doc 0008). */
+  send: (id: string, prompt: string, signal?: AbortSignal, thorough = false) =>
+    call<AiSessionView & { batch?: BatchProgress }>(
+      `${SESSIONS}/${key(id)}/messages`,
+      'POST',
+      { prompt, ...(thorough ? { thorough } : {}) },
+      signal,
+    ),
   addFile: async (id: string, file: File): Promise<AiSessionView> => {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = '';

@@ -15,7 +15,8 @@
  */
 
 // The line above an answer's sources, which says how much of the chat's pages it read: all of them,
-// the sections it retrieved from many, or all of many over several requests (ADR-051).
+// the sections it retrieved from many, perhaps over several requests, or all of many over several
+// requests (ADR-051).
 
 import type { ManifestSummary } from '../../../src/ai/manifest.js';
 import type { SessionTurn } from '../../../src/api/types.js';
@@ -28,7 +29,9 @@ export function readLabel(turn: Pick<SessionTurn, 'matchedPages' | 'considered' 
   if (turn.corpus?.mode === 'batched')
     return `Read all ${plural(turn.corpus.pages, 'page')} in ${plural(turn.corpus.batches ?? 1, 'batch', 'batches')}`;
   if (turn.corpus?.mode === 'retrieved')
-    return `Read ${plural(sections, 'section')} from ${plural(pages.length, 'page')} · searched ${plural(turn.corpus.pages, 'page')}`;
+    return `Read ${plural(sections, 'section')} from ${plural(pages.length, 'page')}${
+      turn.corpus.batches ? ` in ${plural(turn.corpus.batches, 'batch', 'batches')}` : ''
+    } · searched ${plural(turn.corpus.pages, 'page')}`;
   if (turn.corpus && turn.corpus.pages === pages.length && pages.length > 1) return `Read all ${pages.length} pages`;
   return `Read ${plural(pages.length, 'page')}`;
 }

@@ -304,7 +304,8 @@ export type SessionTurn = {
   considered?: number;
   /**
    * How many pages the chat reads from, and whether they were read in full, retrieved from, or read
-   * in full over several requests (`batched`, with how many).
+   * in full over several requests (`batched`, with how many). A thorough answer is retrieved over
+   * several requests, so it is `retrieved` with `batches` set.
    */
   corpus?: { pages: number; mode: 'full' | 'retrieved' | 'batched'; batches?: number };
   /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
@@ -528,11 +529,16 @@ export type BatchProgress = {
   traceId?: string;
   sessionId: string;
   spaceKey: string;
-  kind: 'review' | 'changes';
+  /** A review, a request for changes, or a thorough answer to a question (design doc 0008). */
+  kind: 'review' | 'changes' | 'answer';
   /** How many pages are read, and in how many batches. */
   pages: number;
   total: number;
   processed: number;
+  /** For a thorough answer: how many sections its batches read. */
+  sections?: number;
+  /** For a thorough answer: every batch is read, and their notes are being combined into the answer. */
+  combining?: boolean;
   /** The first page of the batch being read. */
   currentTitle?: string;
   error?: string;

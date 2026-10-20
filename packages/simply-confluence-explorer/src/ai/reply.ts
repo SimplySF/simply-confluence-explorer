@@ -19,3 +19,9 @@
  * because the answer was blocked, so an unfinished answer is never shown as complete (ADR-054).
  */
 export type Reply = { text: string; cutOff?: 'length' | 'blocked' };
+
+/** What an answer says when the model stopped before finishing it. */
+export function cutOffNote(cutOff?: Reply['cutOff']): string {
+  if (cutOff === 'length') return ' The answer was cut short: the model reached the most it can write in one reply.';
+  return cutOff === 'blocked' ? ' The model blocked part of this answer.' : '';
+}

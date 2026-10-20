@@ -19,7 +19,8 @@
 // just before sending, that every piece is in the payload whole; a request that fails the check is
 // refused rather than sent with context silently missing.
 
-export type ContextKind = 'page' | 'section' | 'file' | 'turn';
+/** `notes` are what one batch of a thorough answer found, sent to the request that combines them. */
+export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes';
 export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit';
 
 export type ManifestItem = {
@@ -122,5 +123,21 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
       ...manifest.items.filter((i) => !i.included).map((i) => ({ kind: i.kind, label: i.label, reason: i.reason! })),
       ...sent.filter((i) => i.cut).map((i) => ({ kind: i.kind, label: i.label, reason: 'cut' as const })),
     ],
+  };
+}
+
+/**
+ * What several requests carried together, as one answer made over several requests shows it. The
+ * conversation's earlier messages travel with each request, so they are counted once.
+ */
+export function mergeSummaries(summaries: ManifestSummary[]): ManifestSummary {
+  const sum = (field: 'pages' | 'sections' | 'files' | 'chars'): number => summaries.reduce((n, s) => n + s[field], 0);
+  return {
+    pages: sum('pages'),
+    sections: sum('sections'),
+    files: Math.max(0, ...summaries.map((s) => s.files)),
+    turns: Math.max(0, ...summaries.map((s) => s.turns)),
+    chars: sum('chars'),
+    leftOut: summaries.flatMap((s) => s.leftOut),
   };
 }

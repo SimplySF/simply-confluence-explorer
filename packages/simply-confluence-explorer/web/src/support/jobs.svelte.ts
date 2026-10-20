@@ -39,6 +39,8 @@ export type Job = {
   processed: number;
   total: number;
   current?: string;
+  /** For a batched run in a chat, the step it is on, such as "batch 3 of 8". */
+  step?: string;
 };
 
 type Finished = (job: Job, status: string) => void;
@@ -103,10 +105,14 @@ class Jobs {
       spaceKey: q.spaceKey,
       rootPageId,
       sessionId: q.sessionId,
-      label: `${q.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${q.pages} pages`,
+      label:
+        q.kind === 'answer'
+          ? `Answering thoroughly from ${q.sections ?? 0} sections`
+          : `${q.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${q.pages} pages`,
       processed: q.processed,
       total: q.total,
       current: q.currentTitle,
+      step: q.combining ? 'combining the notes' : `batch ${Math.min(q.processed + 1, q.total)} of ${q.total}`,
     });
     this.put(job(p));
     this.stops.set(
@@ -117,7 +123,7 @@ class Jobs {
           if (q.status !== 'cancelled')
             toast(
               q.status === 'completed'
-                ? `${job(q).label}: the suggestions are ready.`
+                ? `${job(q).label}: the ${q.kind === 'answer' ? 'answer is' : 'suggestions are'} ready.`
                 : `${job(q).label}: ${q.error ?? q.status}.`,
               q.status === 'completed' ? 'success' : 'error',
               q.status === 'failed' && q.traceId

@@ -77,6 +77,8 @@ export type RetrieverDeps = {
 
 /** How many candidate sections the search offers the AI to choose from. */
 const CANDIDATES = 40;
+/** How many sections a thorough answer reads, over as many requests as they need (design doc 0008). */
+export const THOROUGH_SECTIONS = 150;
 /** How many sections the AI may choose, and how many the search reads when it cannot choose. */
 const CHOSEN = 12;
 /** Reciprocal rank fusion's constant: a lower rank in one list still counts for something. */
@@ -183,19 +185,8 @@ async function candidatesFor(
   question: string,
   deps: RetrieverDeps,
 ): Promise<{ candidates: Candidate[]; weak: boolean }> {
-  const hits = deps.index.searchSections(key, text, CANDIDATES, new Set(byId.keys()));
-  const keyword = hits.map((h) => refKey(h.section));
-  let semantic: string[] = [];
-  const model = deps.ai?.embeddingModel?.();
-  if (model && deps.ai?.embed && deps.vectors) {
-    const [vector] = await deps.ai.embed([text], { spaceKey: key, signal: deps.signal });
-    if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, CANDIDATES).map(refKey);
-  }
-  // Weak when even the best section holds under half of this question's words, the one before it
-  // aside, and nothing matched by meaning: the answer may rest on pages that are not about it.
-  const best = deps.index.searchSections(key, question, 1, new Set(byId.keys()))[0];
-  const weak = (best?.covers ?? 0) < WEAK_COVER && semantic.length === 0;
-  const candidates = fuse([keyword, semantic], CANDIDATES).flatMap((id) => {
+  const { ranked, weak } = await rankSections(key, byId, text, question, deps, CANDIDATES);
+  const candidates = ranked.flatMap((id) => {
     const [pageId, index] = id.split('#');
     const section = sectionAt(key, deps, pageId, Number(index));
     const page = byId.get(pageId);
@@ -213,6 +204,30 @@ async function candidatesFor(
     ];
   });
   return { candidates, weak };
+}
+
+/** The corpus's sections ranked for the question, by keywords and, when the provider embeds, by meaning. */
+async function rankSections(
+  key: string,
+  byId: Map<string, PageDetail>,
+  text: string,
+  question: string,
+  deps: RetrieverDeps,
+  limit: number,
+): Promise<{ ranked: string[]; weak: boolean }> {
+  const hits = deps.index.searchSections(key, text, limit, new Set(byId.keys()));
+  const keyword = hits.map((h) => refKey(h.section));
+  let semantic: string[] = [];
+  const model = deps.ai?.embeddingModel?.();
+  if (model && deps.ai?.embed && deps.vectors) {
+    const [vector] = await deps.ai.embed([text], { spaceKey: key, signal: deps.signal });
+    if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, limit).map(refKey);
+  }
+  // Weak when even the best section holds under half of this question's words, the one before it
+  // aside, and nothing matched by meaning: the answer may rest on pages that are not about it.
+  const best = deps.index.searchSections(key, question, 1, new Set(byId.keys()))[0];
+  const weak = (best?.covers ?? 0) < WEAK_COVER && semantic.length === 0;
+  return { ranked: fuse([keyword, semantic], limit), weak };
 }
 
 /** The AI's choice among the candidates, from their summaries, or `null` when it was not asked or not understood. */
@@ -312,6 +327,67 @@ export async function retrieveContext(
     corpus: { pages: pages.length, mode: 'retrieved' },
     ...(weak ? { weak } : {}),
   };
+}
+
+/** The sections a thorough answer reads, as batches that each fit one request. */
+export type SectionBatches = { batches: string[][]; sections: number; weak: boolean };
+
+/**
+ * Ranks up to `THOROUGH_SECTIONS` of the corpus's sections for the question and packs them into
+ * batches of at most `budget` characters. A page's sections are kept together, in the order its best
+ * section ranked, so a batch reads whole stretches of a page rather than scattered pieces. Each batch
+ * is read later with `readBatch`, which checks every section again before it is sent.
+ */
+export async function sectionBatches(
+  spaceKey: string,
+  pages: PageDetail[],
+  query: ContextQuery,
+  deps: RetrieverDeps,
+  budget: number,
+): Promise<SectionBatches> {
+  const key = spaceKey.toUpperCase();
+  const byId = new Map(pages.map((p) => [p.id, p]));
+  deps.onStep?.(`Searching ${pages.length.toLocaleString('en-US')} pages`);
+  const text = [query.question, query.previous].filter(Boolean).join(' ');
+  const { ranked, weak } = await rankSections(key, byId, text, query.question, deps, THOROUGH_SECTIONS);
+  const byPage = new Map<string, Section[]>();
+  for (const id of ranked) {
+    const [pageId, index] = id.split('#');
+    const section = sectionAt(key, deps, pageId, Number(index));
+    const page = byId.get(pageId);
+    if (section && page) byPage.set(pageId, [...(byPage.get(pageId) ?? []), section]);
+  }
+  const batches: string[][] = [];
+  let current: string[] = [];
+  let used = 0;
+  for (const [pageId, sections] of byPage) {
+    const title = byId.get(pageId)!.title;
+    for (const s of sections.sort((a, b) => a.index - b.index)) {
+      const size = s.text.length + sectionName(title, s).length;
+      if (used > 0 && used + size > budget) {
+        batches.push(current);
+        current = [];
+        used = 0;
+      }
+      current.push(refKey(s));
+      used += size;
+    }
+  }
+  if (current.length) batches.push(current);
+  return { batches, sections: batches.reduce((n, b) => n + b.length, 0), weak };
+}
+
+/** One batch of a thorough answer, as context: each section checked by the secrets check, until `budget`. */
+export function readBatch(
+  spaceKey: string,
+  pages: PageDetail[],
+  ids: string[],
+  deps: RetrieverDeps,
+  budget: number,
+  manifest: ManifestBuilder,
+): Pick<RetrievedContext, 'contextMarkdown' | 'selectedPages' | 'withheld' | 'overflow'> {
+  const byId = new Map(pages.map((p) => [p.id, p]));
+  return readSections(spaceKey.toUpperCase(), byId, ids, new Map(), deps, budget, manifest);
 }
 
 /** Sends the sections in order, leaving out a page holding a secret, until the size limit. */

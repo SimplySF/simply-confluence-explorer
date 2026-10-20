@@ -34,6 +34,12 @@ describe("the line above an answer's sources", () => {
     );
   });
 
+  it('says how many batches a thorough answer read its sections in', () => {
+    expect(
+      readLabel({ matchedPages: [page('a', 2), page('b', 1)], corpus: { pages: 312, mode: 'retrieved', batches: 4 } }),
+    ).toBe('Read 3 sections from 2 pages in 4 batches · searched 312 pages');
+  });
+
   it('says when every page was read in full', () => {
     expect(readLabel({ matchedPages: [page('a'), page('b')], corpus: { pages: 2, mode: 'full' } })).toBe(
       'Read all 2 pages',

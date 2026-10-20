@@ -27,7 +27,8 @@ export class AiChat {
   public session = $state<AiSessionView | null>(null);
   public pending = $state<string | null>(null);
   public error = $state<string | null>(null);
-  private scope: SessionScope | null = null;
+  // Reactive, so the question box can offer what fits the scope before the first question.
+  private scope = $state<SessionScope | null>(null);
   private generation = 0;
   private stopper: AbortController | null = null;
 
@@ -47,8 +48,21 @@ export class AiChat {
     );
   }
 
-  public send(prompt: string): Promise<void> {
-    return this.ask(prompt, (id, signal) => sessions.send(id, prompt, signal));
+  /** What the conversation reads, so the question box can offer what fits it. */
+  public get scopeKind(): SessionScope['kind'] | undefined {
+    return this.session?.scope.kind ?? this.scope?.kind;
+  }
+
+  /**
+   * Asks a question. A thorough question about more pages than one request carries is answered in
+   * the background over several requests, and its answer is read again when it finishes.
+   */
+  public send(prompt: string, thorough = false): Promise<void> {
+    return this.ask(prompt, async (id, signal) => {
+      const { batch, ...session } = await sessions.send(id, prompt, signal, thorough);
+      if (batch) jobs.watchBatch(batch, session.scope.kind === 'branch' ? session.scope.pageId : undefined);
+      return session;
+    });
   }
 
   /**

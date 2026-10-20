@@ -14,9 +14,17 @@
  * limitations under the License.
  */
 
-import type { AiSessionView, BranchFinding, PageDetail, SessionScope, SessionTurn } from '../api/types.js';
+import type {
+  AiSessionView,
+  BatchProgress,
+  BranchFinding,
+  PageDetail,
+  SessionScope,
+  SessionTurn,
+} from '../api/types.js';
 import { loadGuardRules, OutboundGuard, withWithheld, type ChatTurn } from '../ai/guard.js';
 import { ManifestBuilder, summarise } from '../ai/manifest.js';
+import { cutOffNote } from '../ai/reply.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
 import { parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
@@ -24,7 +32,14 @@ import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
-import { corpusSize, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
+import {
+  corpusSize,
+  readBatch,
+  retrieveContext,
+  sectionBatches,
+  type RetrieverDeps,
+  type SectionRef,
+} from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import { pause } from '../util/pause.js';
 import type { Services } from './api.js';
@@ -104,12 +119,6 @@ function recordHistory(manifest: ManifestBuilder, session: AiSessionView, histor
       dropped.reduce((n, t) => n + t.text.length, 0),
       'history-limit',
     );
-}
-
-/** What an answer says when the model stopped before finishing it. */
-function cutOffNote(cutOff?: 'length' | 'blocked'): string {
-  if (cutOff === 'length') return ' The answer was cut short: the model reached the most it can write in one reply.';
-  return cutOff === 'blocked' ? ' The model blocked part of this answer.' : '';
 }
 
 /** The sections the last two answers read, so a follow-up keeps reading them. */
@@ -201,6 +210,59 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     return ctx;
   };
 
+  /** The pages a chat on a synced space reads from, once its search index is ready. */
+  const corpusOf = async (session: AiSessionView): Promise<PageDetail[]> => {
+    const { scope } = session;
+    // A directory chat refuses an excluded directory page outright, as a page chat does.
+    if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' }, new ManifestBuilder());
+    // Waits for the search index without holding up the server, if the space is still being indexed.
+    const building = index.building().find((b) => b.spaceKey === scope.spaceKey);
+    if (building) step(session.id, `Waiting for the search index (${building.done} of ${building.total} pages)`);
+    await index.ready(scope.spaceKey);
+    const corpus = corpusPages(store, exclusions, scope);
+    await pause();
+    // A chosen page the synced copy does not hold yet is read from Confluence, through the gate.
+    for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
+      if (corpus.some((p) => p.id === id)) continue;
+      // eslint-disable-next-line no-await-in-loop -- pages are read in the order they were chosen
+      const gate = await gatePageForAi(id, scope.spaceKey, deps);
+      if (gate.allowed && gate.page?.spaceKey.toUpperCase() === scope.spaceKey) corpus.push(gate.page);
+    }
+    return corpus;
+  };
+
+  /**
+   * Starts a thorough answer, which reads up to `THOROUGH_SECTIONS` sections over several requests
+   * and combines what each found (design doc 0008); `null` when one request reads the chat's pages in
+   * full anyway, or the search finds nothing, so the question is answered as usual.
+   */
+  const thorough = async (session: AiSessionView, question: string): Promise<BatchProgress | null> => {
+    const { scope } = session;
+    if (scope.kind === 'page' || !store.isSynced(scope.spaceKey)) return null;
+    const corpus = await corpusOf(session);
+    if (corpusSize(scope.spaceKey, corpus, index) <= services.contextChars) return null;
+    const retriever: RetrieverDeps = { store, exclusions, dataDir, index, vectors: services.vectors, ai };
+    const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
+    const batches = await sectionBatches(
+      scope.spaceKey,
+      corpus,
+      { question, previous },
+      retriever,
+      services.contextChars,
+    );
+    if (batches.batches.length === 0) return null;
+    return reviews.startAnswer({
+      sessionId: session.id,
+      spaceKey: scope.spaceKey,
+      question,
+      corpusPages: corpus.length,
+      batches: batches.batches,
+      read: (ids, manifest) => readBatch(scope.spaceKey, corpus, ids, retriever, services.contextChars, manifest),
+      files: (manifest) => sessions.filesContext(session.id, manifest),
+      weak: batches.weak,
+    });
+  };
+
   /**
    * The context of one turn (ADR-051). The chat's corpus is resolved from the synced copy on every
    * turn, so a rule added since applies, and a page added under a chosen directory is read. A corpus
@@ -213,21 +275,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     if (scope.kind === 'page' || (scope.kind === 'branch' && !store.isSynced(scope.spaceKey))) {
       ctx = await unsyncedContext(scope, manifest);
     } else {
-      // A directory chat refuses an excluded directory page outright, as a page chat does.
-      if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' }, new ManifestBuilder());
-      // Waits for the search index without holding up the server, if the space is still being indexed.
-      const building = index.building().find((b) => b.spaceKey === scope.spaceKey);
-      if (building) step(session.id, `Waiting for the search index (${building.done} of ${building.total} pages)`);
-      await index.ready(scope.spaceKey);
-      const corpus = corpusPages(store, exclusions, scope);
-      await pause();
-      // A chosen page the synced copy does not hold yet is read from Confluence, through the gate.
-      for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
-        if (corpus.some((p) => p.id === id)) continue;
-        // eslint-disable-next-line no-await-in-loop -- pages are read in the order they were chosen
-        const gate = await gatePageForAi(id, scope.spaceKey, deps);
-        if (gate.allowed && gate.page?.spaceKey.toUpperCase() === scope.spaceKey) corpus.push(gate.page);
-      }
+      const corpus = await corpusOf(session);
       const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
       const r = await services.telemetry.span('retrieval', 'context', { corpusPages: corpus.length }, async (span) => {
         const retrieved = await retrieveContext(
@@ -421,10 +469,18 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         sessions.removeFile(params.sessionId, params.fileId);
         return found(params.sessionId);
       })
-      .add('POST', '/api/ai/sessions/:sessionId/messages', ({ params, body, signal }) => {
+      // With `thorough`, a question about more pages than one request carries is answered in the
+      // background over several requests, and the answer is written to the conversation when done.
+      .add('POST', '/api/ai/sessions/:sessionId/messages', async ({ params, body, signal }) => {
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
-        return answer(chat(params.sessionId), { shown: prompt, sent: prompt }, signal);
+        const session = chat(params.sessionId);
+        const batch =
+          fieldsOf(body).thorough === true
+            ? await thorough(session, prompt).finally(() => activity.delete(session.id))
+            : null;
+        if (batch) return { ...session, batch };
+        return answer(session, { shown: prompt, sent: prompt }, signal);
       })
       // Asks for suggestions the person can tick and queue: a review of what the chat reads, or the
       // changes the conversation so far has agreed. The answer's suggestions are stored with the turn.
