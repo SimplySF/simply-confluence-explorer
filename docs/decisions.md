@@ -1510,3 +1510,19 @@ seen. That is accepted because embeddings are only made when the person has chos
 offers them, each request passes the outbound guard and the audit log as every other request does,
 a section holding a secret is never embedded, and the data-safety guide says what is sent. A corpus
 that fits is still read in full, so retrieval is used only where a full read is impossible.
+
+---
+
+## ADR-052 — The Snippet parser is removed, because converting pasted storage format is not part of exploring, asking about or changing pages
+
+**Status:** accepted, 2026-10-19.
+
+The header's **Snippet parser** converted a piece of Confluence storage format, pasted in by hand,
+to Markdown, through `POST /api/parse`. It came with the app's first version as a way to see the
+converter at work. Nothing in syncing, chatting, changing pages or writing new ones uses it, and a
+page's own Markdown is shown on its Details tab, so it is removed with its route, test, guide
+section and screenshot. The converter itself stays: every other part of the app depends on it.
+
+**The argument against:** someone checking how a macro converts loses a quick way to do it. That is
+accepted because the Details tab shows how each real page converts, which is the case that matters,
+and the header is clearer with one button fewer.
