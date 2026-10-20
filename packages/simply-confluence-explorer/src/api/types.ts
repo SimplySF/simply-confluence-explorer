@@ -165,6 +165,7 @@ export type SyncProgress = {
   errorCount: number;
   errors: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;
+  startedAt?: string;
   completedAt?: string;
 };
 
@@ -246,7 +247,10 @@ export type MetadataProgress = {
   total: number;
   processed: number;
   errorCount: number;
+  /** The pages left out, each with why; the latest 200. */
+  failures?: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;
+  startedAt?: string;
   completedAt?: string;
 };
 
@@ -300,6 +304,8 @@ export type SessionTurn = {
   pageIds?: Record<string, string>;
   /** The queues of edits staged from this answer's suggestions. */
   runIds?: string[];
+  /** The trace that recorded how this answer was made, for the Observability page (ADR-054). */
+  traceId?: string;
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
   /** On a co-writer's answer: a proposed series, an overview page then its child pages. */
@@ -502,6 +508,7 @@ export type BranchRun = {
 export type BatchProgress = {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt?: string;
   completedAt?: string;
   sessionId: string;
   spaceKey: string;

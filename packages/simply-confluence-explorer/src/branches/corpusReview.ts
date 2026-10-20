@@ -24,6 +24,8 @@ import { JobRunner } from '../jobs/jobRunner.js';
 import { contextCollector, leftOutNote } from '../spaces/branchContext.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { errorMessage } from '../util/errors.js';
+import type { LiveJob } from '../telemetry/telemetry.js';
+import { noTracer, type Tracer } from '../telemetry/tracer.js';
 
 // A review, or a request for changes, over more pages than one request can carry (ADR-051). The
 // pages are grouped by the topics their metadata shares, so pages about one subject are compared in
@@ -97,6 +99,7 @@ export type CorpusReviewDeps = {
   dataDir: string;
   budget: number;
   log: (message: string) => void;
+  tracer?: Tracer;
 };
 
 export type CorpusReviewRequest = {
@@ -118,9 +121,24 @@ export class CorpusReviews {
   private readonly stoppers = new Map<string, AbortController>();
 
   public constructor(private readonly deps: CorpusReviewDeps) {
-    this.jobs = new JobRunner<BatchProgress>('batch', (job, error) =>
-      deps.log(`A batched review of ${job.pages} pages failed: ${errorMessage(error)}`),
+    this.jobs = new JobRunner<BatchProgress>(
+      'batch',
+      (job, error) => deps.log(`A batched review of ${job.pages} pages failed: ${errorMessage(error)}`),
+      deps.tracer,
     );
+  }
+
+  /** Batched reviews running now, for the Observability page. */
+  public liveJobs(): LiveJob[] {
+    return this.jobs.running().map((j) => ({
+      jobId: j.jobId,
+      kind: 'batch',
+      label: `${j.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${j.pages} pages`,
+      processed: j.processed,
+      total: j.total,
+      startedAt: j.startedAt,
+      current: j.currentTitle,
+    }));
   }
 
   public start(request: CorpusReviewRequest): BatchProgress {
@@ -196,12 +214,23 @@ export class CorpusReviews {
         if (result.pages.length > 0) {
           result.pages.forEach((p) => titles.set(p.page.title, p.page.id));
           const context = result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n');
+          const batchNumber = job.processed + 1;
           // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
-          const reply = await ai.chat(
-            { context, history, prompt: request.prompt },
-            { spaceKey: job.spaceKey, guard, signal },
+          const parsed = await (this.deps.tracer ?? noTracer).span(
+            'review',
+            'batch',
+            { batch: batchNumber, pages: result.pages.length, withheld: result.withheld.length },
+            async (span) => {
+              const reply = await ai.chat(
+                { context, history, prompt: request.prompt },
+                { spaceKey: job.spaceKey, guard, signal },
+              );
+              const findings = request.parse(reply.text);
+              span.set({ findings: findings?.length ?? 0, parsed: findings !== null });
+              return findings;
+            },
           );
-          found.push(request.parse(reply.text) ?? []);
+          found.push(parsed ?? []);
         }
         job.processed++;
       }

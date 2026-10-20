@@ -20,6 +20,8 @@ import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
 import { runLimited } from '../util/runLimited.js';
+import type { LiveJob } from '../telemetry/telemetry.js';
+import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SpaceStore } from './spaceStore.js';
 
@@ -42,12 +44,30 @@ export class SpaceSync {
     private readonly exclusions: ExclusionManager,
     private readonly client: () => ConfluenceClient,
     log: (message: string) => void,
+    tracer: Tracer = noTracer,
   ) {
-    this.jobs = new JobRunner<SyncProgress>('sync', (job, error) => {
-      log(`sync ${job.jobId} of ${job.spaceKey} failed: ${errorMessage(error)}`);
-      job.errors.push({ pageId: '', title: job.spaceKey, error: errorMessage(error) });
-      job.errorCount++;
-    });
+    this.jobs = new JobRunner<SyncProgress>(
+      'sync',
+      (job, error) => {
+        log(`sync ${job.jobId} of ${job.spaceKey} failed: ${errorMessage(error)}`);
+        job.errors.push({ pageId: '', title: job.spaceKey, error: errorMessage(error) });
+        job.errorCount++;
+      },
+      tracer,
+    );
+  }
+
+  /** Syncs running now, for the Observability page. */
+  public liveJobs(): LiveJob[] {
+    return this.jobs.running().map((j) => ({
+      jobId: j.jobId,
+      kind: 'sync',
+      label: `Syncing ${j.spaceKey}`,
+      processed: j.processed,
+      total: j.total,
+      startedAt: j.startedAt,
+      current: j.currentPageTitle,
+    }));
   }
 
   /**

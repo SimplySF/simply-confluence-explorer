@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage } from '../util/errors.js';
+import { noTracer, type Attrs, type Tracer } from '../telemetry/tracer.js';
 import { resolveGeminiCli, runGeminiCli, systemCliLookup } from './geminiService.js';
 import { loadGuardRules, OutboundGuard, type ChatTurn, type GuardedPayload, type GuardReport } from './guard.js';
 import { complete, embed, EMBEDDING_MODELS, listModels } from './providers.js';
@@ -100,6 +101,8 @@ export type EngineOptions = {
   transport?: Transport;
   /** Embeds texts. Tests that pass a `transport` have embeddings only when they pass this too. */
   embedTransport?: EmbedTransport;
+  /** Where each request is recorded as a span of the trace it belongs to (ADR-054). */
+  tracer?: Tracer;
 };
 
 /**
@@ -194,7 +197,7 @@ export class ConfiguredAi implements AiEngine {
       let batch: number[][];
       try {
         // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
-        batch = await this.sendEmbed(payload, ctx.signal);
+        batch = await this.traced('embed', entry, () => this.sendEmbed(payload, ctx.signal), ctx.signal);
       } catch (error) {
         this.audit({ ...entry, outcome: ctx.signal?.aborted ? 'stopped' : `failed: ${errorMessage(error)}` });
         throw ctx.signal?.aborted ? new AiStopped() : error;
@@ -244,7 +247,7 @@ export class ConfiguredAi implements AiEngine {
     };
     let reply: string;
     try {
-      reply = await this.send(payload, signal);
+      reply = await this.traced('complete', entry, () => this.send(payload, signal), signal);
     } catch (error) {
       // Recorded either way: a request that failed or was stopped part of the way through may still
       // have been sent.
@@ -259,10 +262,26 @@ export class ConfiguredAi implements AiEngine {
     return { text: guard.restore(reply), guard: report };
   }
 
+  /** Sends as a span of the current trace, counted for the health numbers; a stopped request is not a failure. */
+  private traced<T>(name: string, entry: Attrs, send: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const tracer = this.options.tracer ?? noTracer;
+    tracer.count('ai.requests');
+    return tracer.span('ai', name, entry, async () => {
+      try {
+        return await send();
+      } catch (error) {
+        if (!signal?.aborted) tracer.count('ai.failures');
+        throw signal?.aborted ? new AiStopped() : error;
+      }
+    });
+  }
+
   private audit(entry: Record<string, unknown>): void {
     try {
       fs.mkdirSync(path.dirname(this.auditFile), { recursive: true, mode: 0o700 });
-      fs.appendFileSync(this.auditFile, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', {
+      const traceId = this.options.tracer?.current()?.traceId;
+      const line = { at: new Date().toISOString(), ...(traceId ? { traceId } : {}), ...entry };
+      fs.appendFileSync(this.auditFile, JSON.stringify(line) + '\n', {
         mode: 0o600,
       });
     } catch (error) {

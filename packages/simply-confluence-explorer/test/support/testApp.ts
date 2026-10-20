@@ -83,6 +83,8 @@ export async function startTestApp(
       return Promise.resolve(reply(payload, sent.length, signal));
     },
     contextChars: options.contextChars,
+    // Records are written at once, so a test can read them back straight after an action.
+    telemetryTimers: false,
     ...(options.embeddings
       ? {
           embedTransport: (payload: GuardedPayload): Promise<number[][]> => {

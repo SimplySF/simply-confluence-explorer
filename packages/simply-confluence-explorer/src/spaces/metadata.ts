@@ -20,6 +20,8 @@ import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
+import type { LiveJob } from '../telemetry/telemetry.js';
+import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
@@ -122,10 +124,26 @@ export class MetadataPipeline {
     private readonly ai: () => AiEngine,
     log: (message: string) => void,
     private readonly vectors?: VectorIndex,
+    private readonly tracer: Tracer = noTracer,
   ) {
-    this.jobs = new JobRunner<MetadataProgress>('meta', (job, error) =>
-      log(`AI summaries for ${job.spaceKey} failed: ${errorMessage(error)}`),
+    this.jobs = new JobRunner<MetadataProgress>(
+      'meta',
+      (job, error) => log(`AI summaries for ${job.spaceKey} failed: ${errorMessage(error)}`),
+      tracer,
     );
+  }
+
+  /** Index runs going on now, for the Observability page. */
+  public liveJobs(): LiveJob[] {
+    return this.jobs.running().map((j) => ({
+      jobId: j.jobId,
+      kind: 'index',
+      label: `AI index: ${j.rootTitle ?? j.spaceKey}`,
+      processed: j.processed,
+      total: j.total,
+      startedAt: j.startedAt,
+      current: j.currentPageTitle,
+    }));
   }
 
   /**
@@ -244,14 +262,29 @@ export class MetadataPipeline {
       const vocabulary = [...uses].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
       try {
         // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
-        for (const tag of await this.index(page, spaceKey, ai, vocabulary)) uses.set(tag, (uses.get(tag) ?? 0) + 1);
-      } catch {
-        // Counted and skipped; running the job again retries every page still without a summary.
+        const tags = await this.tracer.span('index', 'page', { pageId: page.id, title: page.title }, () =>
+          this.index(page, spaceKey, ai, vocabulary),
+        );
+        for (const tag of tags) uses.set(tag, (uses.get(tag) ?? 0) + 1);
+        this.tracer.count('index.pages');
+      } catch (error) {
+        // Recorded with its reason and skipped; running the job again retries every page still missing.
         job.errorCount++;
+        job.failures = [
+          ...(job.failures ?? []),
+          { pageId: page.id, title: page.title, error: errorMessage(error) },
+        ].slice(-200);
+        this.tracer.count('index.failures');
+        this.tracer.log('warn', 'index', `${page.title} was not indexed: ${errorMessage(error)}`, { pageId: page.id });
       }
       job.processed++;
     }
     job.currentPageTitle = undefined;
     this.store.writeToc(spaceKey);
+    if (job.errorCount > 0)
+      this.tracer.problem(
+        'index-failures',
+        `The AI index of ${job.rootTitle ?? spaceKey} left out ${job.errorCount} page${job.errorCount === 1 ? '' : 's'}.`,
+      );
   }
 }

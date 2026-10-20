@@ -16,6 +16,7 @@
 
 import type http from 'node:http';
 import type { ErrorResponse } from '../api/types.js';
+import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import { errorMessage } from '../util/errors.js';
 import { FIELDS, PARAMS } from './guards.js';
 
@@ -69,7 +70,12 @@ const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export class Router {
   private readonly routes: Route[] = [];
 
-  public constructor(private readonly log: (message: string) => void) {}
+  public constructor(
+    private readonly log: (message: string) => void,
+    private readonly tracer: Tracer & {
+      begin?: (method: string, path: string, traceId: string) => () => void;
+    } = noTracer,
+  ) {}
 
   /**
    * Adds a route. A parameter is written as `:name`, and its name must be one of `PARAMS`, so no
@@ -99,22 +105,49 @@ export class Router {
     res.on('close', () => {
       if (!res.writableFinished) dropped.abort();
     });
-    try {
-      const { route, params } = this.match(method, rawPath);
-      const body = METHODS_WITH_BODY.has(method) ? await readJsonBody(req) : undefined;
-      checkFields(body, url.searchParams);
-      const result: unknown = await route.handler({
-        method,
-        pathname: rawPath,
-        params,
-        query: url.searchParams,
-        body,
-        res,
-        signal: dropped.signal,
+    this.tracer.count('http.requests');
+    // Each request is a trace; a failure the server caused ends it as an error, and the reply is sent
+    // either way.
+    await this.tracer
+      .span('http', `${method} ${this.patternOf(method, rawPath)}`, { method, path: rawPath }, async (span) => {
+        const done = this.tracer.begin?.(method, rawPath, span.traceId);
+        try {
+          const { route, params } = this.match(method, rawPath);
+          const body = METHODS_WITH_BODY.has(method) ? await readJsonBody(req) : undefined;
+          checkFields(body, url.searchParams);
+          const result: unknown = await route.handler({
+            method,
+            pathname: rawPath,
+            params,
+            query: url.searchParams,
+            body,
+            res,
+            signal: dropped.signal,
+          });
+          if (!res.headersSent) sendJson(res, 200, result ?? {});
+          span.set({ status: 200 });
+        } catch (error) {
+          const status = statusOf(error);
+          span.set({ status });
+          if (status >= 500 || status === 499) throw error;
+          this.fail(res, method, rawPath, error);
+        } finally {
+          done?.();
+        }
+      })
+      .catch((error: unknown) => {
+        if (statusOf(error) >= 500) this.tracer.count('http.errors');
+        this.fail(res, method, rawPath, error);
       });
-      if (!res.headersSent) sendJson(res, 200, result ?? {});
-    } catch (error) {
-      this.fail(res, method, rawPath, error);
+  }
+
+  /** The route a path matches, as written, so requests for different pages group as one route. */
+  private patternOf(method: string, pathname: string): string {
+    try {
+      return `/${this.match(method, pathname).route.segments.join('/')}`;
+    } catch {
+      // No route matches; the request is answered with a 404 or 405, and its path names it.
+      return pathname;
     }
   }
 
@@ -132,8 +165,7 @@ export class Router {
   }
 
   private fail(res: http.ServerResponse, method: string, pathname: string, error: unknown): void {
-    const declared = (error as { status?: unknown }).status;
-    const status = typeof declared === 'number' && declared >= 400 && declared < 600 ? declared : 500;
+    const status = statusOf(error);
     const message = errorMessage(error);
     if (status >= 500) this.log(`[${method} ${pathname}] ${message}`);
     if (res.headersSent) {
@@ -145,6 +177,12 @@ export class Router {
     const body: ErrorResponse & { findings?: unknown } = findings ? { error: message, findings } : { error: message };
     sendJson(res, status, body);
   }
+}
+
+/** The HTTP status an error asks for, or 500 for an error that names none. */
+function statusOf(error: unknown): number {
+  const declared = (error as { status?: unknown }).status;
+  return typeof declared === 'number' && declared >= 400 && declared < 600 ? declared : 500;
 }
 
 function matchSegments(pattern: string[], parts: string[]): Record<string, string> | undefined {

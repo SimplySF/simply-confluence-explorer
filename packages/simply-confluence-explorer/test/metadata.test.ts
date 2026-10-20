@@ -25,6 +25,7 @@ import type { AiEngine } from '../src/ai/engine.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { generateMetadata, MetadataPipeline } from '../src/spaces/metadata.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
+import { noTracer } from '../src/telemetry/tracer.js';
 
 const page = (id: string, title: string, storageXml: string): PageDetail => ({
   id,
@@ -134,5 +135,30 @@ describe('metadata of the second kind', () => {
     await finish(pipeline, pipeline.start('PLAT').jobId);
     expect(prompts[0]).toContain('add a new one only for a subject none of them covers: source-control.');
     expect(prompts[1]).toContain(': source-control, pipelines.');
+  });
+});
+
+describe('an index run with failures', () => {
+  it('records each page left out with its reason, and raises a problem, where it was only counted before', async () => {
+    const { store, exclusions } = setup();
+    for (const id of ['1', '2']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);
+    const { ai } = fakeAi((prompt) => {
+      if (prompt.includes('Page 2')) throw new Error('quota exceeded');
+      return '{"summary":"S","tags":[]}';
+    });
+    const problems: string[] = [];
+    const tracer = { ...noTracer, problem: (_kind: string, message: string) => void problems.push(message) };
+    const pipeline = new MetadataPipeline(
+      store,
+      exclusions,
+      () => ai,
+      () => undefined,
+      undefined,
+      tracer,
+    );
+    const { jobId } = pipeline.start('PLAT');
+    await finish(pipeline, jobId);
+    expect(pipeline.get(jobId)?.failures).toEqual([{ pageId: '2', title: 'Page 2', error: 'quota exceeded' }]);
+    expect(problems).toEqual(['The AI index of PLAT left out 1 page.']);
   });
 });

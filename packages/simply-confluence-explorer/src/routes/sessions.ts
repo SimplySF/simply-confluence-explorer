@@ -191,13 +191,24 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         if (gate.allowed && gate.page?.spaceKey.toUpperCase() === scope.spaceKey) corpus.push(gate.page);
       }
       const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
-      const r = await retrieveContext(
-        scope.spaceKey,
-        corpus,
-        { question: prompt, previous, keep: keptSections(session) },
-        { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
-        { budget: services.contextChars, outline: scope.kind === 'space' },
-      );
+      const r = await services.telemetry.span('retrieval', 'context', { corpusPages: corpus.length }, async (span) => {
+        const retrieved = await retrieveContext(
+          scope.spaceKey,
+          corpus,
+          { question: prompt, previous, keep: keptSections(session) },
+          { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
+          { budget: services.contextChars, outline: scope.kind === 'space' },
+        );
+        span.set({
+          mode: retrieved.corpus.mode,
+          considered: retrieved.considered,
+          pagesRead: retrieved.selectedPages.length,
+          sectionsRead: retrieved.selectedPages.reduce((n, p) => n + (p.sections?.length ?? 0), 0),
+          withheld: retrieved.withheld.length,
+          overflow: retrieved.overflow.length,
+        });
+        return retrieved;
+      });
       ctx = {
         context: r.contextMarkdown,
         withheld: r.withheld,
@@ -242,6 +253,20 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     prompt: { shown: string; sent: string },
     signal: AbortSignal,
     suggestions = false,
+  ): Promise<AiSessionView> =>
+    services.telemetry.span(
+      'chat',
+      suggestions ? 'suggestions' : 'question',
+      { sessionId: session.id, scope: session.scope.kind, spaceKey: session.scope.spaceKey },
+      (span) => answerTraced(session, prompt, signal, suggestions, span.traceId),
+    );
+
+  const answerTraced = async (
+    session: AiSessionView,
+    prompt: { shown: string; sent: string },
+    signal: AbortSignal,
+    suggestions: boolean,
+    traceId: string,
   ): Promise<AiSessionView> => {
     const ctx = await contextFor(session, prompt.sent, signal);
     const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
@@ -268,6 +293,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           ...(ctx.considered ? { considered: ctx.considered } : {}),
           ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
           ...(findings ? { findings, pageIds: pageIdsNamed(findings, ctx.pages) } : {}),
+          traceId,
         },
       ],
       guard.exportState(),
