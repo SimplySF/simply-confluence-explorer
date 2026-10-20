@@ -257,7 +257,8 @@ export class MetadataPipeline {
   /**
    * Indexes one pack of pages: their metadata in one request where they lack it, each page the reply
    * leaves out asked for again on its own, then their section vectors when the engine makes them.
-   * Returns the topics given and the pages that failed, each with why.
+   * Returns the topics given and the pages that failed, each with why. `done` is told of pages as they
+   * finish, so a pack whose pages are asked for one at a time still shows its progress.
    */
   private async indexPack(
     pack: PageDetail[],
@@ -265,6 +266,7 @@ export class MetadataPipeline {
     ai: AiEngine,
     vocabulary: string[],
     stopped: () => boolean,
+    done: (pages: number) => void,
   ): Promise<{ tags: string[]; failed: Array<{ page: PageDetail; error: string }> }> {
     const tags: string[] = [];
     const failed: Array<{ page: PageDetail; error: string }> = [];
@@ -277,6 +279,7 @@ export class MetadataPipeline {
             (error: unknown) => new Map(needed.map((p) => [p.id, new Error(errorMessage(error))])),
           )
         : new Map<string, PageMetadata | Error>(needed.map((p) => [p.id, new Error('asked alone')]));
+    done(pack.length - needed.filter((p) => results.get(p.id) instanceof Error).length);
     for (const page of needed) {
       let result = results.get(page.id);
       if (!(result instanceof Error) || stopped()) {
@@ -288,6 +291,7 @@ export class MetadataPipeline {
         );
         if (result instanceof Error) failed.push({ page, error: result.message });
         else this.store.writeMetadata(spaceKey, result);
+        done(1);
       }
       if (result && !(result instanceof Error)) tags.push(...result.tags);
     }
@@ -347,6 +351,7 @@ export class MetadataPipeline {
         const pack = packs[next++];
         const vocabulary = [...uses].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
         inFlight.add(pack[0].title);
+        let counted = 0;
         job.currentPageTitle = [...inFlight].join(', ');
         // eslint-disable-next-line no-await-in-loop -- each worker takes the next pack when its last is done
         const { tags, failed } = await this.tracer.span(
@@ -354,7 +359,10 @@ export class MetadataPipeline {
           'pack',
           { pages: pack.length, first: pack[0].title, spaceKey },
           async (span) => {
-            const outcome = await this.indexPack(pack, spaceKey, ai, vocabulary, stopped);
+            const outcome = await this.indexPack(pack, spaceKey, ai, vocabulary, stopped, (n) => {
+              counted += n;
+              job.processed += n;
+            });
             span.set({ failed: outcome.failed.length });
             return outcome;
           },
@@ -363,7 +371,8 @@ export class MetadataPipeline {
         for (const tag of tags) uses.set(tag, (uses.get(tag) ?? 0) + 1);
         for (const f of failed) this.recordFailure(job, f.page, f.error, spaceKey);
         this.tracer.count('index.pages', pack.length - failed.length);
-        job.processed += pack.length;
+        // Pages a stopped pack never reached are counted with it, so the total adds up when the run ends.
+        job.processed += pack.length - counted;
         job.requestsDone = (job.requestsDone ?? 0) + 1;
       }
     };

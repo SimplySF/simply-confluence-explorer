@@ -165,3 +165,37 @@ describe('an index run with failures', () => {
     expect(problems).toEqual(['The AI index of PLAT left out 1 page.']);
   });
 });
+
+describe('an index run whose pack reply cannot be read', () => {
+  it('counts each page as it is asked for alone, where the count once waited for the whole pack', async () => {
+    const { store, exclusions } = setup();
+    for (const id of ['1', '2', '3']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // The pack request gets an answer in the wrong shape, so each page is asked for alone; the last waits.
+    const ai: AiEngine = {
+      ...fakeAi(() => '').ai,
+      analyzeDocument: async (markdown) => {
+        if (markdown.includes('Page 3') && !markdown.includes('Page 1')) await held;
+        return { text: '{"summary":"S","tags":[]}', guard: { redacted: {}, summary: '' } as never };
+      },
+    };
+    const pipeline = new MetadataPipeline(
+      store,
+      exclusions,
+      () => ai,
+      () => undefined,
+      undefined,
+      noTracer,
+      { retryDelayMs: 0 },
+    );
+    const { jobId } = pipeline.start('PLAT');
+    for (let i = 0; i < 200 && (pipeline.get(jobId)?.processed ?? 0) < 2; i++)
+      // eslint-disable-next-line no-await-in-loop -- polls until the first two pages are done
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(pipeline.get(jobId)).toMatchObject({ status: 'running', processed: 2, total: 3 });
+    release();
+    await finish(pipeline, jobId);
+    expect(pipeline.get(jobId)).toMatchObject({ status: 'completed', processed: 3 });
+  });
+});
