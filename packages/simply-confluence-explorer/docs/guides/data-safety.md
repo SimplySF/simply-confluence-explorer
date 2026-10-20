@@ -103,26 +103,28 @@ folder.
 When a chat's pages are too many to send in one request, the app first sends the AI the titles,
 places in the space, headings and AI summaries of up to 40 sections that may help, never their text,
 so it can choose which sections to read. Only pages the exclusion rules allow are among them, and the
-request passes the leak guard like any other. A review of that many pages sends them in batches, each
-checked the same way. Text from a GitLab repository, added to a new page, is checked by the leak
+request passes the leak guard like any other. A review of that many pages, or a thorough answer, sends
+them in batches, each checked the same way; a thorough answer's notes pass the guard again when they
+are combined. Text from a GitLab repository, added to a new page, is checked by the leak
 guard too; the exclusion rules do not apply to it, because it is not a Confluence page.
 
 ## Embeddings
 
-With ChatGPT or Gemini (Google API) as the provider, building the AI index also sends the text of
-each section of each page to that provider's embedding service, which returns a list of numbers
+When **Search by meaning** has a provider, building the AI index also sends the text of each section
+of each page to that provider's embedding service, which may differ from the one that answers, which returns a list of numbers
 describing what the section means. The numbers are stored with the synced copy and let a question
 find a section by meaning. Each question is embedded too, so it can be compared with them. These are
 the same pages a summary already sends in full, and every request passes the leak guard: a section
 holding a secret is not sent at all, personal data is replaced, and excluded pages are never
-included. Claude and the Gemini CLI offer no embeddings, so with them nothing extra is sent.
+included. With it off, or left to Claude or the Gemini CLI, which make none, nothing extra is sent.
 
 ## A record of what was sent
 
 Every request to an AI adds one line to `data/ai-audit.jsonl` in the app's data folder: when it was
 sent, to which provider, for which space, how many characters, and how many values the guard
 replaced. Embedding requests are recorded the same way, with how many sections were sent and how
-many were held back for holding a secret. It never records the content itself.
+many were held back for holding a secret. It never records the content itself. The app's own logs
+in `telemetry/` keep counts and page titles, never page text; see [Troubleshooting](/guides/troubleshooting/).
 
 ## Who can reach the app
 

@@ -40,7 +40,7 @@ refactors that keep the public surface identical (though a short doc is welcome 
 | [0005](0005-writes-to-confluence.md)           | Writing to Confluence: a push, a branch's review queue, and a new page         | Implemented (PR #11) |
 | [0006](0006-end-to-end-environment.md)         | The end-to-end suite runs against a real Data Center                           | Implemented (PR #12) |
 | [0007](0007-reviews-tags-and-space-chat.md)    | Chat as the place to work: contexts, a change queue, new pages from GitLab     | Implemented (PR #24) |
-| [0008](0008-large-spaces-and-observability.md) | Large spaces: packed indexing, context checks, thorough answers, observability | Planned              |
+| [0008](0008-large-spaces-and-observability.md) | Large spaces: packed indexing, context checks, thorough answers, observability | Implemented (PR #30) |
 
 Design docs work alongside the [decision log](../decisions.md), and each has a different job. A
 design doc describes one feature: what it does, how it behaves, and why it has that shape. It is

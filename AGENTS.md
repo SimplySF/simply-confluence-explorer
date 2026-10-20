@@ -123,21 +123,22 @@ maintainer named in the repository variable `RELEASE_MAINTAINERS` may merge a re
 without that approval (ADR-053). The paths below are
 relative to `packages/simply-confluence-explorer/src/`.
 
-| surface                         | where                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts`                            |
-| HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)                                  |
-| HTTP to GitLab                  | `gitlab/client.ts`, the only module besides the Confluence client that reaches the network (ADR-050)                            |
-| Tokens                          | `confluence/connection.ts` (the Confluence token), `gitlab/client.ts` (the GitLab token), `util/privateFile.ts`                 |
-| Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                                              |
-| The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022)                                                             |
-| AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                                                       |
-| AI keys                         | `ai/settings.ts`                                                                                                                |
-| External processes              | `ai/geminiService.ts`                                                                                                           |
-| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                                                  |
-| Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                                                    |
-| Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                                               |
-| The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`, `scripts/release-gate.mjs` |
+| surface                         | where                                                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Writes to Confluence            | `confluence/pagePush.ts`, the one write path; `branches/branchRuns.ts` (ADR-024); `drafts/drafts.ts`                             |
+| HTTP to Confluence              | `confluence/client.ts`, the only module that imports simply-atlassian-core's clients (ADR-028)                                   |
+| HTTP to GitLab                  | `gitlab/client.ts`, the only module besides the Confluence client that reaches the network (ADR-050)                             |
+| Tokens                          | `confluence/connection.ts` (the Confluence token), `gitlab/client.ts` (the GitLab token), `util/privateFile.ts`                  |
+| Pages sent to AI providers      | `ai/providers.ts`, the only module that loads their SDKs (ADR-017)                                                               |
+| The outbound guard              | `ai/guard.ts` and the engine that runs it, `ai/engine.ts` (ADR-022), with its check of what was sent, `ai/manifest.ts` (ADR-054) |
+| AI conversations and uploads    | `ai/sessions.ts` and its routes (ADR-023)                                                                                        |
+| AI keys                         | `ai/settings.ts`                                                                                                                 |
+| Telemetry kept on disk          | `telemetry/telemetry.ts`, which writes it, and `routes/observe.ts`, which serves it (ADR-054)                                    |
+| External processes              | `ai/geminiService.ts`                                                                                                            |
+| Deletes files                   | `spaces/spaceStore.ts` (purge)                                                                                                   |
+| Paths built from request values | `http/guards.ts` (validation), `within()` in `util/paths.ts`                                                                     |
+| Sensitive-data exclusion        | `spaces/exclusionManager.ts` and every caller of `isPageExcluded`                                                                |
+| The enforcement itself          | `package.json` scripts and Wireit config, `.github/workflows/`, `test-env/`, `test/budgets.test.ts`, `scripts/release-gate.mjs`  |
 
 ### The rules specific to this program
 

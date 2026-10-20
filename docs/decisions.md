@@ -1603,3 +1603,22 @@ documents that still describe how the app works. The limit rises to 1,850, enoug
 raising it whenever it is reached makes it no limit at all. This is accepted because the increase is
 sized to one design doc, which the project's own rule requires, and the next increase needs its own
 record arguing for it.
+
+---
+
+## ADR-056 — A question is not expanded with the space's topics; words that mean the same come from embeddings instead
+
+**Status:** accepted, 2026-10-20.
+
+The plan for design doc 0008 included topic expansion: matching a question's words to the space's
+topics from the AI index, and adding the pages that carry those topics as candidates. It was
+declined once the retrieval measurement (`test/retrievalEval.test.ts`) was in place. Topics already
+count in the section search, and their words are stemmed in the same way as the question's, so a
+question that shares a word with a topic already finds that topic's pages. What expansion would add
+is a match between different words that mean the same thing, such as "down" and "outage". Matching
+those needs embeddings, so the embedding provider was made separate from the chat provider instead.
+A Gemini CLI user can then add a Gemini or OpenAI key for embeddings alone.
+
+**The argument against:** a user with no embedding key gets no match on meaning at all. That is
+accepted because a table of synonyms kept by the app would be a guess about every team's vocabulary,
+and the weak-match warning tells the user when a search found little.

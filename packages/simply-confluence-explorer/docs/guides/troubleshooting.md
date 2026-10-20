@@ -30,6 +30,29 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
 | `ignore-rules`      | Page ids in exclusion rules are written as `id:12345` | Change bare numbers to `id:` rules.                                                               |
 | `guard-rules`       | Each space's leak guard rules parse                   | Fix the rule named. Until then, AI requests for that space are refused.                           |
 | `ai-engine`         | An AI provider is set up                              | Choose a provider in Settings, or install the Gemini CLI.                                         |
+| `telemetry`         | Problems the app flagged in the last day              | Open the Observability page to see each one with its trace.                                       |
+
+## The Observability page
+
+**Observability** in the header shows what the app is doing and what went wrong, without leaving it.
+A number on the button counts problems you have not seen yet.
+
+- **Now**: running jobs with their progress, requests in flight and how long each has run, the search
+  index being built, and how long the server took to respond lately, with charts for the last day.
+- **Logs**: recent events, searchable and filtered by level, kind and space. Repeated messages are
+  grouped with a count, so 300 copies of one indexing error read as one line.
+- **Trace**: one action, such as a question or an index run, as a timeline of its steps. A question's
+  trace shows the search, the sections chosen, what was sent and how long the AI took.
+
+**Trace** on an answer, **See why** on a failed index run or review, and **See logs** on an error
+message open it at the right place. The app flags a problem by itself when the server stops
+responding for over a second, when a request fails its check of what was sent, when most AI requests
+fail, and when an index run leaves pages out.
+
+![The Observability page showing running work and the server's response times](../images/observe-now.webp)
+
+It is kept in `telemetry/` in the data folder for 14 days, up to 200 MB: counts, durations, ids, page
+titles and error messages, never page text, questions, answers, keys, or the title of an excluded page.
 
 ## Common problems
 
@@ -65,6 +88,9 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
 
 ### The AI does not answer
 
+- **"The server did not answer in 30 s"**: it is busy, usually building the search index of a large
+  space for the first time. **Observability → Now** shows what it is doing.
+
 - **"No AI provider is set up"**, **"no API key is set"** or **"no model is chosen"**: finish the
   setup under **Settings → AI provider**. ChatGPT needs a model chosen.
 - **"The Gemini CLI was not found"**: install it, or enter its location in Settings, or choose an API
@@ -96,5 +122,8 @@ Run the doctor with `--json` and include its output, with any tokens removed, wh
 ## How this is checked
 
 `test/doctor.test.ts` checks every doctor check, and that every warning and failure carries a fix.
+`test/telemetry.test.ts` checks what is kept, that nothing on the never-recorded list is, and the
+problems flagged; `test/responsiveness.test.ts` checks the server answers while a 3,200-page index
+builds.
 `test/cli.test.ts` checks the port handling and that the doctor exits with an error when a check
 fails.
