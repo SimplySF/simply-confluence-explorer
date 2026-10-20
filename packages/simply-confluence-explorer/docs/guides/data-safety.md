@@ -98,19 +98,31 @@ Each rule is a regular expression, and matching is case-sensitive. A rule that d
 refused when you save it, with the line number. The rules live in `.confluenceguard` in the space's
 folder.
 
-## What a whole-space question sends first
+## What a large chat sends first
 
-Before answering a question about the whole space, the app sends the AI the titles, places in the
-space and AI summaries of up to 25 pages that may help, so it can choose which to read. Only pages the
-exclusion rules allow are among them, and the request passes the leak guard like any other. Text from
-a GitLab repository, added to a new page, is checked by the leak guard too; the exclusion rules do not
-apply to it, because it is not a Confluence page.
+When a chat's pages are too many to send in one request, the app first sends the AI the titles,
+places in the space, headings and AI summaries of up to 40 sections that may help, never their text,
+so it can choose which sections to read. Only pages the exclusion rules allow are among them, and the
+request passes the leak guard like any other. A review of that many pages sends them in batches, each
+checked the same way. Text from a GitLab repository, added to a new page, is checked by the leak
+guard too; the exclusion rules do not apply to it, because it is not a Confluence page.
+
+## Embeddings
+
+With ChatGPT or Gemini (Google API) as the provider, generating AI summaries also sends the text of
+each section of each page to that provider's embedding service, which returns a list of numbers
+describing what the section means. The numbers are stored with the synced copy and let a question
+find a section by meaning. Each question is embedded too, so it can be compared with them. These are
+the same pages a summary already sends in full, and every request passes the leak guard: a section
+holding a secret is not sent at all, personal data is replaced, and excluded pages are never
+included. Claude and the Gemini CLI offer no embeddings, so with them nothing extra is sent.
 
 ## A record of what was sent
 
 Every request to an AI adds one line to `data/ai-audit.jsonl` in the app's data folder: when it was
 sent, to which provider, for which space, how many characters, and how many values the guard
-replaced. It never records the content itself.
+replaced. Embedding requests are recorded the same way, with how many sections were sent and how
+many were held back for holding a secret. It never records the content itself.
 
 ## Who can reach the app
 
@@ -126,7 +138,9 @@ who can reach it can use your Confluence token through it.
 
 `test/exclusions.test.ts` checks the rule matching, including everything under an excluded page and
 the over-match described above. `test/aiRoutes.test.ts` checks that an excluded page is refused on
-every AI route. `test/guard.test.ts` holds sample secrets and personal data for every detector, and
+every AI route. `test/embeddings.test.ts` checks that a section holding a secret is never embedded,
+that personal data is replaced, that embedding requests are recorded, and that Claude sends nothing.
+`test/guard.test.ts` holds sample secrets and personal data for every detector, and
 checks that a refusal names the type and line but never the value. `test/security.test.ts` checks
 that requests from other hosts and other sites are refused. `test/e2e/ai.e2e.ts` runs the exclusions
 and the guard against a real Confluence Data Center.

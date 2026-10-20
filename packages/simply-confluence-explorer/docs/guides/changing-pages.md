@@ -6,7 +6,8 @@ sidebar:
 ---
 
 Every change Confluence Explorer makes to a page starts in a chat (see
-[Asking an AI](/guides/asking-ai/)): one page, a directory, pages chosen by tag, or the whole space.
+[Asking an AI](/guides/asking-ai/)): one page, a directory, any mix of directories, pages and tags,
+or the whole space.
 You ask for suggestions, tick the ones you agree with, read the edit each page gets, and push only
 what you accept. Nothing changes in Confluence until you confirm a push.
 
@@ -22,6 +23,12 @@ In a chat, ask for them in one of three ways:
   conversation found or agreed. Talk it through first, then turn it into changes.
 
 ![Suggestions from a chat on a tag's pages, two of them ticked](../images/chat-suggestions.webp)
+
+When a chat's pages are too many for one request, **Review for problems** and **Turn this into
+changes** read them in batches instead. Pages that share a topic are read in the same batch, so
+repetition between them is found wherever they sit, and the suggestions from every batch arrive as
+one answer. The chat and the header show which batch is being read, **Stop** ends it with nothing
+kept, and you can work elsewhere in the app meanwhile; the answer is in the chat when you come back.
 
 Each suggestion names the pages it is about; click a name to open the page. Two kinds cannot be
 carried out by editing a page, so they cannot be ticked: a page that should be moved, split or merged,
@@ -82,6 +89,8 @@ Queues are saved on your computer, so they survive restarting the app.
 `test/branchRuns.test.ts` checks that suggestions are stored with the answer and never come from the
 browser, that each edit carries only its own suggestions, that only accepted pages are written, that
 a page changed by someone else is refused while the others are written, that a dry run writes
-nothing, and that a stopped queue stops. `test/pagePush.test.ts` checks the version check and that a
+nothing, and that a stopped queue stops. `test/corpusReview.test.ts` and `test/sessions.test.ts`
+check that a large review keeps related pages in one batch, leaves out a page holding a secret,
+merges the suggestions, and keeps nothing when stopped. `test/pagePush.test.ts` checks the version check and that a
 page with an image or a page link is refused. `test/e2e/branches.e2e.ts` queues and pushes an edit
 against a real Confluence Data Center.

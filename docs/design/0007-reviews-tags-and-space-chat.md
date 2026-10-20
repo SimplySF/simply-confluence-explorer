@@ -30,6 +30,8 @@ work such as AI summaries lost its progress as soon as the person opened another
 | route                                            | what it does                                                                     |
 | ------------------------------------------------ | -------------------------------------------------------------------------------- |
 | `PATCH /api/ai/sessions/:id`                     | Renames a chat, or changes its context between the whole space and chosen pages. |
+| `POST /api/ai/sessions/:id/suggest`              | Asks for suggestions; too many pages for one request start a batched review.     |
+| `GET /api/ai/batches/:jobId`, `POST .../cancel`  | A batched review's progress, and stopping it.                                    |
 | `POST /api/ai/sessions/:id/turns/:turn/queue`    | Stages an edit of each page the chosen suggestions of that answer name.          |
 | `GET /api/space-cache/:spaceKey/tags`            | Lists each tag with the pages that carry it, leaving out excluded pages.         |
 | `GET /api/space-cache/:spaceKey/sync/active`     | Reports a running sync, so a reloaded browser picks its progress up again.       |

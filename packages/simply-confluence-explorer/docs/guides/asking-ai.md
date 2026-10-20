@@ -1,6 +1,6 @@
 ---
 title: Asking an AI
-description: Choose an AI provider, then chat about a page, a directory, pages you choose by tag, or a whole synced space, with files of your own added to the conversation.
+description: Choose an AI provider, then chat about a page, a directory, any mix of directories, pages and tags, or a whole synced space, however many pages that is.
 sidebar:
   order: 4
 ---
@@ -90,38 +90,62 @@ confirm.
 
 ![Space chat answering from the whole space, with the pages it read and why](../images/space-chat.webp)
 
-**Reading** above the conversation says what the chat reads; click it to change it.
+**Reading** above the conversation says what the chat reads; click it to change it. The line under
+it says how many pages that is, and how each question reads them.
 
-- **Whole space**: for each question, the app searches the space's titles, tags, summaries and text
-  for up to 25 likely pages, and asks the AI which of them to read, from their summaries alone. It
-  then reads those pages in full, with the pages earlier answers read, up to the size limit. **Read N
-  pages** on each answer lists them, with why each was chosen. This is the way in when you do not
-  know the space, such as an unfamiliar system during an incident.
-- **Chosen pages**: tick one or more tags to read their pages, or add pages by name, and remove any
-  you do not want. The chat then reads exactly those pages, up to 50.
+- **Whole space**: every page in the space that the exclusion rules allow.
+- **Chosen pages**: any mix of directories, single pages and tags. Type in **Find a page or
+  directory** to see matching pages with where each one sits. **Add page** adds that page alone, and
+  **Add with N sub-pages** adds it with every page under it, so you can choose two directories and a
+  page from another part of the space. **Or add every page with a tag** adds a tag's pages. Each item
+  under **Chosen** is removed with its ×; a directory goes in one click, with its sub-pages. A
+  directory or tag is read as it is when you ask, so a page added under it later is read too.
+
+![Space chat with two directories and a page chosen, and the line saying how they are read](../images/space-chat.webp)
+
+There is no limit on how many pages a chat reads from:
+
+- **When they fit in one request**, every question reads all of them, and the line says so.
+- **When there are more**, each question finds the sections it needs. Pages are split at their
+  headings, and the app ranks the sections by the words of your question and the one before it,
+  and, with a provider that offers embeddings, by meaning as well. The AI then picks the sections
+  worth reading from their headings and summaries alone, and only those are sent, with the ones the
+  last answers read. **Read N sections from M pages** on each answer lists them, with why each was
+  chosen. This is the way in when you do not know the space, such as an unfamiliar system during an
+  incident.
 
 ![The pages tagged runbook in the sidebar's Tags view, each with where it sits](../images/tags-view.webp)
 
 **Chat about** on a tag in the sidebar's **Tags** view opens a chat on that tag's pages. A page's tags
-are its Confluence labels together with the topic tags of its AI summary. Excluded pages are never
+are its Confluence labels together with the topics of its AI summary. Excluded pages are never
 listed, found or read, and a page holding a secret is left out and named.
 
-## Summaries and topics
+## Summaries, topics and embeddings
 
-Every chat works better when its pages have AI summaries: they decide which pages a whole-space
-question reads, and they give pages their topic tags. A chat says how many of its pages have one and
-offers **Generate the missing summaries**, which runs in the background and shows in the header.
+Chats find more when their pages have AI summaries. A summary says what a page is for, gives it
+topics, lists the questions it answers and who it is for, and describes each section in a line, and
+the search reads all of it. Topics are chosen from the ones the space already uses where one fits,
+so pages about one subject share a tag wherever they sit. A chat says how many of its pages have an
+up-to-date summary and offers **Generate the missing summaries**, which runs in the background and
+shows in the header.
 
-The **Details** tab of a page has **Generate summary**, which asks the AI for a short summary, topic
-tags, the kind of document (runbook, policy, guide and so on), and the systems it mentions. On a
-synced page the summary is saved, and appears in the table of contents and helps whole-space
-questions find the page. **Space → Generate AI summaries** does the same for every page in the space
-that has no summary yet.
+With **ChatGPT** or **Gemini (Google API)**, the same run also makes an embedding of each section,
+which lets a question find a section by meaning when it shares none of its words. Claude and the
+Gemini CLI offer no embeddings, so with them the search uses words and summaries alone.
+[What leaves your computer](/guides/data-safety/) says what this sends.
+
+The **Details** tab of a page has **Generate summary** for that page alone, and shows the summary,
+its topics and the questions it answers. **Space → Generate AI summaries** runs for every page that
+has no up-to-date summary. A page that changes in Confluence loses its summary and embeddings at the
+next sync, and **Update AI summaries** redoes only those pages.
 
 ## How this is checked
 
 `test/ai.test.ts` checks how each provider is called, that a key is stored owner-only and never shown,
 and that a missing key or model is reported before anything is sent. `test/sessions.test.ts` checks
-conversations, the history limit, file uploads, chosen pages and how a whole-space question chooses what to read. `test/aiRoutes.test.ts` checks that excluded pages
-are refused and that summaries reach the table of contents. `test/e2e/ai.e2e.ts` asks questions
-against a real Confluence Data Center, with a stand-in for the AI provider.
+conversations, the history limit, file uploads, chosen directories, pages and tags, reading in full
+or by section, and finding a section by meaning. `test/sections.test.ts`, `test/searchIndex.test.ts`,
+`test/metadata.test.ts` and `test/embeddings.test.ts` check how pages are split, searched, summarised
+and embedded. `test/aiRoutes.test.ts` checks that excluded pages are refused and that summaries reach
+the table of contents. `test/e2e/ai.e2e.ts` asks questions against a real Confluence Data Center,
+with a stand-in for the AI provider.
