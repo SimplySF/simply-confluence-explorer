@@ -42,12 +42,12 @@ const INDEX_WAIT_MS = 1500;
  * The pages a request chooses by directory, tag and page, as a chat's chosen pages are (ADR-051), or
  * `undefined` when it chooses none. Directories and tags are resolved from the synced copy.
  */
-function chosenIdsOf(
+async function chosenIdsOf(
   body: unknown,
   spaceKey: string,
   store: SpaceStore,
   exclusions: ExclusionManager,
-): string[] | undefined {
+): Promise<string[] | undefined> {
   const fields = fieldsOf(body);
   if (fields.pageIds === undefined && fields.dirs === undefined && fields.tags === undefined) return undefined;
   const list = (value: unknown): unknown[] =>
@@ -59,7 +59,7 @@ function chosenIdsOf(
   if (pageIds.length + dirs.length > MAX_CORPUS_IDS || ![...pageIds, ...dirs].every(isValidPageId))
     throw new HttpError(400, `pageIds and dirs are lists of at most ${MAX_CORPUS_IDS} page ids`);
   const scope = { kind: 'pages' as const, spaceKey, pageIds: pageIds as string[], dirs: dirs as string[], tags };
-  const ids = corpusPages(store, exclusions, scope).map((p) => p.id);
+  const ids = (await corpusPages(store, exclusions, scope)).map((p) => p.id);
   if (ids.length === 0 && pageIds.length === 0) throw new HttpError(400, 'no synced pages are chosen');
   return [...new Set([...ids, ...(pageIds as string[])])];
 }
@@ -201,7 +201,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
         await index.ready(key);
         const context = await retrieveContext(
           key,
-          store.visiblePages(key),
+          await store.visiblePages(key),
           { question: prompt },
           { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
           { budget: services.contextChars, outline: true },
@@ -225,24 +225,27 @@ export function addAiRoutes(router: Router, services: Services): Router {
         const result = await generateMetadata(
           page,
           ai,
-          tagIndex(store, spaceKey).map((t) => t.tag),
+          (await tagIndex(store, spaceKey)).map((t) => t.tag),
         );
         if (store.readPage(spaceKey, page.id)) store.writeMetadata(spaceKey, result);
         return { metadata: result };
       })
-      .add('POST', '/api/space-cache/:spaceKey/metadata/generate', ({ params, body }): MetadataProgress =>
-        metadata.start(
-          params.spaceKey,
-          optionalString(body, 'rootPageId'),
-          chosenIdsOf(body, params.spaceKey, store, exclusions),
-        ),
+      .add(
+        'POST',
+        '/api/space-cache/:spaceKey/metadata/generate',
+        async ({ params, body }): Promise<MetadataProgress> =>
+          metadata.start(
+            params.spaceKey,
+            optionalString(body, 'rootPageId'),
+            await chosenIdsOf(body, params.spaceKey, store, exclusions),
+          ),
       )
       // How many of a space's, a section's or chosen pages have an AI summary, for a chat to show, and
       // whether they fit one request, so the chat can say whether it reads them all (ADR-051).
       .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', async ({ params, body }) => {
         const key = params.spaceKey.toUpperCase();
         const rootPageId = optionalString(body, 'rootPageId');
-        const ids = chosenIdsOf(body, key, store, exclusions);
+        const ids = await chosenIdsOf(body, key, store, exclusions);
         // A space still being indexed answers with how far it has got rather than keep the chat waiting;
         // the chat asks again until it is done.
         const built = await Promise.race([
@@ -256,7 +259,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
             indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 },
           };
         }
-        const size = corpusSize(key, metadata.allowedPages(key, rootPageId, ids), index);
+        const size = corpusSize(key, await metadata.allowedPages(key, rootPageId, ids), index);
         return { ...(await metadata.coverage(key, rootPageId, ids)), fits: size <= services.contextChars };
       })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {

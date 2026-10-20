@@ -219,7 +219,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const building = index.building().find((b) => b.spaceKey === scope.spaceKey);
     if (building) step(session.id, `Waiting for the search index (${building.done} of ${building.total} pages)`);
     await index.ready(scope.spaceKey);
-    const corpus = corpusPages(store, exclusions, scope);
+    const corpus = await corpusPages(store, exclusions, scope);
     await pause();
     // A chosen page the synced copy does not hold yet is read from Confluence, through the gate.
     for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
@@ -329,7 +329,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const { scope } = session;
     if (scope.kind === 'page' || !store.isSynced(scope.spaceKey)) return null;
     await index.ready(scope.spaceKey);
-    const pages = corpusPages(store, exclusions, scope);
+    const pages = await corpusPages(store, exclusions, scope);
     return corpusSize(scope.spaceKey, pages, index) > services.contextChars ? pages : null;
   };
 

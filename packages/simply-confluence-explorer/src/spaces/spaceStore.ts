@@ -19,6 +19,7 @@ import path from 'node:path';
 import type { PageDetail, PageMetadata, PageTreeNode, SpaceTocNode, SyncedSpace } from '../api/types.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
+import { mapChunked } from '../util/pause.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
 import type { ExclusionManager } from './exclusionManager.js';
@@ -128,34 +129,34 @@ export class SpaceStore {
     fs.writeFileSync(path.join(this.spaceDir(spaceKey), 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
   }
 
-  public listSynced(): SyncedSpace[] {
-    return this.spaceKeys().flatMap((key) => {
+  /** The synced spaces. Each space's summaries are read in chunks, as a large space has thousands. */
+  public async listSynced(): Promise<SyncedSpace[]> {
+    const spaces: SyncedSpace[] = [];
+    for (const key of this.spaceKeys()) {
       const dir = this.spaceDir(key);
       const file = path.join(dir, 'manifest.json');
-      if (!fs.existsSync(file)) return [];
+      if (!fs.existsSync(file)) continue;
       const manifest = JSON.parse(fs.readFileSync(file, 'utf8')) as Manifest;
       const metadataDir = path.join(dir, 'metadata');
-      return [
-        {
-          ...manifest,
-          pageCount: this.cachedIds(key).length,
-          // Only metadata of the current kind counts, so the Space menu offers to redo the rest.
-          metadataCount: fs.existsSync(metadataDir)
-            ? fs
-                .readdirSync(metadataDir)
-                .filter((f) => f.endsWith('.json') && isCurrentMetadata(this.readMetadata(key, f.slice(0, -5)))).length
-            : 0,
-          hasTOC: fs.existsSync(path.join(dir, 'toc.json')),
-        },
-      ];
-    });
+      const files = fs.existsSync(metadataDir) ? fs.readdirSync(metadataDir).filter((f) => f.endsWith('.json')) : [];
+      // Only metadata of the current kind counts, so the Space menu offers to redo the rest.
+      // eslint-disable-next-line no-await-in-loop -- one space at a time, each read in chunks
+      const current = await mapChunked(files, (f) => isCurrentMetadata(this.readMetadata(key, f.slice(0, -5))));
+      spaces.push({
+        ...manifest,
+        pageCount: this.cachedIds(key).length,
+        metadataCount: current.filter(Boolean).length,
+        hasTOC: fs.existsSync(path.join(dir, 'toc.json')),
+      });
+    }
+    return spaces;
   }
 
   /**
    * Deletes the synced copies of pages that are now excluded, or whose Markdown file a person
    * deleted from pages/, and rebuilds the table of contents.
    */
-  public purgeStale(spaceKey: string): { purgedCount: number; remainingPages: number } {
+  public async purgeStale(spaceKey: string): Promise<{ purgedCount: number; remainingPages: number }> {
     const stale = this.cachedIds(spaceKey).filter((id) => {
       const page = this.readPage(spaceKey, id);
       return (
@@ -163,7 +164,7 @@ export class SpaceStore {
       );
     });
     for (const id of stale) this.removePage(spaceKey, id, false);
-    this.afterRemoval(spaceKey);
+    await this.afterRemoval(spaceKey);
     return { purgedCount: stale.length, remainingPages: this.cachedIds(spaceKey).length };
   }
 
@@ -171,11 +172,11 @@ export class SpaceStore {
    * Deletes one synced page, and optionally everything below it, from this machine. With
    * `addToIgnore`, rules are added so the next sync does not bring it back.
    */
-  public purgePage(
+  public async purgePage(
     spaceKey: string,
     pageId: string,
     options: { includeSubPages: boolean; addToIgnore: boolean },
-  ): { purgedCount: number } {
+  ): Promise<{ purgedCount: number }> {
     const page = this.readPage(spaceKey, pageId);
     if (!page) return { purgedCount: 0 };
     const ids = [pageId, ...(options.includeSubPages ? this.descendants(spaceKey, pageId).map((d) => d.id) : [])];
@@ -184,7 +185,7 @@ export class SpaceStore {
       this.exclusions.savePatterns(spaceKey, [...new Set([...this.exclusions.patterns(spaceKey), ...rules])]);
     }
     for (const id of ids) this.removePage(spaceKey, id, options.includeSubPages);
-    this.afterRemoval(spaceKey);
+    await this.afterRemoval(spaceKey);
     return { purgedCount: ids.length };
   }
 
@@ -197,11 +198,22 @@ export class SpaceStore {
     );
   }
 
-  /** The table of contents, built from the visible synced pages and any AI summaries. */
-  public buildToc(spaceKey: string): SpaceTocNode[] {
+  /**
+   * The table of contents, built from the visible synced pages and any AI summaries. Every page and
+   * summary is read in chunks, so a large space does not hold the server while it is built.
+   */
+  public async buildToc(spaceKey: string): Promise<SpaceTocNode[]> {
+    await this.treeReady(spaceKey);
+    const all = (nodes: PageTreeNode[]): PageTreeNode[] => nodes.flatMap((n) => [n, ...all(n.children)]);
+    const read = new Map(
+      await mapChunked(
+        all(this.tree(spaceKey)),
+        (node) =>
+          [node.id, { page: this.readPage(spaceKey, node.id), meta: this.readMetadata(spaceKey, node.id) }] as const,
+      ),
+    );
     const toNode = (node: PageTreeNode): SpaceTocNode => {
-      const page = this.readPage(spaceKey, node.id);
-      const meta = this.readMetadata(spaceKey, node.id);
+      const { page, meta } = read.get(node.id) ?? {};
       return {
         id: node.id,
         title: node.title,
@@ -218,8 +230,8 @@ export class SpaceStore {
   }
 
   /** Writes toc.json, and TOC.md for people browsing the folder, for a synced space. */
-  public writeToc(spaceKey: string): SpaceTocNode[] {
-    const toc = this.buildToc(spaceKey);
+  public async writeToc(spaceKey: string): Promise<SpaceTocNode[]> {
+    const toc = await this.buildToc(spaceKey);
     const dir = this.spaceDir(spaceKey);
     const lines = [`# Table of contents: ${spaceKey.toUpperCase()}`, ''];
     const render = (nodes: SpaceTocNode[], depth: number): void => {
@@ -258,19 +270,19 @@ export class SpaceStore {
     return entries;
   }
 
-  /** Every synced page in the space that is not excluded. */
-  public visiblePages(spaceKey: string): PageDetail[] {
-    return this.cachedIds(spaceKey).flatMap((id) => {
-      const page = this.readPage(spaceKey, id);
-      return page && !this.exclusions.isPageExcluded(page, spaceKey) ? [page] : [];
-    });
+  /** Every synced page in the space that is not excluded, read in chunks so the server keeps answering. */
+  public async visiblePages(spaceKey: string): Promise<PageDetail[]> {
+    const pages = await mapChunked(this.cachedIds(spaceKey), (id) => this.readPage(spaceKey, id));
+    return pages.filter((page): page is PageDetail => !!page && !this.exclusions.isPageExcluded(page, spaceKey));
   }
 
   public writeMetadata(spaceKey: string, metadata: PageMetadata): void {
     const file = this.metadataFile(spaceKey, metadata.pageId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(metadata, null, 2), 'utf8');
-    this.invalidate(spaceKey);
+    // A summary changes what the search finds but not the page tree, which an index run would
+    // otherwise rebuild after every page.
+    this.bump(spaceKey);
   }
 
   /** Saves a page's section embeddings, encoded by `src/spaces/vectors.ts`. */
@@ -287,9 +299,8 @@ export class SpaceStore {
 
   /** Marks a space as changed, as after a write or a change to its exclusion rules. */
   public invalidate(spaceKey: string): void {
-    const key = spaceKey.toUpperCase();
-    this.trees.delete(key);
-    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+    this.trees.delete(spaceKey.toUpperCase());
+    this.bump(spaceKey);
   }
 
   /** How many changes this store has made to a space; it grows with every write. */
@@ -302,20 +313,49 @@ export class SpaceStore {
     return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as PageMetadata) : undefined;
   }
 
+  /**
+   * Builds a space's page tree in chunks, letting other requests run between them, unless it is
+   * already built. Whole-space work awaits this first, so the tree is never built in one go on a
+   * request's path.
+   */
+  public async treeReady(spaceKey: string): Promise<void> {
+    const key = spaceKey.toUpperCase();
+    if (this.trees.has(key)) return;
+    const pages = (await mapChunked(this.cachedIds(key), (id) => this.readSafely(key, id))).filter(
+      (p): p is PageDetail => !!p,
+    );
+    this.trees.set(key, this.treeOf(key, pages));
+  }
+
+  private bump(spaceKey: string): void {
+    const key = spaceKey.toUpperCase();
+    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+  }
+
   private loadTree(spaceKey: string): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
     const key = spaceKey.toUpperCase();
     const cached = this.trees.get(key);
     if (cached) return cached;
-    const pages = this.cachedIds(key).flatMap((id) => {
-      try {
-        const page = this.readPage(key, id);
-        return page ? [page] : [];
-      } catch (error) {
-        // One damaged file must not hide the rest of the space; it is reported and left out.
-        this.log(`cannot read the synced copy of page ${id} in ${key}: ${errorMessage(error)}`);
-        return [];
-      }
-    });
+    const tree = this.treeOf(
+      key,
+      this.cachedIds(key).flatMap((id) => this.readSafely(key, id) ?? []),
+    );
+    this.trees.set(key, tree);
+    return tree;
+  }
+
+  private readSafely(key: string, id: string): PageDetail | undefined {
+    try {
+      return this.readPage(key, id);
+    } catch (error) {
+      // One damaged file must not hide the rest of the space; it is reported and left out.
+      this.log(`cannot read the synced copy of page ${id} in ${key}: ${errorMessage(error)}`);
+      return undefined;
+    }
+  }
+
+  private treeOf(key: string, pages: PageDetail[]): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
+    const onDisk = new Set(pages.map((p) => p.id));
     const byId = new Map<string, PageTreeNode>();
     for (const page of pages) {
       if (this.exclusions.isPageExcluded(page, key)) continue;
@@ -337,16 +377,14 @@ export class SpaceStore {
       const parent = node.parentId ? byId.get(node.parentId) : undefined;
       if (parent) parent.children.push(node);
       // A page whose parent was excluded stays hidden with it, rather than appearing as a root.
-      else if (!node.parentId || !pages.some((p) => p.id === node.parentId)) roots.push(node);
+      else if (!node.parentId || !onDisk.has(node.parentId)) roots.push(node);
     }
     const sort = (nodes: PageTreeNode[]): void => {
       nodes.sort((a, b) => a.title.localeCompare(b.title));
       nodes.forEach((n) => sort(n.children));
     };
     sort(roots);
-    const tree = { roots, byId };
-    this.trees.set(key, tree);
-    return tree;
+    return { roots, byId };
   }
 
   private removePage(spaceKey: string, pageId: string, withFolder: boolean): void {
@@ -363,9 +401,9 @@ export class SpaceStore {
     this.invalidate(spaceKey);
   }
 
-  private afterRemoval(spaceKey: string): void {
+  private async afterRemoval(spaceKey: string): Promise<void> {
     this.invalidate(spaceKey);
-    if (fs.existsSync(path.join(this.spaceDir(spaceKey), 'toc.json'))) this.writeToc(spaceKey);
+    if (fs.existsSync(path.join(this.spaceDir(spaceKey), 'toc.json'))) await this.writeToc(spaceKey);
   }
 
   private spaceKeys(): string[] {

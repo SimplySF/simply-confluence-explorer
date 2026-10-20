@@ -104,7 +104,8 @@ describe('retrieval over a large space', () => {
     const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
     addDistractors(store, 3000);
     const index = new SearchIndex(store);
-    const pages = store.visiblePages('PLAT');
+    await index.ready('PLAT');
+    const pages = await store.visiblePages('PLAT');
     const missed: string[] = [];
     for (const [question, title] of QUESTIONS) {
       // eslint-disable-next-line no-await-in-loop -- each question in turn

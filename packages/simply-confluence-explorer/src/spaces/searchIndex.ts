@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { frontmatterOf, parsePage } from '../parser/convert.js';
 import type { PageDetail, PageMetadata } from '../api/types.js';
+import { pause } from '../util/pause.js';
 import { splitSections, type Section } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
 
@@ -82,6 +83,7 @@ const B = 0.75;
 
 type PageDocs = { stamp: string; docs: Doc[]; size: number };
 type Index = { docs: Doc[]; df: Map<string, number>; avgLength: number };
+const EMPTY: Index = { docs: [], df: new Map(), avgLength: 0 };
 
 /** One page's sections as search documents. Each carries its page's title, labels, tags, summary and questions. */
 function pageDocs(page: PageDetail, sections: Section[], meta?: PageMetadata): Doc[] {
@@ -212,15 +214,29 @@ export class SearchIndex {
   }
 
   private async warm(key: string, progress: { done: number; total: number }): Promise<void> {
-    const pages = this.store.visiblePages(key);
+    const stamp = this.stamp(key);
+    const pages = await this.store.visiblePages(key);
     progress.total = pages.length;
+    const docs: Doc[] = [];
+    const df = new Map<string, number>();
+    const seen = new Set<string>();
     for (let i = 0; i < pages.length; i += BUILD_CHUNK) {
-      for (const page of pages.slice(i, i + BUILD_CHUNK)) this.docsFor(key, page);
+      for (const page of pages.slice(i, i + BUILD_CHUNK)) {
+        seen.add(`${key}/${page.id}`);
+        for (const doc of this.docsFor(key, page)) {
+          docs.push(doc);
+          for (const t of doc.terms.keys()) df.set(t, (df.get(t) ?? 0) + 1);
+        }
+      }
       progress.done = Math.min(pages.length, i + BUILD_CHUNK);
       // eslint-disable-next-line no-await-in-loop -- the pause between chunks is the point: other requests run in it
-      await new Promise((resolve) => setImmediate(resolve));
+      await pause();
     }
-    this.indexFor(key);
+    // A page that left the space, or is now excluded, is dropped from the cache too.
+    for (const cache of [this.pages, this.split])
+      for (const id of cache.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) cache.delete(id);
+    const avgLength = docs.reduce((a, d) => a + d.length, 0) / Math.max(1, docs.length);
+    this.cache.set(key, { stamp, index: { docs, df, avgLength } });
   }
 
   private docsFor(key: string, page: PageDetail): Doc[] {
@@ -243,32 +259,19 @@ export class SearchIndex {
     return cached.docs;
   }
 
+  /**
+   * The index as last built. It is never built here, on a request's path: every search a person
+   * waits on awaits `ready` first, so a stale index is read only when a write lands in between, and a
+   * rebuild is started. After a change to the exclusion rules nothing is read until the rebuild, so an
+   * excluded page is never found.
+   */
   private indexFor(key: string): Index {
     const stamp = this.stamp(key);
-    let entry = this.cache.get(key);
-    if (entry?.stamp !== stamp) {
-      entry = { stamp, index: this.build(key) };
-      this.cache.set(key, entry);
-    }
-    return entry.index;
-  }
-
-  private build(key: string): Index {
-    const docs: Doc[] = [];
-    const df = new Map<string, number>();
-    const seen = new Set<string>();
-    for (const page of this.store.visiblePages(key)) {
-      const id = `${key}/${page.id}`;
-      seen.add(id);
-      for (const doc of this.docsFor(key, page)) {
-        docs.push(doc);
-        for (const t of doc.terms.keys()) df.set(t, (df.get(t) ?? 0) + 1);
-      }
-    }
-    // A page that left the space, or is now excluded, is dropped from the cache too.
-    for (const cache of [this.pages, this.split])
-      for (const id of cache.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) cache.delete(id);
-    return { docs, df, avgLength: docs.reduce((a, d) => a + d.length, 0) / Math.max(1, docs.length) };
+    const entry = this.cache.get(key);
+    if (entry?.stamp === stamp) return entry.index;
+    void this.ready(key);
+    const rulesOf = (s: string): string => s.split('|')[1];
+    return entry && rulesOf(entry.stamp) === rulesOf(stamp) ? entry.index : EMPTY;
   }
 
   // The store counts every change it makes to a space, so checking for changes costs nothing however

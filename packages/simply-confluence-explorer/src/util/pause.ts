@@ -19,3 +19,19 @@
  * long at a stretch (ADR-054).
  */
 export const pause = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** How many items a chunk holds: small enough that one chunk of a large space takes a few milliseconds. */
+const CHUNK = 100;
+
+/**
+ * Maps a list in chunks with a pause between them, for work that reads every page of a space, so
+ * another request is answered between chunks however large the space is.
+ */
+export async function mapChunked<T, R>(items: T[], fn: (item: T) => R): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += CHUNK) {
+    if (i > 0) await pause(); // eslint-disable-line no-await-in-loop -- the pause between chunks is the point
+    for (const item of items.slice(i, i + CHUNK)) out.push(fn(item));
+  }
+  return out;
+}

@@ -282,8 +282,10 @@ async function retriever(app: TestApp): Promise<{
   const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
   const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
   return {
-    context: (q, budget = RETRIEVING) =>
-      retrieveContext('PEOPLE', store.visiblePages('PEOPLE'), q, deps, { budget, outline: true }),
+    context: async (q, budget = RETRIEVING) => {
+      await deps.index.ready('PEOPLE');
+      return retrieveContext('PEOPLE', await store.visiblePages('PEOPLE'), q, deps, { budget, outline: true });
+    },
   };
 }
 
@@ -539,11 +541,13 @@ test('an excluded page is left out of a corpus, and an excluded directory refuse
 
     // Excluded after it was synced, so its copy is still on disk.
     await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
-    const titles = corpusPages(store, exclusions, {
-      kind: 'pages',
-      spaceKey: 'PEOPLE',
-      pageIds: [id('Travel Policy'), id('Remote Work Policy')],
-    }).map((p) => p.title);
+    const titles = (
+      await corpusPages(store, exclusions, {
+        kind: 'pages',
+        spaceKey: 'PEOPLE',
+        pageIds: [id('Travel Policy'), id('Remote Work Policy')],
+      })
+    ).map((p) => p.title);
     assert.deepEqual(titles, ['Remote Work Policy']);
   });
 });

@@ -106,7 +106,7 @@ describe('metadata of the second kind', () => {
       lastSynced: '2026-01-01T00:00:00Z',
       pageCount: 2,
     });
-    expect(store.listSynced()[0].metadataCount).toBe(1);
+    expect((await store.listSynced())[0].metadataCount).toBe(1);
     const { ai, prompts } = fakeAi(() => '{"summary":"New.","tags":[]}');
     const pipeline = new MetadataPipeline(
       store,

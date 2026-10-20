@@ -328,7 +328,7 @@ export const REVIEW_GUIDE = [
  * @returns {number | undefined} The 1-based line, or undefined when it is not declared there.
  */
 export function lineOf(text, symbol) {
-  const declaration = new RegExp(`\\b(function|class|const|public|private)\\s+${symbol}\\b`);
+  const declaration = new RegExp(`\\b(function|class|const|public|private)\\s+(async\\s+)?${symbol}\\b`);
   const index = text.split('\n').findIndex((line) => declaration.test(line));
   return index === -1 ? undefined : index + 1;
 }

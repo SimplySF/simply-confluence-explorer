@@ -35,12 +35,13 @@ const flatten = (nodes: PageTreeNode[]): PageTreeNode[] => nodes.flatMap((n) => 
  * @param exclusions The space's rules.
  * @param scope A page, a directory, chosen directories, tags and pages, or the whole space.
  */
-export function corpusPages(
+export async function corpusPages(
   store: SpaceStore,
   exclusions: ExclusionManager,
   scope: Pick<SessionScope, 'kind' | 'spaceKey' | 'pageId' | 'pageIds' | 'dirs' | 'tags'>,
-): PageDetail[] {
+): Promise<PageDetail[]> {
   const key = scope.spaceKey.toUpperCase();
+  await store.treeReady(key);
   const order = flatten(store.tree(key)).map((n) => n.id);
   const wanted = new Set<string>();
   const withTree = (id: string): void => {
@@ -54,13 +55,14 @@ export function corpusPages(
     (scope.dirs ?? []).forEach(withTree);
     (scope.pageIds ?? []).forEach((id) => wanted.add(id));
     const tags = new Set(scope.tags ?? []);
-    for (const tagged of tagIndex(store, key)) if (tags.has(tagged.tag)) tagged.pages.forEach((p) => wanted.add(p.id));
+    for (const tagged of await tagIndex(store, key))
+      if (tags.has(tagged.tag)) tagged.pages.forEach((p) => wanted.add(p.id));
   }
   // Pages in the tree come in its order; any chosen page the tree does not hold yet comes last. Pages
   // are read once, from the store's list of the pages the exclusion rules allow.
   const inTree = new Set(order);
   const ids = [...order.filter((id) => wanted.has(id)), ...[...wanted].filter((id) => !inTree.has(id))];
-  const visible = new Map(store.visiblePages(key).map((p) => [p.id, p]));
+  const visible = new Map((await store.visiblePages(key)).map((p) => [p.id, p]));
   return ids.flatMap((id) => {
     const page = visible.get(id);
     return page && !exclusions.isPageExcluded(page, key) ? [page] : [];

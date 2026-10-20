@@ -20,7 +20,7 @@ import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
-import { pause } from '../util/pause.js';
+import { mapChunked, pause } from '../util/pause.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import type { ExclusionManager } from './exclusionManager.js';
@@ -205,26 +205,25 @@ export class MetadataPipeline {
     const key = spaceKey.toUpperCase();
     const missing = await this.missing(key, rootPageId, pageIds);
     return {
-      pages: this.allowedPages(key, rootPageId, pageIds).length,
+      pages: (await this.allowedPages(key, rootPageId, pageIds)).length,
       missing: missing.length,
       requests: packPages(missing).length,
     };
   }
 
   /** The synced pages of a space, a section or a list, leaving out excluded pages. */
-  public allowedPages(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
+  public async allowedPages(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
     const key = spaceKey.toUpperCase();
-    return this.pagesOf(key, rootPageId, pageIds).filter((p) => !this.exclusions.isPageExcluded(p, key));
+    return (await this.pagesOf(key, rootPageId, pageIds)).filter((p) => !this.exclusions.isPageExcluded(p, key));
   }
 
-  private pagesOf(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
-    const read = (id: string): PageDetail | undefined => this.store.readPage(spaceKey, id);
-    if (pageIds) return pageIds.map(read).filter((p): p is PageDetail => !!p);
-    if (rootPageId)
-      return [rootPageId, ...this.store.descendants(spaceKey, rootPageId).map((n) => n.id)]
-        .map(read)
-        .filter((p): p is PageDetail => !!p);
-    return this.store.visiblePages(spaceKey);
+  /** The pages asked for, read in chunks, as a section or a list can hold most of a large space. */
+  private async pagesOf(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
+    if (!pageIds && !rootPageId) return this.store.visiblePages(spaceKey);
+    await this.store.treeReady(spaceKey);
+    const ids = pageIds ?? [rootPageId!, ...this.store.descendants(spaceKey, rootPageId!).map((n) => n.id)];
+    const pages = await mapChunked(ids, (id) => this.store.readPage(spaceKey, id));
+    return pages.filter((p): p is PageDetail => !!p);
   }
 
   /** The model the engine embeds with, when there is an index to keep its vectors in. */
@@ -239,7 +238,7 @@ export class MetadataPipeline {
    */
   private async missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
     const model = this.embeddingModel();
-    const pages = this.pagesOf(spaceKey, rootPageId, pageIds);
+    const pages = await this.pagesOf(spaceKey, rootPageId, pageIds);
     const out: PageDetail[] = [];
     for (let i = 0; i < pages.length; i++) {
       const p = pages[i];
@@ -341,7 +340,7 @@ export class MetadataPipeline {
     job.requests = packs.length;
     job.requestsDone = 0;
     // The topics already in use, counted as the run tags pages, so later pages reuse earlier pages' topics.
-    const uses = new Map(tagIndex(this.store, spaceKey).map((t) => [t.tag, t.pages.length]));
+    const uses = new Map((await tagIndex(this.store, spaceKey)).map((t) => [t.tag, t.pages.length]));
     const stopped = (): boolean => this.jobs.isCancelled(job.jobId);
     const inFlight = new Set<string>();
     let next = 0;
@@ -379,7 +378,7 @@ export class MetadataPipeline {
     const parallel = Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length));
     await Promise.all(Array.from({ length: parallel }, worker));
     job.currentPageTitle = undefined;
-    this.store.writeToc(spaceKey);
+    await this.store.writeToc(spaceKey);
     if (job.errorCount > 0)
       this.tracer.problem(
         'index-failures',

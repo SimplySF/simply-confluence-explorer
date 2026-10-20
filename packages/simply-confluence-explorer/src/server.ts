@@ -41,6 +41,7 @@ import { GitLabStore } from './gitlab/client.js';
 import { SpaceStore } from './spaces/spaceStore.js';
 import { SpaceSync } from './spaces/sync.js';
 import { resolveDataDir } from './util/dataDir.js';
+import { errorMessage } from './util/errors.js';
 
 export type { HealthResponse } from './routes/api.js';
 
@@ -162,7 +163,10 @@ export function createServer(options: ServerOptions = {}): http.Server {
   );
   // Synced spaces are indexed as soon as the server starts, so the first question does not wait for it.
   setImmediate(() => {
-    for (const space of store.listSynced()) void index.ready(space.spaceKey);
+    store.listSynced().then(
+      (spaces) => spaces.forEach((space) => void index.ready(space.spaceKey)),
+      (error: unknown) => log(`could not list the synced spaces to index them: ${errorMessage(error)}`),
+    );
   });
   const api = createApi({
     version,

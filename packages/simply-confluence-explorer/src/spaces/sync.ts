@@ -125,7 +125,7 @@ export class SpaceSync {
     );
     if (this.jobs.isCancelled(job.jobId)) return;
 
-    const previous = this.store.listSynced().find((s) => s.spaceKey === spaceKey);
+    const previous = (await this.store.listSynced()).find((s) => s.spaceKey === spaceKey);
     this.store.writeManifest(spaceKey, {
       spaceKey,
       name: space.name,
@@ -136,7 +136,7 @@ export class SpaceSync {
       pageCount: 0,
     });
     this.store.invalidate(spaceKey);
-    this.store.writeToc(spaceKey);
+    await this.store.writeToc(spaceKey);
     job.currentPageTitle = undefined;
   }
 

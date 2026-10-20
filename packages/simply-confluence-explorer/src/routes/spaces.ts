@@ -37,7 +37,7 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
   };
 
   return router
-    .add('GET', '/api/space-cache/cached', () => ({ spaces: store.listSynced() }))
+    .add('GET', '/api/space-cache/cached', async () => ({ spaces: await store.listSynced() }))
     .add('POST', '/api/space-cache/sync', ({ body }): SyncProgress => {
       const spaceKey = optionalString(body, 'spaceKey');
       if (!spaceKey) throw new HttpError(400, 'spaceKey is required');
@@ -48,15 +48,15 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
     .add('GET', '/api/space-cache/:spaceKey/sync/active', ({ params }) => ({
       activeJob: sync.activeFor(params.spaceKey) ?? null,
     }))
-    .add('GET', '/api/space-cache/:spaceKey/toc', ({ params }): { toc: SpaceTocNode[] } => {
+    .add('GET', '/api/space-cache/:spaceKey/toc', async ({ params }): Promise<{ toc: SpaceTocNode[] }> => {
       if (!store.isSynced(params.spaceKey))
         throw new HttpError(404, `${params.spaceKey} has not been synced, so it has no table of contents`);
-      return { toc: store.writeToc(params.spaceKey) };
+      return { toc: await store.writeToc(params.spaceKey) };
     })
-    .add('GET', '/api/space-cache/:spaceKey/tags', ({ params }): { tags: TaggedPages[] } => {
+    .add('GET', '/api/space-cache/:spaceKey/tags', async ({ params }): Promise<{ tags: TaggedPages[] }> => {
       if (!store.isSynced(params.spaceKey))
         throw new HttpError(404, `${params.spaceKey} has not been synced, so its tags are not known`);
-      return { tags: tagIndex(store, params.spaceKey.toUpperCase()) };
+      return { tags: await tagIndex(store, params.spaceKey.toUpperCase()) };
     })
     .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', ({ params }) => {
       const descendants = store.descendants(params.spaceKey, params.pageId);
@@ -77,14 +77,14 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
         addToIgnore: flag(body, 'addToIgnore'),
       }),
     )
-    .add('POST', '/api/space-cache/:spaceKey/cache/purge', ({ params }): PurgeResult =>
+    .add('POST', '/api/space-cache/:spaceKey/cache/purge', ({ params }): Promise<PurgeResult> =>
       store.purgeStale(params.spaceKey),
     )
     .add('GET', '/api/space-cache/:spaceKey/ignore', ({ params }) => ({
       spaceKey: params.spaceKey.toUpperCase(),
       patterns: exclusions.patterns(params.spaceKey),
     }))
-    .add('POST', '/api/space-cache/:spaceKey/ignore', ({ params, body }) => {
+    .add('POST', '/api/space-cache/:spaceKey/ignore', async ({ params, body }) => {
       const patterns = fieldsOf(body).patterns;
       if (!Array.isArray(patterns) || !patterns.every((p): p is string => typeof p === 'string')) {
         throw new HttpError(400, 'patterns must be a list of strings');
@@ -94,7 +94,7 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
       // With purge, the synced copies of newly excluded pages are deleted too, because a ZIP and a
       // person browsing the folder would otherwise still find them.
       const purged =
-        flag(body, 'purge') && store.isSynced(params.spaceKey) ? store.purgeStale(params.spaceKey) : undefined;
+        flag(body, 'purge') && store.isSynced(params.spaceKey) ? await store.purgeStale(params.spaceKey) : undefined;
       return { spaceKey: params.spaceKey.toUpperCase(), patterns: exclusions.patterns(params.spaceKey), purged };
     })
     .add('GET', '/api/space-cache/:spaceKey/zip', async ({ params, res }) => {

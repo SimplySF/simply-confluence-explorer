@@ -125,7 +125,7 @@ export function fuse(rankings: string[][], limit: number): string[] {
 }
 
 /** An outline of the space's top two levels, checked against the current rules, so an answer knows where things are. */
-function outlineOf(key: string, deps: RetrieverDeps): string {
+async function outlineOf(key: string, deps: RetrieverDeps): Promise<string> {
   let outline = '## Outline of the space\n';
   const walk = (nodes: SpaceTocNode[], depth: number, ancestors: Array<{ id: string; title: string }>): void => {
     const allowed = nodes.filter((n) => !deps.exclusions.isPageExcluded({ id: n.id, title: n.title, ancestors }, key));
@@ -134,7 +134,7 @@ function outlineOf(key: string, deps: RetrieverDeps): string {
       if (depth < 1) walk(n.children, depth + 1, [...ancestors, { id: n.id, title: n.title }]);
     }
   };
-  walk(deps.store.buildToc(key), 0, []);
+  walk(await deps.store.buildToc(key), 0, []);
   return `${outline}\n---\n\n`;
 }
 
@@ -308,7 +308,7 @@ export async function retrieveContext(
   );
   // The outline helps an answer place what it reads, but never at the cost of most of what it reads.
   await pause();
-  const outlined = options.outline ? outlineOf(key, deps) : '';
+  const outlined = options.outline ? await outlineOf(key, deps) : '';
   const outline = outlined.length <= budget / 4 ? outlined : '';
   deps.onStep?.('Reading the chosen sections');
   const read = readSections(
