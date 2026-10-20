@@ -255,8 +255,14 @@ export const batches = {
 export const branches = {
   get: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}`),
   cancel: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/cancel`, 'POST'),
-  decide: (id: string, pageId: string, decision: 'accept' | 'reject' | 'reset', proposed?: string) =>
-    call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}`, 'PATCH', { decision, proposed }),
+  decideChange: (id: string, pageId: string, changeId: string, decision: 'accept' | 'reject' | 'undo') =>
+    call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/changes/${key(changeId)}`, 'PATCH', { decision }),
+  decideAll: (id: string, pageId: string, decision: 'accept' | 'reject') =>
+    call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/decide-all`, 'POST', { decision }),
+  saveText: (id: string, pageId: string, text: string) =>
+    call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/text`, 'PUT', { text }),
+  reset: (id: string, pageId: string) => call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/reset`, 'POST'),
+  redo: (id: string, pageId: string) => call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/redo`, 'POST'),
   check: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/check`, 'POST'),
   push: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/push`, 'POST'),
 };

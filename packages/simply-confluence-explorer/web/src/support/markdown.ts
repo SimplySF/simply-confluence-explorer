@@ -40,7 +40,27 @@ const marked = new Marked({
  * @param markdown The Markdown to render.
  */
 export function renderMarkdown(markdown: string): string {
-  return marked.parse(markdown, { async: false });
+  return marked
+    .parse(markdown, { async: false })
+    .replace(
+      /⟦(\/?)(\d+)(?: ([^⟧<\n]*))?⟧/g,
+      (_m, close: string, n: string, label?: string) =>
+        `<span class="part-chip" title="A part of the page that is kept as it is">${close ? `end of ${n}` : `${n} ${label ?? ''}`}</span>`,
+    );
+}
+
+export type TextPiece = { text: string; part?: boolean };
+
+/**
+ * Splits text at its markers for parts of a page, such as `⟦3 toc⟧`, so each can be shown as a
+ * part rather than as characters (ADR-058).
+ *
+ * @param text Text that may hold markers.
+ */
+export function partPieces(text: string): TextPiece[] {
+  return text
+    .split(/(⟦\/?\d+(?: [^⟧\n]*)?⟧)/)
+    .flatMap((t, i) => (t === '' ? [] : [i % 2 ? { text: t, part: true } : { text: t }]));
 }
 
 /**

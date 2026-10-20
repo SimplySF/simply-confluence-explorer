@@ -430,15 +430,49 @@ export type BranchFix = {
   otherPages: string[];
 };
 
-/** One page in a run of staged edits: its proposed edit, and the person's decision on it. */
+/** A part of a page the text stands in for with a marker, such as a macro or an image (ADR-058). */
+export type PagePart = { n: number; label: string; kind: 'inline' | 'block' | 'container' };
+
+/** One change in an edit of a page, decided on its own (ADR-059). */
+export type PageChange = {
+  /** Stays the same while the change does, so a decision survives edits elsewhere. */
+  id: string;
+  /** The page's text the change replaces, empty for an addition. */
+  before: string;
+  /** The text it puts there, empty for a removal. */
+  after: string;
+  /** Whether the model suggested it, or the person wrote it. */
+  source: 'ai' | 'yours';
+  /** What else accepting it does, such as removing a macro. */
+  notes: string[];
+  /** Why the change cannot be written as it is. */
+  problem?: string;
+  decision: 'pending' | 'accepted' | 'rejected';
+};
+
+/** One page in a run of staged edits: its proposed edit, and the person's decisions on its changes. */
 export type BranchItem = {
   pageId: string;
   title: string;
   /** The page version the proposal was made from; a push is refused if the page has moved on. */
   baseVersion: number;
   status: BranchItemStatus;
+  /** The page as the model was given it: its frontmatter, then its edit form (ADR-058). */
   original?: string;
+  /** The model's edit, kept as it was, so the working text can be reset to it. */
+  suggested?: string;
+  /** The working text: the model's edit with the person's own changes to it. */
   proposed?: string;
+  /** The parts of the page its markers stand for. */
+  parts?: PagePart[];
+  /** Formatting each block of the page's text cannot hold, by block, lost if that block is rewritten. */
+  drops?: Record<number, string[]>;
+  /** The changes from the page to the working text, each with its decision. */
+  changes?: PageChange[];
+  /** The decisions made, by change id. */
+  decisions?: Record<string, 'accepted' | 'rejected'>;
+  /** What a push writes: the page's text with only the accepted changes applied. */
+  result?: string;
   critique?: string[];
   changelog?: string[];
   /** Why a page was skipped or a step failed, in words a person can act on. */

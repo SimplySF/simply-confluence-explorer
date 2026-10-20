@@ -103,10 +103,9 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
     expect(run.items.map((i) => i.title)).toEqual(['Interviews', 'Interview Guide']);
     const before = await read(id('Interview Guide'));
     const marker = `Edited by a person during the end-to-end run ${Date.now()}.`;
-    await call('PATCH', `/branches/runs/${run.id}/items/${id('Interview Guide')}`, {
-      decision: 'accept',
-      proposed: `# Interview Guide\n\n${marker}`,
-    });
+    const item = `/branches/runs/${run.id}/items/${id('Interview Guide')}`;
+    await call('PUT', `${item}/text`, { text: `# Interview Guide\n\n${marker}` });
+    await call('POST', `${item}/decide-all`, { decision: 'accept' });
 
     const checked = await call<BranchRun>('POST', `/branches/runs/${run.id}/check`);
     expect(checked.items[1].status, checked.items[1].message).toBe('checked');
@@ -123,7 +122,7 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
 
   it('refuses to push over a page a colleague changed after the proposal', async () => {
     const run = await improve();
-    await call('PATCH', `/branches/runs/${run.id}/items/${id('Interviews')}`, { decision: 'accept' });
+    await call('POST', `/branches/runs/${run.id}/items/${id('Interviews')}/decide-all`, { decision: 'accept' });
     const current = await read(id('Interviews'));
     await rest('PUT', `/rest/api/content/${id('Interviews')}`, {
       type: 'page',

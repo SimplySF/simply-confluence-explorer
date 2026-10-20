@@ -25,8 +25,10 @@ export type DiffLine = { kind: 'same' | 'added' | 'removed'; text: string };
  * @param limit The longest side that is diffed line by line.
  */
 export function lineDiff(before: string, after: string, limit = 3000): DiffLine[] {
-  const a = before.split('\n');
-  const b = after.split('\n');
+  return diffSeq(before.split('\n'), after.split('\n'), limit);
+}
+
+function diffSeq(a: string[], b: string[], limit: number): DiffLine[] {
   if (a.length > limit || b.length > limit) {
     return [
       ...a.map((text) => ({ kind: 'removed' as const, text })),
@@ -52,5 +54,28 @@ export function lineDiff(before: string, after: string, limit = 3000): DiffLine[
   }
   while (i < a.length) out.push({ kind: 'removed', text: a[i++] });
   while (j < b.length) out.push({ kind: 'added', text: b[j++] });
+  return out;
+}
+
+export type WordPiece = { kind: 'same' | 'changed'; text: string };
+
+/**
+ * Marks the words that differ between two versions of a block, for each side, so a reworded
+ * sentence shows which words changed rather than two whole lines.
+ *
+ * @param before The block as it was.
+ * @param after The block as it will be.
+ */
+export function wordDiff(before: string, after: string): { before: WordPiece[]; after: WordPiece[] } {
+  const out = { before: [] as WordPiece[], after: [] as WordPiece[] };
+  const push = (side: WordPiece[], kind: WordPiece['kind'], text: string): void => {
+    const last = side.at(-1);
+    if (last?.kind === kind) last.text += text;
+    else side.push({ kind, text });
+  };
+  for (const op of diffSeq(before.split(/(\s+)/), after.split(/(\s+)/), 4000)) {
+    if (op.kind !== 'added') push(out.before, op.kind === 'same' ? 'same' : 'changed', op.text);
+    if (op.kind !== 'removed') push(out.after, op.kind === 'same' ? 'same' : 'changed', op.text);
+  }
   return out;
 }

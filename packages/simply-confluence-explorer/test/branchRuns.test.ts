@@ -19,7 +19,7 @@
 // version its edit was made from (ADR-024, ADR-049).
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AiSessionView, BranchFinding, BranchRun } from '../src/api/types.js';
+import type { AiSessionView, BranchFinding, BranchItem, BranchRun } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
 import { parseFindings, reviewPrompt } from '../src/branches/branchRuns.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -45,12 +45,17 @@ const FINDINGS: BranchFinding[] = [
 const textOf = (payload: GuardedPayload): string =>
   [payload.system, ...payload.messages.map((m) => m.content)].join('\n');
 
-/** Answers a request for suggestions with FINDINGS, an edit with a proposal for its page, and anything else in words. */
+let edits = 0;
+/**
+ * Answers a request for suggestions with FINDINGS, an edit with a proposal for its page, and anything
+ * else in words. Each edit differs from the last, because the pages are shared by every test and an
+ * edit identical to its page changes nothing.
+ */
 const answer = (payload: GuardedPayload): string => {
   const text = textOf(payload);
   if (text.includes('<<<PROPOSED_MARKDOWN>>>')) {
     const title = /^# Document Title: (.+)$/m.exec(text)?.[1] ?? 'Page';
-    return `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Applied\n<<<PROPOSED_MARKDOWN>>>\n# ${title}\n\nImproved body.`;
+    return `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Applied\n<<<PROPOSED_MARKDOWN>>>\n# ${title}\n\nImproved body ${++edits}.`;
   }
   if (payload.messages.at(-1)?.content.includes('"findings"')) return JSON.stringify({ findings: FINDINGS });
   return 'The two pages both describe the interview loop.';
@@ -105,14 +110,29 @@ const staged = async (app: TestApp, findings = [0]): Promise<BranchRun> => {
   expect(res.status, JSON.stringify(res.body)).toBe(200);
   return settled(app, res.body.id);
 };
-const decide = (
+const decideAll = (
   app: TestApp,
   id: string,
   pageId: string,
   decision: string,
-  proposed?: string,
 ): Promise<{ status: number; body: BranchRun }> =>
-  app.call<BranchRun>('PATCH', `/branches/runs/${id}/items/${pageId}`, { decision, proposed });
+  app.call<BranchRun>('POST', `/branches/runs/${id}/items/${pageId}/decide-all`, { decision });
+const decideChange = (
+  app: TestApp,
+  id: string,
+  pageId: string,
+  changeId: string,
+  decision: string,
+): Promise<{ status: number; body: BranchRun }> =>
+  app.call<BranchRun>('PATCH', `/branches/runs/${id}/items/${pageId}/changes/${changeId}`, { decision });
+const setText = (
+  app: TestApp,
+  id: string,
+  pageId: string,
+  text: string,
+): Promise<{ status: number; body: BranchRun }> =>
+  app.call<BranchRun>('PUT', `/branches/runs/${id}/items/${pageId}/text`, { text });
+const itemOf = (run: BranchRun, pageId: string): BranchItem => run.items.find((i) => i.pageId === pageId)!;
 
 describe('suggestions in a chat', () => {
   it('are stored with the answer, with the pages it read, and never from an excluded page', async () => {
@@ -254,11 +274,12 @@ describe('the queued edits', () => {
   it('write only the page accepted', async () => {
     await withApp(answer, async (app) => {
       const run = await staged(app);
-      expect(run.items.every((i) => i.status === 'proposed' && i.proposed?.includes('Improved body.'))).toBe(true);
+      expect(run.items.every((i) => i.status === 'proposed' && i.proposed?.includes('Improved body'))).toBe(true);
       const before = fake.writes.length;
 
-      await decide(app, run.id, guide(), 'accept', '# Interview Guide\n\nEdited by a person.');
-      await decide(app, run.id, interviews(), 'reject');
+      await setText(app, run.id, guide(), '# Interview Guide\n\nEdited by a person.');
+      await decideAll(app, run.id, guide(), 'accept');
+      await decideAll(app, run.id, interviews(), 'reject');
       const pushed = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body;
 
       expect(fake.writes.slice(before)).toEqual([guide()]);
@@ -271,8 +292,8 @@ describe('the queued edits', () => {
   it('refuse a page that changed after its edit was made, and still write the others', async () => {
     await withApp(answer, async (app) => {
       const run = await staged(app);
-      await decide(app, run.id, interviews(), 'accept');
-      await decide(app, run.id, guide(), 'accept');
+      await decideAll(app, run.id, interviews(), 'accept');
+      await decideAll(app, run.id, guide(), 'accept');
       fake.page('PEOPLE', 'Interviews').version++;
       const before = fake.writes.length;
       const pushed = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body;
@@ -287,7 +308,7 @@ describe('the queued edits', () => {
   it('are checked without writing anything', async () => {
     await withApp(answer, async (app) => {
       const run = await staged(app);
-      await decide(app, run.id, guide(), 'accept');
+      await decideAll(app, run.id, guide(), 'accept');
       const before = fake.writes.length;
       const checked = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/check`)).body;
       expect(checked.items.find((i) => i.pageId === guide())?.status).toBe('checked');
@@ -298,9 +319,9 @@ describe('the queued edits', () => {
   it('keep a decision made while edits are still arriving', async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
-    let edits = 0;
+    let proposals = 0;
     const reply = async (payload: GuardedPayload): Promise<string> => {
-      if (textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>') && ++edits === 2) await held;
+      if (textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>') && ++proposals === 2) await held;
       return answer(payload);
     };
     await withApp(reply, async (app) => {
@@ -313,7 +334,7 @@ describe('the queued edits', () => {
         // eslint-disable-next-line no-await-in-loop -- as above
         run = (await app.call<BranchRun>('GET', `/branches/runs/${started.id}`)).body;
       }
-      await decide(app, started.id, interviews(), 'accept');
+      await decideAll(app, started.id, interviews(), 'accept');
       release();
       const finished = await settled(app, started.id);
       expect(finished.items[0].status).toBe('accepted');
@@ -323,10 +344,187 @@ describe('the queued edits', () => {
   it('let only an edit be decided on', async () => {
     await withApp(answer, async (app) => {
       const run = await staged(app);
-      await decide(app, run.id, guide(), 'accept');
+      await decideAll(app, run.id, guide(), 'accept');
       await app.call('POST', `/branches/runs/${run.id}/push`);
-      const late = await decide(app, run.id, guide(), 'reject');
+      const late = await decideAll(app, run.id, guide(), 'reject');
       expect(late.status).toBe(409);
     });
+  });
+});
+
+describe('the changes of one page', () => {
+  /** The Interview Guide with a toc and two paragraphs, while `body` runs. */
+  async function withRichGuide(body: () => Promise<void>): Promise<void> {
+    const page = fake.page('PEOPLE', 'Interview Guide');
+    const saved = page.storage;
+    page.storage = `${TOC}<p>First paragraph.</p><p>Second paragraph.</p>`;
+    try {
+      await body();
+    } finally {
+      page.storage = saved;
+    }
+  }
+  const TOC =
+    '<ac:structured-macro ac:name="toc" ac:schema-version="1"><ac:parameter ac:name="maxLevel">2</ac:parameter></ac:structured-macro>';
+  /** Rewrites both paragraphs, keeping the toc's marker, as the prompt asks. */
+  const rewrite = (payload: GuardedPayload): string => {
+    const text = textOf(payload);
+    if (text.includes('<<<PROPOSED_MARKDOWN>>>') && text.includes('First paragraph.'))
+      return '<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Both\n<<<PROPOSED_MARKDOWN>>>\n⟦1 toc⟧\n\nFirst, reworded.\n\nSecond, reworded.';
+    return answer(payload);
+  };
+  const stagedGuide = async (app: TestApp): Promise<BranchRun> => staged(app, [1]);
+
+  it('are decided one by one, and a push writes only the accepted one, with the toc macro unchanged', async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        const item = itemOf(run, guide());
+        expect(item.original).toContain('⟦1 toc⟧');
+        expect(item.changes?.map((c) => [c.before, c.after, c.source])).toEqual([
+          ['First paragraph.', 'First, reworded.', 'ai'],
+          ['Second paragraph.', 'Second, reworded.', 'ai'],
+        ]);
+        const [first, second] = item.changes!;
+        await decideChange(app, run.id, guide(), first.id, 'accept');
+        const decided = (await decideChange(app, run.id, guide(), second.id, 'reject')).body;
+        expect(itemOf(decided, guide()).status).toBe('accepted');
+        expect(itemOf(decided, guide()).result).toBe('⟦1 toc⟧\n\nFirst, reworded.\n\nSecond paragraph.');
+        await app.call('POST', `/branches/runs/${run.id}/push`);
+        expect(fake.page('PEOPLE', 'Interview Guide').storage).toBe(
+          `${TOC}<p>First, reworded.</p><p>Second paragraph.</p>`,
+        );
+      }),
+    );
+  });
+
+  it("keep a decision when the person edits elsewhere, ask again about a change they edit, and reset to the AI's edit", async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        const [first] = itemOf(run, guide()).changes!;
+        await decideChange(app, run.id, guide(), first.id, 'accept');
+        const edited = (await setText(app, run.id, guide(), '⟦1 toc⟧\n\nFirst, reworded.\n\nSecond, my own way.')).body;
+        expect(itemOf(edited, guide()).changes?.map((c) => [c.after, c.source, c.decision])).toEqual([
+          ['First, reworded.', 'ai', 'accepted'],
+          ['Second, my own way.', 'yours', 'pending'],
+        ]);
+        const reset = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/items/${guide()}/reset`)).body;
+        const item = itemOf(reset, guide());
+        expect(item.proposed).toBe(item.suggested);
+        expect(item.changes?.every((c) => c.decision === 'pending' && c.source === 'ai')).toBe(true);
+      }),
+    );
+  });
+
+  it("name a change that removes the page's toc, and write the removal only once it is accepted", async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        const edited = (await setText(app, run.id, guide(), 'First, reworded.\n\nSecond, reworded.')).body;
+        const removal = itemOf(edited, guide()).changes!.find((c) => c.before === '⟦1 toc⟧')!;
+        expect(removal.notes).toEqual(['Removes ⟦1 toc⟧ from the page']);
+        await decideAll(app, run.id, guide(), 'accept');
+        await decideChange(app, run.id, guide(), removal.id, 'reject');
+        await app.call('POST', `/branches/runs/${run.id}/push`);
+        expect(fake.page('PEOPLE', 'Interview Guide').storage).toBe(
+          `${TOC}<p>First, reworded.</p><p>Second, reworded.</p>`,
+        );
+      }),
+    );
+  });
+
+  it("keep the text a person saved and the AI's edit beside it, so leaving the editor never loses their edits", async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        await setText(app, run.id, guide(), '⟦1 toc⟧\n\nMine.\n\nSecond, reworded.');
+        const read = itemOf((await app.call<BranchRun>('GET', `/branches/runs/${run.id}`)).body, guide());
+        expect(read.proposed).toBe('⟦1 toc⟧\n\nMine.\n\nSecond, reworded.');
+        expect(read.suggested).toBe('⟦1 toc⟧\n\nFirst, reworded.\n\nSecond, reworded.');
+      }),
+    );
+  });
+
+  it('name a page that fails the check, with why, and check it again once it is fixed', async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        await setText(app, run.id, guide(), '⟦1 toc⟧\n\nFirst, reworded.\n\n```\nunclosed');
+        await decideAll(app, run.id, guide(), 'accept');
+        const failed = itemOf((await app.call<BranchRun>('POST', `/branches/runs/${run.id}/check`)).body, guide());
+        expect(failed.status).toBe('check-failed');
+        expect(failed.message).toMatch(/^The dry run found a problem: Line \d+/);
+        await setText(app, run.id, guide(), '⟦1 toc⟧\n\nFirst, reworded.\n\nSecond, reworded.');
+        await decideAll(app, run.id, guide(), 'accept');
+        const checked = itemOf((await app.call<BranchRun>('POST', `/branches/runs/${run.id}/check`)).body, guide());
+        expect(checked.status).toBe('checked');
+      }),
+    );
+  });
+
+  it('refuse to write an accepted change that puts a part inside code, where it would be lost', async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        await setText(app, run.id, guide(), '```\n⟦1 toc⟧\n```\n\nFirst, reworded.\n\nSecond, reworded.');
+        await decideAll(app, run.id, guide(), 'accept');
+        const before = fake.writes.length;
+        const pushed = itemOf((await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body, guide());
+        expect(pushed.status).toBe('push-failed');
+        expect(pushed.message).toContain('no accepted change removes: ⟦1 toc⟧');
+        expect(fake.writes.length).toBe(before);
+      }),
+    );
+  });
+
+  it('show a reworded paragraph and a new one after it as two changes, each decided on its own', async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        const text = '⟦1 toc⟧\n\nFirst paragraph, reworded slightly.\n\nWhen to escalate.\n\nSecond paragraph.';
+        const edited = itemOf((await setText(app, run.id, guide(), text)).body, guide());
+        expect(edited.changes?.map((c) => [c.before, c.after])).toEqual([
+          ['First paragraph.', 'First paragraph, reworded slightly.'],
+          ['', 'When to escalate.'],
+        ]);
+        await decideChange(app, run.id, guide(), edited.changes![1].id, 'accept');
+        const decided = itemOf(
+          (await decideChange(app, run.id, guide(), edited.changes![0].id, 'reject')).body,
+          guide(),
+        );
+        expect(decided.result).toBe('⟦1 toc⟧\n\nFirst paragraph.\n\nWhen to escalate.\n\nSecond paragraph.');
+      }),
+    );
+  });
+
+  it('refuse a change naming a part the page does not have', async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        const edited = (await setText(app, run.id, guide(), '⟦1 toc⟧\n\n⟦9 jira⟧ First.\n\nSecond paragraph.')).body;
+        const invented = itemOf(edited, guide()).changes![0];
+        expect(invented.problem).toContain('⟦9⟧ is not a part of this page');
+        expect((await decideChange(app, run.id, guide(), invented.id, 'accept')).status).toBe(409);
+      }),
+    );
+  });
+
+  it('make an edit again from the current page after a colleague changed it', async () => {
+    await withRichGuide(() =>
+      withApp(rewrite, async (app) => {
+        const run = await stagedGuide(app);
+        await decideAll(app, run.id, guide(), 'accept');
+        const page = fake.page('PEOPLE', 'Interview Guide');
+        page.version++;
+        const refused = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body;
+        expect(itemOf(refused, guide()).status).toBe('push-failed');
+        await app.call('POST', `/branches/runs/${run.id}/items/${guide()}/redo`);
+        const again = itemOf(await settled(app, run.id), guide());
+        expect(again.baseVersion).toBe(page.version);
+        expect(again.status).toBe('proposed');
+        expect(again.changes).toHaveLength(2);
+      }),
+    );
   });
 });

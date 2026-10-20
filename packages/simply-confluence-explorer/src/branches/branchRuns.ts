@@ -31,16 +31,19 @@ import { GuardBlockedError } from '../ai/guard.js';
 import { applyPrompt, parseRecommendationResponse } from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
+import { frontmatterOf, stripFrontmatter } from '../parser/convert.js';
+import { toEditForm } from '../parser/editForm.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { contextCollector } from '../spaces/branchContext.js';
 import { errorMessage } from '../util/errors.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
+import { acceptedText, partsOf, refreshChanges } from './pageChanges.js';
 
 // Reviews of a set of pages, and the edits staged from the suggestions a person chose (ADR-024,
 // ADR-046). A run is kept as a file in data/branch-runs/, so a queue survives a restart. Nothing is
-// written to Confluence except a page the person accepted, and each write goes through the one write
-// path, checked against the version its edit was made from.
+// written to Confluence except the changes a person accepted (ADR-059), and each write goes through
+// the one write path, checked against the version its edit was made from.
 
 export type BranchDeps = GateDeps & {
   ai: AiEngine;
@@ -102,6 +105,8 @@ const KINDS = new Set<string>([
 ]);
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIDABLE = new Set(['proposed', 'accepted', 'rejected', 'checked', 'check-failed', 'push-failed']);
+/** A page whose edit can be made again from the page as Confluence holds it now. */
+const REDOABLE = new Set(['failed', 'check-failed', 'push-failed']);
 
 /**
  * Reads a review's findings, or returns `null` when the answer is not the JSON asked for, so the
@@ -158,7 +163,14 @@ export class BranchRunStore {
   }
 }
 
-type ReviewPage = { id: string; title: string; version: number; lastModified: string; markdown: string };
+type ReviewPage = {
+  id: string;
+  title: string;
+  version: number;
+  lastModified: string;
+  markdown: string;
+  detail: PageDetail;
+};
 
 /** Suggestions the server stored, ready to be staged as edits. */
 export type StagedOrigin = {
@@ -188,7 +200,14 @@ export class BranchRunner {
   }
 
   public get(id: string): BranchRun {
-    return this.live.get(id) ?? this.store.get(id);
+    const run = this.live.get(id) ?? this.store.get(id);
+    // A run saved before edits were decided change by change has an edit but no changes yet.
+    for (const item of run.items)
+      if (item.proposed !== undefined && item.changes === undefined) {
+        item.suggested ??= item.proposed;
+        if (DECIDABLE.has(item.status)) refreshChanges(item);
+      }
+    return run;
   }
 
   /**
@@ -242,7 +261,7 @@ export class BranchRunner {
         title: p.title,
         baseVersion: p.version,
         status: 'pending',
-        original: p.markdown,
+        ...editOf(p.detail),
         fixes: fixesFor.get(p.id),
       })),
     });
@@ -263,31 +282,105 @@ export class BranchRunner {
     return run;
   }
 
-  /** Accepts, rejects or resets one page. An accepted page may carry the person's own edits. */
-  public decide(id: string, pageId: string, decision: 'accept' | 'reject' | 'reset', proposed?: string): BranchRun {
+  /**
+   * Accepts or rejects one change of a page's edit, or with `undo` leaves it undecided again.
+   *
+   * @param id The run.
+   * @param pageId The page.
+   * @param changeId The change, as the run lists it.
+   * @param decision What the person decided.
+   */
+  public decideChange(id: string, pageId: string, changeId: string, decision: 'accept' | 'reject' | 'undo'): BranchRun {
+    return this.edit(id, pageId, (item) => {
+      const change = item.changes?.find((c) => c.id === changeId);
+      if (!change) throw new HttpError(404, 'that change is not in this edit; it may have changed since');
+      if (decision === 'accept' && change.problem) throw new HttpError(409, change.problem);
+      const decisions = { ...item.decisions };
+      if (decision === 'undo') delete decisions[changeId];
+      else decisions[changeId] = decision === 'accept' ? 'accepted' : 'rejected';
+      item.decisions = decisions;
+    });
+  }
+
+  /** Accepts or rejects every change of a page's edit at once. */
+  public decideAll(id: string, pageId: string, decision: 'accept' | 'reject'): BranchRun {
+    return this.edit(id, pageId, (item) => {
+      const usable = (item.changes ?? []).filter((c) => decision === 'reject' || !c.problem);
+      item.decisions = Object.fromEntries(usable.map((c) => [c.id, decision === 'accept' ? 'accepted' : 'rejected']));
+    });
+  }
+
+  /** Saves the person's own edits to a page's working text; changes they touch are asked again. */
+  public setText(id: string, pageId: string, text: string): BranchRun {
+    return this.edit(id, pageId, (item) => {
+      item.proposed = stripFrontmatter(text);
+    });
+  }
+
+  /** Puts a page's working text back to the model's edit and clears every decision on it. */
+  public reset(id: string, pageId: string): BranchRun {
+    return this.edit(id, pageId, (item) => {
+      item.proposed = item.suggested;
+      item.decisions = {};
+    });
+  }
+
+  /**
+   * Makes a page's edit again from the page as Confluence holds it now, with the same suggestions,
+   * for an edit that failed or was refused because the page changed since it was made.
+   */
+  public async redo(id: string, pageId: string): Promise<BranchRun> {
     const run = this.get(id);
     const item = run.items.find((i) => i.pageId === pageId);
     if (!item) throw new HttpError(404, 'that page is not in this run');
-    if (!DECIDABLE.has(item.status)) throw new HttpError(409, `a page that is ${item.status} cannot be decided on`);
-    if (decision === 'accept') {
-      if (typeof proposed === 'string') item.proposed = proposed;
-      item.status = 'accepted';
-    } else {
-      item.status = decision === 'reject' ? 'rejected' : 'proposed';
-    }
-    item.message = undefined;
+    if (run.status === 'running') throw new HttpError(409, 'wait for the run to finish before making an edit again');
+    if (!REDOABLE.has(item.status)) throw new HttpError(409, `a page that is ${item.status} is not made again`);
+    const page = await this.deps.client().getPageDetail(pageId);
+    this.deps.store.refreshPage(run.spaceKey, page);
+    const { pages, leftOut } = await this.pagesFor(run.spaceKey, [pageId], Number.MAX_SAFE_INTEGER, true);
+    if (pages.length === 0)
+      throw new HttpError(422, `This page can no longer be edited: ${leftOut.join(', ') || 'it is excluded'}.`);
+    Object.assign(item, {
+      baseVersion: pages[0].version,
+      status: 'pending',
+      ...editOf(pages[0].detail),
+      suggested: undefined,
+      proposed: undefined,
+      changes: undefined,
+      decisions: undefined,
+      critique: undefined,
+      changelog: undefined,
+      message: undefined,
+    });
+    run.status = 'running';
+    run.processed = Math.max(0, run.processed - 1);
     this.store.save(run);
+    const signal = this.begin(run);
+    void this.propose(run, signal).finally(() => this.end(run));
     return run;
   }
 
-  /** Dry-runs every accepted page against Confluence. Nothing is written. */
+  /** Dry-runs every page with accepted changes against Confluence. Nothing is written. */
   public check(id: string): Promise<BranchRun> {
     return this.eachAccepted(id, true);
   }
 
-  /** Writes every accepted page. A page that was not accepted is never written. */
+  /** Writes the accepted changes of each page. A change that was not accepted is never written. */
   public push(id: string): Promise<BranchRun> {
     return this.eachAccepted(id, false);
+  }
+
+  private edit(id: string, pageId: string, change: (item: BranchItem) => void): BranchRun {
+    const run = this.get(id);
+    const item = run.items.find((i) => i.pageId === pageId);
+    if (!item) throw new HttpError(404, 'that page is not in this run');
+    if (!DECIDABLE.has(item.status) || item.proposed === undefined)
+      throw new HttpError(409, `a page that is ${item.status} cannot be decided on`);
+    change(item);
+    refreshChanges(item);
+    item.message = undefined;
+    this.store.save(run);
+    return run;
   }
 
   /**
@@ -324,6 +417,7 @@ export class BranchRunner {
       version: p.version,
       lastModified: p.lastModified,
       markdown,
+      detail: p,
     });
     return {
       pages: result.pages.map((p) => page(p.page, p.markdown)),
@@ -348,7 +442,7 @@ export class BranchRunner {
 
   private async propose(run: BranchRun, signal: AbortSignal): Promise<void> {
     // One page at a time: a section can be large, and providers limit request rates.
-    for (const item of run.items) {
+    for (const item of run.items.filter((i) => i.status === 'pending')) {
       if (this.cancelled.has(run.id)) break;
       item.status = 'working';
       this.store.save(run);
@@ -360,13 +454,15 @@ export class BranchRunner {
           signal,
         });
         const parsed = parseRecommendationResponse(answer.text);
+        const edit = stripFrontmatter(parsed.improvedMarkdown).trim();
         Object.assign(item, {
-          status: 'proposed',
-          proposed: parsed.improvedMarkdown,
+          suggested: edit,
+          proposed: edit,
           critique: parsed.critique,
           changelog: parsed.changelog,
           guardSummary: answer.guard.summary,
         });
+        refreshChanges(item);
       } catch (error) {
         if (error instanceof AiStopped) {
           item.status = 'pending';
@@ -384,7 +480,7 @@ export class BranchRunner {
 
   private async eachAccepted(id: string, dryRun: boolean): Promise<BranchRun> {
     const run = this.get(id);
-    const ready = dryRun ? ['accepted', 'check-failed'] : ['accepted', 'checked', 'push-failed'];
+    const ready = dryRun ? ['accepted', 'checked', 'check-failed'] : ['accepted', 'checked', 'push-failed'];
     const client = this.deps.client();
     // One page at a time, each write checked against its own base version.
     for (const item of run.items.filter((i) => ready.includes(i.status))) {
@@ -392,7 +488,7 @@ export class BranchRunner {
         // eslint-disable-next-line no-await-in-loop -- one write at a time, as explained above
         const result = await writePage(client, this.deps.store, this.deps.log, {
           pageId: item.pageId,
-          markdown: item.proposed ?? '',
+          ...acceptedText(item),
           baseVersion: item.baseVersion,
           dryRun,
           spaceKey: run.spaceKey,
@@ -408,6 +504,12 @@ export class BranchRunner {
     }
     return run;
   }
+}
+
+/** The page as the model is given it, its edit form after its frontmatter, and what its markers stand for. */
+function editOf(page: PageDetail): Pick<BranchItem, 'original' | 'parts' | 'drops'> {
+  const form = toEditForm(page.storageXml);
+  return { original: `${frontmatterOf(page)}\n${form.markdown}\n`, ...partsOf(form) };
 }
 
 function newRun(

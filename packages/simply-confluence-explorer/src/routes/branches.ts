@@ -18,36 +18,50 @@ import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
 import { optionalString } from './browse.js';
 
-const DECISIONS = new Set(['accept', 'reject', 'reset']);
+const oneOf = <T extends string>(body: unknown, key: string, allowed: readonly T[]): T => {
+  const value = optionalString(body, key);
+  if (!value || !(allowed as readonly string[]).includes(value))
+    throw new HttpError(400, `${key} must be ${allowed.join(', ').replace(/, ([^,]*)$/, ' or $1')}`);
+  return value as T;
+};
 
 /**
- * Adds the routes for a queue of staged edits: read it, stop it, decide on each page, and check or
- * push the accepted ones (ADR-024). A queue is filled from a chat's suggestions (ADR-049); only the
- * pages a person accepts are checked and pushed, one at a time, each against the version its edit was
- * made from.
+ * Adds the routes for a queue of staged edits: read it, stop it, decide on each change of each
+ * page, edit or reset a page's text, and check or push the accepted changes (ADR-024, ADR-059). A
+ * queue is filled from a chat's suggestions (ADR-049); only the changes a person accepts are checked
+ * and pushed, a page at a time, each against the version its edit was made from.
  *
  * @param router The router to add to.
  * @param services What the routes share.
  */
 export function addBranchRoutes(router: Router, services: Services): Router {
   const { branches } = services;
+  const item = '/api/branches/runs/:runId/items/:pageId';
   return (
     router
       .add('GET', '/api/branches/runs/:runId', ({ params }) => branches.get(params.runId))
       .add('POST', '/api/branches/runs/:runId/cancel', ({ params }) => branches.cancel(params.runId))
-      .add('PATCH', '/api/branches/runs/:runId/items/:pageId', ({ params, body }) => {
-        const decision = optionalString(body, 'decision');
-        if (!decision || !DECISIONS.has(decision)) throw new HttpError(400, 'decision must be accept, reject or reset');
-        return branches.decide(
+      .add('PATCH', `${item}/changes/:changeId`, ({ params, body }) =>
+        branches.decideChange(
           params.runId,
           params.pageId,
-          decision as 'accept' | 'reject' | 'reset',
-          optionalString(body, 'proposed'),
-        );
+          params.changeId,
+          oneOf(body, 'decision', ['accept', 'reject', 'undo'] as const),
+        ),
+      )
+      .add('POST', `${item}/decide-all`, ({ params, body }) =>
+        branches.decideAll(params.runId, params.pageId, oneOf(body, 'decision', ['accept', 'reject'] as const)),
+      )
+      .add('PUT', `${item}/text`, ({ params, body }) => {
+        const text = optionalString(body, 'text');
+        if (text === undefined) throw new HttpError(400, 'text is required');
+        return branches.setText(params.runId, params.pageId, text);
       })
-      // Dry-runs every accepted page; nothing is written.
+      .add('POST', `${item}/reset`, ({ params }) => branches.reset(params.runId, params.pageId))
+      .add('POST', `${item}/redo`, ({ params }) => branches.redo(params.runId, params.pageId))
+      // Dry-runs every page with accepted changes; nothing is written.
       .add('POST', '/api/branches/runs/:runId/check', ({ params }) => branches.check(params.runId))
-      // Writes every accepted page, one at a time, each against its own base version.
+      // Writes each page's accepted changes, one page at a time, each against its own base version.
       .add('POST', '/api/branches/runs/:runId/push', ({ params }) => branches.push(params.runId))
   );
 }

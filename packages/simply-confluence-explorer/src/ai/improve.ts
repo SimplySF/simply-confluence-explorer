@@ -41,7 +41,9 @@ CRITICAL RULES:
 1. Change only what the suggestions need. Keep every other sentence, heading, list and fact exactly as it is.
 2. Preserve existing YAML frontmatter at the very top (id, title, space, version, etc.).
 3. When a suggestion concerns another page too, change only this page's part of it.
-4. Output pure Markdown using the exact delimiter tags below. Do NOT output JSON!
+4. Text written ⟦3 name⟧ is a marker for a part of the page that is not text, such as a macro, an image, a link or a layout. Keep every marker exactly as written, where its part belongs. Move or remove a marker only when a suggestion asks for that part to move or go, and never write a marker the page does not already have.
+5. A marker on a line of its own with a matching ⟦/3⟧ later holds the text between the two, such as the body of a panel or a column. You may edit that text; keep both markers, in order.
+6. Output pure Markdown using the exact delimiter tags below. Do NOT output JSON!
 
 <<<CRITIQUE>>>
 - Any suggestion you could not apply, and why; or "None"

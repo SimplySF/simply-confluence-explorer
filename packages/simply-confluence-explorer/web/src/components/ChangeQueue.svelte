@@ -6,8 +6,8 @@
   import StagedEdits from './StagedEdits.svelte';
   import JobProgress from './ui/JobProgress.svelte';
 
-  // One queue of edits staged from a chat's suggestions: they arrive one page at a time, then each is
-  // accepted, edited or rejected, and the accepted ones are checked and pushed (ADR-024, ADR-049).
+  // One queue of edits staged from a chat's suggestions: they arrive one page at a time, then each
+  // change is accepted or rejected, and the accepted ones are checked and pushed (ADR-024, ADR-059).
   type Props = {
     runId: string;
     /** Pages were written, so the tree and the page reload. */
@@ -68,7 +68,7 @@
       {:else}
         <strong>Changes ({run.items.length})</strong>
         <span class="branch-note"
-          >{run.status === 'cancelled' ? 'Stopped' : 'Read each edit, then accept or reject it'}</span
+          >{run.status === 'cancelled' ? 'Stopped' : 'Accept or reject each change, then check and push'}</span
         >
       {/if}
     </div>
@@ -76,7 +76,11 @@
     <StagedEdits
       {run}
       {busy}
-      onDecide={(pageId, decision, edited) => act(decision, () => branches.decide(runId, pageId, decision, edited))}
+      onChange={(pageId, changeId, d) => act(d, () => branches.decideChange(runId, pageId, changeId, d))}
+      onAll={(pageId, d) => act(d, () => branches.decideAll(runId, pageId, d))}
+      onSaveText={(pageId, text) => act('save', () => branches.saveText(runId, pageId, text))}
+      onReset={(pageId) => act('reset', () => branches.reset(runId, pageId))}
+      onRedo={(pageId) => act('redo', () => branches.redo(runId, pageId))}
       onCheck={() => act('check', () => branches.check(runId))}
       onPush={async () => {
         if (await act('push', () => branches.push(runId))) onPushed();
