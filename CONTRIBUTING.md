@@ -154,7 +154,8 @@ links each load-bearing file to read. Someone other than the person who opened i
 merging it publishes the version to npm as `latest`. Before tagging, the workflow runs
 `node scripts/release-gate.mjs check <version> <commit>`, which refuses the release unless the
 merged pull request came from `release/<version>` and its last commit was approved by someone other
-than its author.
+than its author. Until 1.0.0, a release pull request merged by a maintainer listed in the repository
+variable `RELEASE_MAINTAINERS` is published without that approval (ADR-053).
 
 Do not merge other pull requests while a release pull request is open. Whatever is on `main` when
 it merges is what gets published, and its reviewer read the code as it was when it was opened.
