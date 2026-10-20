@@ -219,11 +219,11 @@
 
   function openJob(job: Job): void {
     chooseSpace(job.spaceKey);
-    if (job.kind !== 'review') {
+    if (job.kind !== 'review' && job.kind !== 'batch') {
       if (job.rootPageId) openPage(job.rootPageId);
       return;
     }
-    // Edits are shown in the chat they came from: a page's Chat tab, or Space chat.
+    // Edits and batched reviews are shown in the chat they came from: a page's Chat tab, or Space chat.
     jobs.requested = job;
     if (job.rootPageId) openPage(job.rootPageId);
     else view = 'chat';

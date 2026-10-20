@@ -25,6 +25,7 @@ import { systemDeps } from '../doctor/system.js';
 import { HttpError, Router } from '../http/router.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
+import type { CorpusReviews } from '../branches/corpusReview.js';
 import type { MetadataPipeline } from '../spaces/metadata.js';
 import type { SearchIndex } from '../spaces/searchIndex.js';
 import type { VectorIndex } from '../spaces/vectors.js';
@@ -57,6 +58,8 @@ export type Services = {
   vectors: VectorIndex;
   /** How many characters of pages one chat request may carry; a larger corpus is retrieved from. */
   contextChars: number;
+  /** Reviews of more pages than one request carries, read in batches (ADR-051). */
+  reviews: CorpusReviews;
   /** The GitLab connection the server holds (ADR-050). */
   gitlab: GitLabStore;
   /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */

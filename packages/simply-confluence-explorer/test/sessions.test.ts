@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import type { AiSessionView } from '../src/api/types.js';
+import type { AiSessionView, BatchProgress } from '../src/api/types.js';
 import type { RetrievedContext } from '../src/spaces/contextRetriever.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
 import { extractText, historyToSend, SessionStore } from '../src/ai/sessions.js';
@@ -544,4 +544,114 @@ test('summary coverage says whether chosen pages fit one request, so the chat ca
     expect(await coverage({})).toMatchObject({ fits: false });
     expect(await coverage({ pageIds: [fake.page('PEOPLE', 'Benefits Overview').id] })).toMatchObject({ fits: true });
   }, RETRIEVING);
+});
+
+const isReview = (p: GuardedPayload): boolean => textOf(p).includes('Find what a maintainer should fix');
+
+async function finished(app: TestApp, jobId: string): Promise<BatchProgress> {
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+    const { body } = await app.call<BatchProgress>('GET', `/ai/batches/${jobId}`);
+    if (body.status !== 'running' && body.status !== 'pending') return body;
+    // eslint-disable-next-line no-await-in-loop -- as above
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+test('a review of more pages than one request carries reads them in batches and merges the suggestions', async () => {
+  const app = await startTestApp(
+    fake,
+    (payload) => {
+      const first = /## \[Page: ([^\]]+)\]/.exec(textOf(payload))?.[1] ?? '';
+      return isReview(payload)
+        ? JSON.stringify({
+            findings: [
+              { kind: 'clarity', pages: [first], detail: `Unclear: ${first}`, suggestion: 'Say who it is for.' },
+            ],
+          })
+        : 'an answer';
+    },
+    {},
+    { contextChars: RETRIEVING },
+  );
+  try {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const before = app.sent.length;
+    const started = await app.call<AiSessionView & { batch?: BatchProgress }>('POST', `/ai/sessions/${c.id}/suggest`, {
+      kind: 'review',
+    });
+    assert.ok(started.body.batch, 'a batch job is started');
+    const done = await finished(app, started.body.batch.jobId);
+    assert.equal(done.status, 'completed');
+    assert.ok(done.total > 1, `${done.total} batches`);
+    const sent = app.sent.slice(before);
+    assert.equal(sent.filter(isReview).length, done.total);
+    for (const title of expectations.PEOPLE.excluded)
+      assert.doesNotMatch(sent.map(textOf).join('\n'), new RegExp(title));
+    const { body: s } = await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`);
+    const turn = s.turns.at(-1)!;
+    assert.match(s.turns.at(-2)!.text, /^Review these \d+ pages for problems$/);
+    assert.equal(turn.corpus?.mode, 'batched');
+    assert.equal(turn.findings?.length, done.total, 'one suggestion from each batch');
+    assert.deepEqual(Object.keys(turn.pageIds ?? {}).sort(), turn.findings.map((f) => f.pages[0]).sort());
+
+    // A page holding a secret is left out of its batch and named, as in any request.
+    await syncSpace(app, 'OPS');
+    const ops = await spaceChat(app, 'OPS');
+    const opsBefore = app.sent.length;
+    const { body: opsStarted } = await app.call<AiSessionView & { batch: BatchProgress }>(
+      'POST',
+      `/ai/sessions/${ops.id}/suggest`,
+      { kind: 'review' },
+    );
+    await finished(app, opsStarted.batch.jobId);
+    const { body: opsChat } = await app.call<AiSessionView>('GET', `/ai/sessions/${ops.id}`);
+    assert.match(opsChat.turns.at(-1)?.guardSummary ?? '', /Deploy Notes/);
+    assert.doesNotMatch(app.sent.slice(opsBefore).map(textOf).join('\n'), /\[Page: Deploy Notes\]/);
+  } finally {
+    await app.close();
+  }
+});
+
+test('stopping a batched review ends it and leaves nothing in the conversation', async () => {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const app = await startTestApp(
+    fake,
+    async (payload, _n, signal) => {
+      if (!isReview(payload)) return 'an answer';
+      await Promise.race([
+        held,
+        new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))),
+      ]);
+      return '{"findings":[]}';
+    },
+    {},
+    { contextChars: RETRIEVING },
+  );
+  try {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const { body } = await app.call<AiSessionView & { batch: BatchProgress }>('POST', `/ai/sessions/${c.id}/suggest`, {
+      kind: 'review',
+    });
+    assert.equal(
+      (await app.call<{ batch: BatchProgress }>('GET', `/ai/sessions/${c.id}/batch`)).body.batch.jobId,
+      body.batch.jobId,
+    );
+    const again = await app.call('POST', `/ai/sessions/${c.id}/suggest`, { kind: 'review' });
+    assert.equal(again.status, 409, 'one review at a time in a chat');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepEqual((await app.call('POST', `/ai/batches/${body.batch.jobId}/cancel`)).body, { cancelled: true });
+    release();
+    const stopped = await finished(app, body.batch.jobId);
+    assert.equal(stopped.status, 'cancelled');
+    assert.equal(stopped.error, undefined, 'stopping is not an error');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal((await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`)).body.turns.length, 0);
+    assert.deepEqual((await app.call('GET', `/ai/sessions/${c.id}/batch`)).body, { batch: null });
+  } finally {
+    await app.close();
+  }
 });

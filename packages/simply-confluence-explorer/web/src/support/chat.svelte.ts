@@ -16,6 +16,7 @@
 
 import type { AiSessionView, SessionScope } from '../../../src/api/types.js';
 import { sessions } from './api.js';
+import { jobs } from './jobs.svelte.js';
 import { messageOf } from './toast.svelte.js';
 
 /**
@@ -55,7 +56,18 @@ export class AiChat {
    * the changes the conversation so far has agreed (ADR-049).
    */
   public suggest(kind: 'review' | 'changes', shown: string): Promise<void> {
-    return this.ask(shown, (id, signal) => sessions.suggest(id, kind, signal));
+    return this.ask(shown, async (id, signal) => {
+      const { batch, ...session } = await sessions.suggest(id, kind, signal);
+      // Too many pages for one request: the review runs in batches on the server, and its answer is
+      // read again when it finishes (ADR-051).
+      if (batch) jobs.watchBatch(batch, session.scope.kind === 'branch' ? session.scope.pageId : undefined);
+      return session;
+    });
+  }
+
+  /** Reads the conversation again, as after a batched review writes its answer. */
+  public async reload(): Promise<void> {
+    if (this.session) this.session = await sessions.get(this.session.id);
   }
 
   /** Stages edits from the chosen suggestions of one answer, and shows the answer with its new queue. */

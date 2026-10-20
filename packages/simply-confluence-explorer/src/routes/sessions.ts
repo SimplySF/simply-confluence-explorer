@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { AiSessionView, BranchFinding, SessionScope, SessionTurn } from '../api/types.js';
+import type { AiSessionView, BranchFinding, PageDetail, SessionScope, SessionTurn } from '../api/types.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
@@ -23,7 +23,7 @@ import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote } from '../spaces/branchContext.js';
-import { retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
+import { corpusSize, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
@@ -117,7 +117,7 @@ type TurnContext = {
  * @param services What the routes share.
  */
 export function addSessionRoutes(router: Router, services: Services): Router {
-  const { ai, sessions, store, exclusions, dataDir, index, branches } = services;
+  const { ai, sessions, store, exclusions, dataDir, index, branches, reviews } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
   const found = (id: string): AiSessionView => {
     const session = sessions.get(id);
@@ -211,6 +211,17 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const files = sessions.filesContext(session.id);
     if (files) ctx.context += `\n\n---\n\n# Files added to this conversation\n\n${files}`;
     return ctx;
+  };
+
+  /**
+   * The pages of a chat that are too many for one request, which a review reads in batches instead
+   * (ADR-051); `null` when they fit, or the chat reads one page or a space not synced.
+   */
+  const tooManyForOne = (session: AiSessionView): PageDetail[] | null => {
+    const { scope } = session;
+    if (scope.kind === 'page' || !store.isSynced(scope.spaceKey)) return null;
+    const pages = corpusPages(store, exclusions, scope);
+    return corpusSize(scope.spaceKey, pages, index) > services.contextChars ? pages : null;
   };
 
   /** A conversation that questions can be asked in; a draft is written through its own routes. */
@@ -325,16 +336,44 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         const session = chat(params.sessionId);
         const fields = fieldsOf(body);
         const notes = optionalString(body, 'notes')?.trim().slice(0, 2000);
-        if (fields.kind === 'changes') {
-          if (session.turns.length === 0) throw new HttpError(400, 'there is no conversation to turn into changes yet');
-          return answer(session, { shown: 'Turn this conversation into changes', sent: CHANGES_PROMPT }, signal, true);
-        }
-        if (fields.kind !== 'review') throw new HttpError(400, 'kind must be review or changes');
+        if (fields.kind !== 'review' && fields.kind !== 'changes')
+          throw new HttpError(400, 'kind must be review or changes');
+        if (fields.kind === 'changes' && session.turns.length === 0)
+          throw new HttpError(400, 'there is no conversation to turn into changes yet');
         const several = session.scope.kind !== 'page';
-        const prompt = reviewPrompt(REVIEW_ASPECTS, several ? 2 : 1, notes);
-        const shown = several ? 'Review these pages for problems' : 'Suggest improvements to this page';
-        return answer(session, { shown: notes ? `${shown}: ${notes}` : shown, sent: prompt }, signal, true);
+        const sent = fields.kind === 'changes' ? CHANGES_PROMPT : reviewPrompt(REVIEW_ASPECTS, several ? 2 : 1, notes);
+        const large = tooManyForOne(session);
+        let shown =
+          fields.kind === 'changes'
+            ? 'Turn this conversation into changes'
+            : several
+              ? `Review ${large ? `these ${large.length}` : 'these'} pages for problems`
+              : 'Suggest improvements to this page';
+        if (notes && fields.kind === 'review') shown = `${shown}: ${notes}`;
+        if (large) {
+          const batch = reviews.start({
+            sessionId: session.id,
+            spaceKey: session.scope.spaceKey,
+            pages: large,
+            shown,
+            prompt: sent,
+            kind: fields.kind,
+            parse: parseFindings,
+          });
+          return { ...session, batch };
+        }
+        return answer(session, { shown, sent }, signal, true);
       })
+      // A batched review's progress, the one running in a conversation, and stopping it (ADR-051).
+      .add('GET', '/api/ai/batches/:jobId', ({ params }) => {
+        const job = reviews.get(params.jobId);
+        if (!job) throw new HttpError(404, 'no such review');
+        return job;
+      })
+      .add('GET', '/api/ai/sessions/:sessionId/batch', ({ params }) => ({
+        batch: reviews.activeFor(found(params.sessionId).id) ?? null,
+      }))
+      .add('POST', '/api/ai/batches/:jobId/cancel', ({ params }) => ({ cancelled: reviews.cancel(params.jobId) }))
       // Stages an edit of each page the chosen suggestions of one answer name (ADR-049).
       .add('POST', '/api/ai/sessions/:sessionId/turns/:turn/queue', async ({ params, body }) => {
         const session = chat(params.sessionId);

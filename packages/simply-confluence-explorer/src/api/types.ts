@@ -289,8 +289,11 @@ export type SessionTurn = {
   }>;
   /** For a retrieved answer: how many candidate sections were looked at. */
   considered?: number;
-  /** How many pages the chat reads from, and whether they were read in full or retrieved from. */
-  corpus?: { pages: number; mode: 'full' | 'retrieved' };
+  /**
+   * How many pages the chat reads from, and whether they were read in full, retrieved from, or read
+   * in full over several requests (`batched`, with how many).
+   */
+  corpus?: { pages: number; mode: 'full' | 'retrieved' | 'batched'; batches?: number };
   /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
   findings?: BranchFinding[];
   /** The pages the answer read, by title, so a suggestion's pages can be found. */
@@ -492,5 +495,22 @@ export type BranchRun = {
   pageIds?: Record<string, string>;
   /** Pages left out of the run, and why (a secret, the size limit). Excluded pages are never named. */
   leftOut: string[];
+  error?: string;
+};
+
+/** A review, or a request for changes, over more pages than one request carries, read in batches (ADR-051). */
+export type BatchProgress = {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  completedAt?: string;
+  sessionId: string;
+  spaceKey: string;
+  kind: 'review' | 'changes';
+  /** How many pages are read, and in how many batches. */
+  pages: number;
+  total: number;
+  processed: number;
+  /** The first page of the batch being read. */
+  currentTitle?: string;
   error?: string;
 };

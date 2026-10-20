@@ -18,12 +18,12 @@
 // component that started it, so opening another page does not lose its progress, and the header can
 // show it and lead back to it.
 
-import type { BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
-import { api, branches, type Chosen } from './api.js';
+import type { BatchProgress, BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
+import { api, batches, branches, type Chosen } from './api.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
-export type JobKind = 'summaries' | 'sync' | 'review';
+export type JobKind = 'summaries' | 'sync' | 'review' | 'batch';
 
 export type Job = {
   kind: JobKind;
@@ -87,6 +87,54 @@ class Jobs {
     );
   }
 
+  /**
+   * Follows a review of more pages than one request carries, read in batches (ADR-051). The header
+   * shows it, and its chat reads the answer again when it finishes.
+   *
+   * @param p The run, as the server reported it.
+   * @param rootPageId The directory whose chat started it, so the header can open that chat.
+   */
+  public watchBatch(p: BatchProgress, rootPageId?: string): void {
+    if (this.stops.has(p.jobId)) return;
+    const job = (q: BatchProgress): Job => ({
+      kind: 'batch',
+      jobId: q.jobId,
+      spaceKey: q.spaceKey,
+      rootPageId,
+      sessionId: q.sessionId,
+      label: `${q.kind === 'review' ? 'Reviewing' : 'Suggesting changes to'} ${q.pages} pages`,
+      processed: q.processed,
+      total: q.total,
+      current: q.currentTitle,
+    });
+    this.put(job(p));
+    this.stops.set(
+      p.jobId,
+      pollJob(() => batches.get(p.jobId), {
+        onProgress: (q) => this.put(job(q)),
+        onFinished: (q) => {
+          if (q.status !== 'cancelled')
+            toast(
+              q.status === 'completed'
+                ? `${job(q).label}: the suggestions are ready.`
+                : `${job(q).label}: ${q.error ?? q.status}.`,
+              q.status === 'completed' ? 'success' : 'error',
+            );
+          this.finish(job(q), q.status);
+        },
+        onError: (e) => {
+          toast(`${job(p).label} stopped reporting: ${messageOf(e)}`, 'error');
+          this.finish(job(p), 'failed');
+        },
+      }),
+    );
+  }
+
+  /** The batched review running in a conversation, if any. */
+  public batch(sessionId?: string): Job | undefined {
+    return sessionId ? this.list.find((j) => j.kind === 'batch' && j.sessionId === sessionId) : undefined;
+  }
+
   /** The summary run for a section, or for the whole space when no page is given. */
   public summaries(spaceKey: string, rootPageId?: string): Job | undefined {
     return this.list.find((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && j.rootPageId === rootPageId);
@@ -124,7 +172,9 @@ class Jobs {
 
   public async stop(job: Job): Promise<void> {
     try {
-      await { sync: api.cancelSync, summaries: api.cancelMetadata, review: branches.cancel }[job.kind](job.jobId);
+      await { sync: api.cancelSync, summaries: api.cancelMetadata, review: branches.cancel, batch: batches.cancel }[
+        job.kind
+      ](job.jobId);
     } catch (e) {
       toast(`Could not stop it: ${messageOf(e)}`, 'error');
       return;

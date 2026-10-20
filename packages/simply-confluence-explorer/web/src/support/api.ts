@@ -18,6 +18,7 @@
 // nothing here ever names a Confluence or carries a token (ADR-019).
 
 import type {
+  BatchProgress,
   AiSessionView,
   AiSettingsView,
   AnalyzeResponse,
@@ -161,8 +162,10 @@ export const sessions = {
     call<{ sessions: DraftSummary[] }>(`${SESSIONS}?${new URLSearchParams({ kind: 'space,pages', spaceKey })}`).then(
       (r) => r.sessions,
     ),
+  /** Asks for suggestions; for more pages than one request carries, a batched review starts instead (ADR-051). */
   suggest: (id: string, kind: 'review' | 'changes', signal?: AbortSignal) =>
-    call<AiSessionView>(`${SESSIONS}/${key(id)}/suggest`, 'POST', { kind }, signal),
+    call<AiSessionView & { batch?: BatchProgress }>(`${SESSIONS}/${key(id)}/suggest`, 'POST', { kind }, signal),
+  batch: (id: string) => call<{ batch: BatchProgress | null }>(`${SESSIONS}/${key(id)}/batch`),
   queue: (id: string, turn: number, findings: number[]) =>
     call<BranchRun>(`${SESSIONS}/${key(id)}/turns/${turn}/queue`, 'POST', { findings }),
   update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
@@ -185,6 +188,12 @@ export const sessions = {
 };
 
 const RUNS = '/branches/runs';
+
+/** Batched reviews of more pages than one request carries. */
+export const batches = {
+  get: (jobId: string) => call<BatchProgress>(`/ai/batches/${key(jobId)}`),
+  cancel: (jobId: string) => call<{ cancelled: boolean }>(`/ai/batches/${key(jobId)}/cancel`, 'POST'),
+};
 
 export const branches = {
   get: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}`),

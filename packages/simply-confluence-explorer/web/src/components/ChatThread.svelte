@@ -16,7 +16,9 @@
   } from '@lucide/svelte';
   import { tick, type Snippet } from 'svelte';
   import type { BranchFinding } from '../../../src/api/types.js';
+  import { sessions } from '../support/api.js';
   import type { AiChat } from '../support/chat.svelte.js';
+  import { jobs } from '../support/jobs.svelte.js';
   import { readLabel } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChangeQueue from './ChangeQueue.svelte';
@@ -119,10 +121,24 @@
 
   const turns = $derived(chat.session?.turns ?? []);
   const attached = $derived(chat.session?.files ?? []);
+
+  // A batched review of this chat's pages (ADR-051): picked up again after a reload, shown while it
+  // runs, and its answer read when it finishes.
+  const batch = $derived(jobs.batch(chat.session?.id));
+  $effect(() => {
+    const id = chat.session?.id;
+    if (!id) return;
+    const scope = chat.session?.scope;
+    sessions.batch(id).then(
+      ({ batch: running }) => running && jobs.watchBatch(running, scope?.kind === 'branch' ? scope.pageId : undefined),
+      () => undefined, // Nothing running is the usual answer, and a failed check leaves nothing to show.
+    );
+  });
+  $effect(() => jobs.onFinished((j) => j.kind === 'batch' && j.sessionId === chat.session?.id && void chat.reload()));
 </script>
 
 <div class="chat-stream">
-  {#if turns.length === 0 && !chat.pending}
+  {#if turns.length === 0 && !chat.pending && !batch}
     <div class="empty-state">{@render empty?.()}</div>
   {/if}
   {#each turns as t, i (i)}
@@ -152,7 +168,9 @@
             {t.guardSummary}
           </div>
         {/if}
-        {#if t.matchedPages?.length}
+        {#if t.corpus?.mode === 'batched'}
+          <p class="chat-read">{readLabel(t)}</p>
+        {:else if t.matchedPages?.length}
           <details class="chat-read">
             <summary>{readLabel(t)}</summary>
             <ul>
@@ -207,6 +225,18 @@
         <span class="muted"><Clock size={12} /> {seconds.toFixed(1)}s</span>
       </div>
       <div class="ai-thinking-shimmer"></div>
+    </div>
+  {/if}
+  {#if batch}
+    <div class="ai-thinking-card">
+      <div class="ai-thinking-header">
+        <span
+          ><Sparkles size={15} class="spin" />
+          {batch.label}: batch {Math.min(batch.processed + 1, batch.total)} of {batch.total}</span
+        >
+        <button class="btn btn-secondary btn-xs" onclick={() => jobs.stop(batch!)}><Square size={11} /> Stop</button>
+      </div>
+      <p class="muted">Related pages are read together. You can leave this chat; the header shows the progress.</p>
     </div>
   {/if}
   {#if chat.error}<div class="alert alert-error">Not answered: {chat.error}</div>{/if}

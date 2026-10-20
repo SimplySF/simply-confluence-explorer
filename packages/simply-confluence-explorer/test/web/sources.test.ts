@@ -40,4 +40,9 @@ describe("the line above an answer's sources", () => {
     );
     expect(readLabel({ matchedPages: [page('a')] })).toBe('Read 1 page');
   });
+
+  it('says when every page was read over several requests', () => {
+    expect(readLabel({ corpus: { pages: 312, mode: 'batched', batches: 9 } })).toBe('Read all 312 pages in 9 batches');
+    expect(readLabel({ corpus: { pages: 3, mode: 'batched', batches: 1 } })).toBe('Read all 3 pages in 1 batch');
+  });
 });
