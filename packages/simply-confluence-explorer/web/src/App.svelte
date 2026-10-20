@@ -12,6 +12,7 @@
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
+  import { checkConnection } from './support/connection.js';
   import type { SpacePage } from './support/pages.js';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
@@ -19,7 +20,7 @@
   import { api } from './support/api.js';
   import { jobs, type Job } from './support/jobs.svelte.js';
   import { applyTheme, theme, toggleTheme } from './support/theme.svelte.js';
-  import { messageOf } from './support/toast.svelte.js';
+  import { messageOf, toast } from './support/toast.svelte.js';
 
   const remembered = (key: string): string | null => {
     try {
@@ -131,28 +132,23 @@
   $effect(() => {
     void connectionRev;
     let live = true;
-    (async () => {
-      const view = await api.connection();
-      if (!live) return;
-      connection = view;
-      if (!view.baseUrl) {
-        connected = false;
-        return;
-      }
-      const verified = await api.verify();
-      if (!live) return;
-      connected = verified.success;
-      connUser = verified.user?.displayName ?? 'User';
-      const list = await api.spaces();
-      if (!live || list.length === 0) return;
-      spaces = list;
-      untrack(() => {
-        if (!list.some((s) => s.key === activeSpace)) chooseSpace(list[0].key);
-      });
-    })().catch(() => {
-      // The status pill says "Not connected"; Settings shows the reason when the connection is tested.
-      if (live) connected = false;
-    });
+    checkConnection({ connection: api.connection, verify: () => api.verify(), spaces: api.spaces }).then(
+      (state) => {
+        if (!live) return;
+        connection = state.connection;
+        connected = state.connected;
+        connUser = state.user ?? '';
+        if (state.spacesError) toast(`Signed in, but the spaces did not load: ${state.spacesError}`, 'error');
+        if (state.spaces.length === 0) return;
+        spaces = state.spaces;
+        untrack(() => {
+          if (!state.spaces.some((s) => s.key === activeSpace)) chooseSpace(state.spaces[0].key);
+        });
+      },
+      // The server could not be asked at all. The status pill says "Not connected"; Settings shows
+      // the reason when the connection is tested.
+      () => live && (connected = false),
+    );
     return () => {
       live = false;
     };
