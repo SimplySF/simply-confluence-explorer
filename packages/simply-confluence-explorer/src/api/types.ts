@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import type { ManifestSummary } from '../ai/manifest.js';
+
 // The shapes of the JSON the server's /api routes send and accept. The frontend in web/ imports
 // this module with `import type` only, so these declarations are the one place both halves agree on
 // and no server code can reach the browser bundle.
@@ -308,6 +310,10 @@ export type SessionTurn = {
   runIds?: string[];
   /** The trace that recorded how this answer was made, for the Observability page (ADR-054). */
   traceId?: string;
+  /** What was sent to the model for this answer, and what was left out with why (ADR-054). */
+  sent?: ManifestSummary;
+  /** The model stopped before finishing this answer. */
+  cutOff?: 'length' | 'blocked';
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
   /** On a co-writer's answer: a proposed series, an overview page then its child pages. */

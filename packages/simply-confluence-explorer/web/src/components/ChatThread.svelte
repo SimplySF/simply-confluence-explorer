@@ -30,7 +30,7 @@
   import type { AiChat } from '../support/chat.svelte.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { observe } from '../support/observe.svelte.js';
-  import { readLabel } from '../support/sources.js';
+  import { readLabel, sentLines } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChangeQueue from './ChangeQueue.svelte';
   import FindingsList from './FindingsList.svelte';
@@ -202,6 +202,23 @@
             <ShieldCheck size={12} />
             {t.guardSummary}
           </div>
+        {/if}
+        {#if t.sent}
+          {@const lines = sentLines(t.sent)}
+          <details class="chat-read">
+            <summary
+              >What was sent: {lines.summary}{lines.leftOut.length
+                ? ` · ${lines.leftOut.length} left out`
+                : ''}</summary
+            >
+            {#if lines.leftOut.length}
+              <ul>
+                {#each lines.leftOut as l (l)}<li>{l}</li>{/each}
+              </ul>
+            {:else}
+              <p class="muted">Everything this answer was meant to read reached the model.</p>
+            {/if}
+          </details>
         {/if}
         {#if t.corpus?.mode === 'batched'}
           <p class="chat-read">{readLabel(t)}</p>

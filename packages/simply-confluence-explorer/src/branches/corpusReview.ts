@@ -18,10 +18,11 @@ import type { BatchProgress, BranchFinding, PageDetail, SessionTurn } from '../a
 import type { AiEngine } from '../ai/engine.js';
 import { AiStopped } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
+import { ManifestBuilder } from '../ai/manifest.js';
 import { historyToSend, type SessionStore } from '../ai/sessions.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
-import { contextCollector, leftOutNote } from '../spaces/branchContext.js';
+import { contextCollector, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { errorMessage } from '../util/errors.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
@@ -200,6 +201,7 @@ export class CorpusReviews {
     const found: BranchFinding[][] = [];
     const withheld: string[] = [];
     const overflow: string[] = [];
+    const unread: string[] = [];
     const titles = new Map<string, string>();
     try {
       for (const batch of batches) {
@@ -213,7 +215,12 @@ export class CorpusReviews {
         overflow.push(...result.overflow);
         if (result.pages.length > 0) {
           result.pages.forEach((p) => titles.set(p.page.title, p.page.id));
-          const context = result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n');
+          const manifest = new ManifestBuilder();
+          const context = pagesAsContext(result, manifest);
+          manifest.includeTurns(
+            history.length,
+            history.reduce((n, t) => n + t.text.length, 0),
+          );
           const batchNumber = job.processed + 1;
           // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
           const parsed = await (this.deps.tracer ?? noTracer).span(
@@ -221,16 +228,23 @@ export class CorpusReviews {
             'batch',
             { batch: batchNumber, pages: result.pages.length, withheld: result.withheld.length },
             async (span) => {
-              const reply = await ai.chat(
-                { context, history, prompt: request.prompt },
-                { spaceKey: job.spaceKey, guard, signal },
-              );
-              const findings = request.parse(reply.text);
-              span.set({ findings: findings?.length ?? 0, parsed: findings !== null });
-              return findings;
+              // A reply that cannot be read is asked for once more; a batch still unread is named in
+              // the answer, so its pages are not taken as reviewed.
+              for (let attempt = 1; attempt <= 2; attempt++) {
+                // eslint-disable-next-line no-await-in-loop -- the second attempt only follows a failed first
+                const reply = await ai.chat(
+                  { context, history, prompt: request.prompt, manifest: manifest.build() },
+                  { spaceKey: job.spaceKey, guard, signal },
+                );
+                const findings = reply.cutOff ? null : request.parse(reply.text);
+                span.set({ findings: findings?.length ?? 0, parsed: findings !== null, attempts: attempt });
+                if (findings) return findings;
+              }
+              return null;
             },
           );
-          found.push(parsed ?? []);
+          if (parsed) found.push(parsed);
+          else unread.push(...result.pages.map((p) => p.page.title));
         }
         job.processed++;
       }
@@ -253,7 +267,8 @@ export class CorpusReviews {
         at: now,
         guardSummary:
           withWithheld({ blocked: [], redacted: {}, summary: 'Leak guard: checked every batch.' }, withheld).summary +
-          leftOutNote({ overflow }),
+          leftOutNote({ overflow }) +
+          (unread.length ? ` Not reviewed, because the AI's reply could not be read twice: ${unread.join(', ')}.` : ''),
         engine: ai.getEngine(),
         corpus: { pages: job.pages, mode: 'batched', batches: batches.length },
         findings,

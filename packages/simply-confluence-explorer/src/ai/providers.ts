@@ -22,12 +22,39 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import type { GuardedPayload } from './guard.js';
+import type { Reply } from './reply.js';
 import type { ApiProvider, ResolvedApi } from './settings.js';
 
 // Models before the current generation reject output_config.effort.
 const NO_EFFORT = /^claude-(3|haiku-4|sonnet-4-5|opus-4-[015]|opus-4-1)/;
 
 type Messages = GuardedPayload['messages'];
+
+/**
+ * Whether a provider's response says the answer is unfinished: cut at the output limit, or blocked.
+ * Kept apart from the calls so each provider's signals can be tested without a network.
+ */
+export function cutOffOf(provider: ApiProvider, response: unknown): Reply['cutOff'] {
+  const r = response as {
+    stop_reason?: string;
+    status?: string;
+    incomplete_details?: { reason?: string } | null;
+    candidates?: Array<{ finishReason?: string }>;
+    promptFeedback?: { blockReason?: string };
+  };
+  if (provider === 'anthropic') return r.stop_reason === 'max_tokens' ? 'length' : undefined;
+  if (provider === 'openai') {
+    if (r.status !== 'incomplete') return undefined;
+    return r.incomplete_details?.reason === 'content_filter' ? 'blocked' : 'length';
+  }
+  const finish = r.candidates?.[0]?.finishReason;
+  if (
+    r.promptFeedback?.blockReason ||
+    ['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'RECITATION', 'SPII'].includes(finish ?? '')
+  )
+    return 'blocked';
+  return finish === 'MAX_TOKENS' ? 'length' : undefined;
+}
 
 /**
  * The Claude request, built separately so its shape can be tested without a network.
@@ -61,7 +88,9 @@ export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Mes
 }
 /* eslint-enable camelcase */
 
-async function anthropic(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<string> {
+const withCutOff = (text: string, cutOff: Reply['cutOff']): Reply => (cutOff ? { text, cutOff } : { text });
+
+async function anthropic(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<Reply> {
   const client = new Anthropic({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
   // Streamed, because page context can be long, and a long request that is not streamed can time out.
   const message = await client.beta.messages.stream(anthropicRequest(cfg, system, messages), { signal }).finalMessage();
@@ -69,25 +98,26 @@ async function anthropic(cfg: ResolvedApi, system: string, messages: Messages, s
     const category = message.stop_details?.category;
     throw new Error(`Claude declined this request${category ? ` (${category})` : ''}`);
   }
-  return message.content
+  const text = message.content
     .map((b) => (b.type === 'text' ? b.text : ''))
     .join('')
     .trim();
+  return withCutOff(text, cutOffOf('anthropic', message));
 }
 
-async function openai(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<string> {
+async function openai(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<Reply> {
   const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
   const input =
     messages.length === 1 ? messages[0].content : messages.map((m) => ({ role: m.role, content: m.content }));
   const response = await client.responses.create({ model: cfg.model, instructions: system, input }, { signal });
-  return response.output_text.trim();
+  return withCutOff(response.output_text.trim(), cutOffOf('openai', response));
 }
 
 function geminiClient(cfg: ResolvedApi): GoogleGenAI {
   return new GoogleGenAI({ apiKey: cfg.apiKey, httpOptions: cfg.baseUrl ? { baseUrl: cfg.baseUrl } : undefined });
 }
 
-async function gemini(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<string> {
+async function gemini(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<Reply> {
   const contents =
     messages.length === 1
       ? messages[0].content
@@ -97,7 +127,7 @@ async function gemini(cfg: ResolvedApi, system: string, messages: Messages, sign
     contents,
     config: { systemInstruction: system, abortSignal: signal },
   });
-  return (response.text ?? '').trim();
+  return withCutOff((response.text ?? '').trim(), cutOffOf('gemini', response));
 }
 
 /**
@@ -109,7 +139,7 @@ export async function complete(
   cfg: ResolvedApi,
   payload: GuardedPayload,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<Reply> {
   if (!cfg.apiKey) throw new Error(`no API key is set for ${provider}`);
   if (!cfg.model) throw new Error(`no model is chosen for ${provider}`);
   const run = { anthropic, openai, gemini }[provider];

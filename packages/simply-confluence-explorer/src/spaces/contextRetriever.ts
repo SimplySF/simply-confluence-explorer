@@ -17,8 +17,9 @@
 import type { PageDetail, SpaceTocNode } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
+import { ManifestBuilder } from '../ai/manifest.js';
 import { frontmatterOf } from '../parser/convert.js';
-import { CONTEXT_CHAR_LIMIT, contextCollector } from './branchContext.js';
+import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SearchIndex } from './searchIndex.js';
 import { headingOf, sectionName, type Section } from './sections.js';
@@ -149,14 +150,21 @@ type Chosen = Array<{ id: string; why?: string }>;
  * Reads a corpus that fits in one request, each page checked by `contextCollector`; `null` when a page
  * would be left out for size after all, so the corpus is retrieved from rather than read in part.
  */
-function readInFull(key: string, pages: PageDetail[], deps: RetrieverDeps, budget: number): RetrievedContext | null {
+function readInFull(
+  key: string,
+  pages: PageDetail[],
+  deps: RetrieverDeps,
+  budget: number,
+  manifest: ManifestBuilder,
+): RetrievedContext | null {
   const { consider, result } = contextCollector(key, deps, deps.dataDir, budget);
   pages.forEach(consider);
   if (result.overflow.length > 0) return null;
   return {
-    contextMarkdown: result.pages.length
-      ? result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n')
-      : 'No synced pages are available to read here.',
+    contextMarkdown:
+      result.pages.length || result.withheld.length || result.excluded
+        ? pagesAsContext(result, manifest)
+        : 'No synced pages are available to read here.',
     selectedPages: result.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
     withheld: result.withheld,
     overflow: result.overflow,
@@ -242,11 +250,12 @@ export async function retrieveContext(
   pages: PageDetail[],
   query: ContextQuery,
   deps: RetrieverDeps,
-  options: { budget?: number; outline?: boolean } = {},
+  options: { budget?: number; outline?: boolean; manifest?: ManifestBuilder } = {},
 ): Promise<RetrievedContext> {
   const key = spaceKey.toUpperCase();
   const budget = options.budget ?? CONTEXT_CHAR_LIMIT;
-  const whole = corpusSize(key, pages, deps.index) <= budget ? readInFull(key, pages, deps, budget) : null;
+  const manifest = options.manifest ?? new ManifestBuilder();
+  const whole = corpusSize(key, pages, deps.index) <= budget ? readInFull(key, pages, deps, budget, manifest) : null;
   if (whole) return whole;
 
   const byId = new Map(pages.map((p) => [p.id, p]));
@@ -274,6 +283,7 @@ export async function retrieveContext(
     new Map(chosen.map((c) => [c.id, c.why])),
     deps,
     budget - outline.length,
+    manifest,
   );
   return {
     ...read,
@@ -291,6 +301,7 @@ function readSections(
   why: Map<string, string | undefined>,
   deps: RetrieverDeps,
   budget: number,
+  manifest: ManifestBuilder,
 ): Pick<RetrievedContext, 'contextMarkdown' | 'selectedPages' | 'withheld' | 'overflow'> {
   const screen = new OutboundGuard(loadGuardRules(deps.dataDir, key));
   let used = 0;
@@ -316,9 +327,15 @@ function readSections(
   const body = [...read.values()].map(({ page, sections }) => {
     const summary = deps.store.readMetadata(key, page.id)?.summary;
     const head = `## [Page: ${page.title}]\n_${pathOf(page) || 'Top level'}${summary ? ` · ${summary}` : ''}_`;
-    const parts = sections.sort((a, b) => a.index - b.index).map((s) => `### ${headingOf(page.title, s)}\n${s.text}`);
+    const parts = sections
+      .sort((a, b) => a.index - b.index)
+      .map((s) =>
+        manifest.include('section', sectionName(page.title, s), `### ${headingOf(page.title, s)}\n${s.text}`),
+      );
     return [head, ...parts].join('\n\n');
   });
+  for (const title of withheld) manifest.leaveOut('page', title, 0, 'secret');
+  for (const name of overflow) manifest.leaveOut('section', name, 0, 'over-limit');
   return {
     contextMarkdown: body.join('\n\n---\n\n'),
     selectedPages: [...read.values()].map(({ page, sections, why: reason }) => ({

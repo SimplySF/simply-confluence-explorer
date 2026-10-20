@@ -22,6 +22,7 @@ import { storageToBody } from '../parser/convert.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
 import type { ChatTurn } from './guard.js';
+import type { ManifestBuilder } from './manifest.js';
 
 // Conversations with the AI are kept on the server (ADR-023): one file per conversation in
 // data/sessions/, readable only by the user running the server, with the text of its uploaded files
@@ -170,14 +171,15 @@ export class SessionStore {
   }
 
   /** The uploaded files, as context for the next turn. */
-  public filesContext(id: string): string {
+  /** The conversation's files as context, each marked in the manifest when one is given (ADR-054). */
+  public filesContext(id: string, manifest?: ManifestBuilder): string {
     const s = this.load(id);
     if (!s) return '';
     return s.files
-      .map(
-        (f) =>
-          `## [File: ${f.name}]${f.truncated ? ' (cut to its first ' + FILE_CHAR_LIMIT + ' characters)' : ''}\n${fs.readFileSync(within(this.filesDir(id), `${f.id}.txt`), 'utf-8')}`,
-      )
+      .map((f) => {
+        const text = `## [File: ${f.name}]${f.truncated ? ' (cut to its first ' + FILE_CHAR_LIMIT + ' characters)' : ''}\n${fs.readFileSync(within(this.filesDir(id), `${f.id}.txt`), 'utf-8')}`;
+        return manifest ? manifest.include('file', f.name, text, f.truncated) : text;
+      })
       .join('\n\n---\n\n');
   }
 

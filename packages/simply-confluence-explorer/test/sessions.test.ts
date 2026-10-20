@@ -588,6 +588,11 @@ test('a review of more pages than one request carries reads them in batches and 
     assert.ok(done.total > 1, `${done.total} batches`);
     const sent = app.sent.slice(before);
     assert.equal(sent.filter(isReview).length, done.total);
+    // Every page a batch reads is marked, so the engine could check it arrived whole.
+    for (const p of sent.filter(isReview)) {
+      const text = textOf(p);
+      assert.equal((text.match(/⟦c\d+⟧/g) ?? []).length, (text.match(/## \[Page: /g) ?? []).length);
+    }
     for (const title of expectations.PEOPLE.excluded)
       assert.doesNotMatch(sent.map(textOf).join('\n'), new RegExp(title));
     const { body: s } = await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`);
@@ -671,4 +676,32 @@ test('a corpus judged to fit is never read with pages left out for size; it is r
       );
     }
   });
+});
+
+test('a batch whose reply cannot be read is asked again, then named as not reviewed', async () => {
+  let asked = 0;
+  const app = await startTestApp(
+    fake,
+    (payload) => {
+      if (!isReview(payload)) return 'an answer';
+      asked++;
+      return 'Here are some thoughts, but no JSON.';
+    },
+    {},
+    { contextChars: 900 },
+  );
+  try {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const { body } = await app.call<AiSessionView & { batch: BatchProgress }>('POST', `/ai/sessions/${c.id}/suggest`, {
+      kind: 'review',
+    });
+    const done = await finished(app, body.batch.jobId);
+    assert.equal(asked, done.total * 2, 'each batch is asked twice');
+    const { body: s } = await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`);
+    assert.match(s.turns.at(-1)?.guardSummary ?? '', /Not reviewed, because the AI's reply could not be read twice: /);
+    assert.equal(s.turns.at(-1)?.findings?.length, 0);
+  } finally {
+    await app.close();
+  }
 });

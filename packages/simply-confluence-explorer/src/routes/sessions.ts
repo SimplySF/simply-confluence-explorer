@@ -15,14 +15,15 @@
  */
 
 import type { AiSessionView, BranchFinding, PageDetail, SessionScope, SessionTurn } from '../api/types.js';
-import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
+import { loadGuardRules, OutboundGuard, withWithheld, type ChatTurn } from '../ai/guard.js';
+import { ManifestBuilder, summarise } from '../ai/manifest.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
 import { parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { collectBranch, leftOutNote } from '../spaces/branchContext.js';
+import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import { corpusSize, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import type { Services } from './api.js';
@@ -85,6 +86,31 @@ function pageIdsNamed(findings: BranchFinding[], pages: Array<{ id: string; titl
   return Object.fromEntries(pages.filter((p) => named.has(p.title)).map((p) => [p.title, p.id]));
 }
 
+/**
+ * Records the earlier turns a conversation sends, and those it leaves out because the history is
+ * longer than a request carries, so the answer can say the start of the conversation was not sent.
+ */
+function recordHistory(manifest: ManifestBuilder, session: AiSessionView, history: ChatTurn[]): void {
+  manifest.includeTurns(
+    history.length,
+    history.reduce((n, t) => n + t.text.length, 0),
+  );
+  const dropped = session.turns.slice(0, session.turns.length - history.length);
+  if (dropped.length)
+    manifest.leaveOut(
+      'turn',
+      `${dropped.length} earlier messages`,
+      dropped.reduce((n, t) => n + t.text.length, 0),
+      'history-limit',
+    );
+}
+
+/** What an answer says when the model stopped before finishing it. */
+function cutOffNote(cutOff?: 'length' | 'blocked'): string {
+  if (cutOff === 'length') return ' The answer was cut short: the model reached the most it can write in one reply.';
+  return cutOff === 'blocked' ? ' The model blocked part of this answer.' : '';
+}
+
 /** The sections the last two answers read, so a follow-up keeps reading them. */
 function keptSections(session: AiSessionView): SectionRef[] {
   return session.turns
@@ -99,6 +125,8 @@ function keptSections(session: AiSessionView): SectionRef[] {
 
 type TurnContext = {
   context: string;
+  /** What this turn's context was built to carry, checked by the engine before sending (ADR-054). */
+  manifest: ManifestBuilder;
   withheld: string[];
   note: string;
   matchedPages?: SessionTurn['matchedPages'];
@@ -138,12 +166,13 @@ export function addSessionRoutes(router: Router, services: Services): Router {
   };
 
   /** A page chat, or a directory chat in a space that is not synced, read from Confluence as before. */
-  const unsyncedContext = async (scope: SessionScope): Promise<TurnContext> => {
+  const unsyncedContext = async (scope: SessionScope, manifest: ManifestBuilder): Promise<TurnContext> => {
     const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
     if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
     const root = parsePage(gate.page).markdown;
     const ctx: TurnContext = {
-      context: `## [Page: ${gate.page.title}]\n${root}`,
+      context: manifest.include('page', gate.page.title, `## [Page: ${gate.page.title}]\n${root}`),
+      manifest,
       withheld: [],
       note: '',
       matchedPages: [{ id: gate.page.id, title: gate.page.title, score: 1 }],
@@ -157,7 +186,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         dataDir,
         services.contextChars - root.length,
       );
-      ctx.context += branch.pages.map((p) => `\n\n---\n\n## [Page: ${p.page.title}]\n${p.markdown}`).join('');
+      const below = pagesAsContext(branch, manifest);
+      if (below) ctx.context += `\n\n---\n\n${below}`;
       ctx.withheld = branch.withheld;
       ctx.note = leftOutNote(branch);
       ctx.matchedPages = [
@@ -176,12 +206,13 @@ export function addSessionRoutes(router: Router, services: Services): Router {
    */
   const contextFor = async (session: AiSessionView, prompt: string, signal: AbortSignal): Promise<TurnContext> => {
     const { scope } = session;
+    const manifest = new ManifestBuilder();
     let ctx: TurnContext;
     if (scope.kind === 'page' || (scope.kind === 'branch' && !store.isSynced(scope.spaceKey))) {
-      ctx = await unsyncedContext(scope);
+      ctx = await unsyncedContext(scope, manifest);
     } else {
       // A directory chat refuses an excluded directory page outright, as a page chat does.
-      if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' });
+      if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' }, new ManifestBuilder());
       const corpus = corpusPages(store, exclusions, scope);
       // A chosen page the synced copy does not hold yet is read from Confluence, through the gate.
       for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
@@ -197,7 +228,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           corpus,
           { question: prompt, previous, keep: keptSections(session) },
           { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
-          { budget: services.contextChars, outline: scope.kind === 'space' },
+          { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );
         span.set({
           mode: retrieved.corpus.mode,
@@ -211,6 +242,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       });
       ctx = {
         context: r.contextMarkdown,
+        manifest,
         withheld: r.withheld,
         note: leftOutNote(r),
         matchedPages: r.selectedPages,
@@ -219,7 +251,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         pages: corpus.map(({ id, title }) => ({ id, title })),
       };
     }
-    const files = sessions.filesContext(session.id);
+    const files = sessions.filesContext(session.id, manifest);
     if (files) ctx.context += `\n\n---\n\n# Files added to this conversation\n\n${files}`;
     return ctx;
   };
@@ -270,8 +302,11 @@ export function addSessionRoutes(router: Router, services: Services): Router {
   ): Promise<AiSessionView> => {
     const ctx = await contextFor(session, prompt.sent, signal);
     const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
+    const history = historyToSend(session.turns);
+    recordHistory(ctx.manifest, session, history);
+    const manifest = ctx.manifest.build();
     const reply = await ai.chat(
-      { context: ctx.context, history: historyToSend(session.turns), prompt: prompt.sent },
+      { context: ctx.context, history, prompt: prompt.sent, manifest },
       { spaceKey: session.scope.spaceKey, guard, signal },
     );
     const report = withWithheld(reply.guard, ctx.withheld);
@@ -287,7 +322,9 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             ? `${findings.length} suggestion${findings.length === 1 ? '' : 's'}. Tick the ones to queue as edits.`
             : reply.text,
           at: now,
-          guardSummary: report.summary + ctx.note,
+          guardSummary: report.summary + ctx.note + cutOffNote(reply.cutOff),
+          sent: summarise(manifest),
+          ...(reply.cutOff ? { cutOff: reply.cutOff } : {}),
           engine: ai.getEngine(),
           matchedPages: ctx.matchedPages,
           ...(ctx.considered ? { considered: ctx.considered } : {}),

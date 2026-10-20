@@ -20,7 +20,9 @@ import { errorMessage } from '../util/errors.js';
 import { noTracer, type Attrs, type Tracer } from '../telemetry/tracer.js';
 import { resolveGeminiCli, runGeminiCli, systemCliLookup } from './geminiService.js';
 import { loadGuardRules, OutboundGuard, type ChatTurn, type GuardedPayload, type GuardReport } from './guard.js';
+import { checkPayload, ContextCheckError, summarise, type ContextManifest } from './manifest.js';
 import { complete, embed, EMBEDDING_MODELS, listModels } from './providers.js';
+import type { Reply } from './reply.js';
 import type { AiSettingsStore, ApiProvider } from './settings.js';
 
 // The engine is the only code that sends anything to an AI (ADR-022). Every request passes the
@@ -35,6 +37,8 @@ export { listModels };
 export type AiAnswer = {
   text: string;
   guard: GuardReport;
+  /** The model stopped before finishing: at its output limit, or because the answer was blocked. */
+  cutOff?: Reply['cutOff'];
 };
 
 export type AiContext = {
@@ -66,14 +70,20 @@ export type AiEngine = {
   /** One vector per text, or null for a text the guard left out because it holds a secret. */
   embed?: (texts: string[], ctx: AiContext) => Promise<Array<number[] | null>>;
   /** One turn of a conversation, with its context and earlier turns. */
-  chat: (
-    parts: { context: string; history: ChatTurn[]; prompt: string; system?: string },
-    ctx: AiContext & { guard: OutboundGuard },
-  ) => Promise<AiAnswer>;
+  chat: (parts: ChatParts, ctx: AiContext & { guard: OutboundGuard }) => Promise<AiAnswer>;
+};
+
+/** One turn of a conversation; with a manifest, the engine checks the context arrived whole (ADR-054). */
+export type ChatParts = {
+  context: string;
+  history: ChatTurn[];
+  prompt: string;
+  system?: string;
+  manifest?: ContextManifest;
 };
 
 /** Sends a guarded payload and returns the reply. The real one calls a provider or the CLI. */
-export type Transport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<string>;
+export type Transport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<string | Reply>;
 /** Embeds each message of a guarded payload. The real one calls a provider. */
 export type EmbedTransport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<number[][]>;
 
@@ -154,12 +164,26 @@ export class ConfiguredAi implements AiEngine {
     return this.deliver(payload, report, guard, ctx);
   }
 
-  public async chat(
-    parts: { context: string; history: ChatTurn[]; prompt: string; system?: string },
-    ctx: AiContext & { guard: OutboundGuard },
-  ): Promise<AiAnswer> {
+  public async chat(parts: ChatParts, ctx: AiContext & { guard: OutboundGuard }): Promise<AiAnswer> {
     const { payload, report } = ctx.guard.inspectChat({ ...parts, system: parts.system ?? CHAT_SYSTEM });
-    return this.deliver(payload, report, ctx.guard, ctx);
+    if (!parts.manifest) return this.deliver(payload, report, ctx.guard, ctx);
+    // The context must reach the model whole: a request missing part of what it was built to carry is
+    // refused, and raised as a problem, rather than sent.
+    const problems = checkPayload(parts.manifest, payload.messages.map((m) => m.content).join('\n'));
+    const tracer = this.options.tracer ?? noTracer;
+    if (problems.length > 0) {
+      tracer.problem('context', `A request was refused because it was missing context: ${problems[0]}.`);
+      throw new ContextCheckError(problems);
+    }
+    const sent = summarise(parts.manifest);
+    return this.deliver(payload, report, ctx.guard, ctx, {
+      pages: sent.pages,
+      sections: sent.sections,
+      files: sent.files,
+      earlierTurns: sent.turns,
+      contextChars: sent.chars,
+      leftOut: sent.leftOut.map((l) => `${l.kind}${l.label ? ` "${l.label}"` : ''}: ${l.reason}`),
+    });
   }
 
   public embeddingModel(): string | null {
@@ -216,8 +240,11 @@ export class ConfiguredAi implements AiEngine {
     return embed(s.provider, s.api[s.provider], payload, signal);
   }
 
-  private send(payload: GuardedPayload, signal?: AbortSignal): Promise<string> {
-    if (this.options.transport) return this.options.transport(payload, signal);
+  private async send(payload: GuardedPayload, signal?: AbortSignal): Promise<Reply> {
+    if (this.options.transport) {
+      const reply = await this.options.transport(payload, signal);
+      return typeof reply === 'string' ? { text: reply } : reply;
+    }
     const s = this.settings.resolve();
     if (s.provider === 'gemini-cli') {
       const cli = this.cliPath();
@@ -235,6 +262,7 @@ export class ConfiguredAi implements AiEngine {
     report: GuardReport,
     guard: OutboundGuard,
     { spaceKey, signal }: AiContext,
+    manifest: Attrs = {},
   ): Promise<AiAnswer> {
     if (signal?.aborted) throw new AiStopped();
     const chars = payload.system.length + payload.messages.reduce((n, m) => n + m.content.length, 0);
@@ -245,9 +273,9 @@ export class ConfiguredAi implements AiEngine {
       turns: payload.messages.length,
       redacted: report.redacted,
     };
-    let reply: string;
+    let reply: Reply;
     try {
-      reply = await this.traced('complete', entry, () => this.send(payload, signal), signal);
+      reply = await this.traced('complete', { ...entry, ...manifest }, () => this.send(payload, signal), signal);
     } catch (error) {
       // Recorded either way: a request that failed or was stopped part of the way through may still
       // have been sent.
@@ -258,8 +286,14 @@ export class ConfiguredAi implements AiEngine {
       this.audit({ ...entry, outcome: 'stopped' });
       throw new AiStopped();
     }
-    this.audit({ ...entry, outcome: 'sent' });
-    return { text: guard.restore(reply), guard: report };
+    this.audit({ ...entry, outcome: 'sent', ...(reply.cutOff ? { cutOff: reply.cutOff } : {}) });
+    if (reply.cutOff)
+      (this.options.tracer ?? noTracer).log(
+        'warn',
+        'ai',
+        `An answer was ${reply.cutOff === 'blocked' ? 'blocked' : 'cut short at the output limit'}.`,
+      );
+    return { text: guard.restore(reply.text), guard: report, ...(reply.cutOff ? { cutOff: reply.cutOff } : {}) };
   }
 
   /** Sends as a span of the current trace, counted for the health numbers; a stopped request is not a failure. */
