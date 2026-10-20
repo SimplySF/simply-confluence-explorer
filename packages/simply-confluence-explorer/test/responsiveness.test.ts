@@ -153,6 +153,8 @@ describe('a 3,200-page space', () => {
       await heartbeat;
       gc.disconnect();
       await new Promise((resolve) => server.close(resolve));
+      // Thousands of generated files would otherwise be left in the temporary folder on every run.
+      fs.rmSync(dataDir, { recursive: true, force: true });
     }
     expect(waits.length).toBeGreaterThan(5);
     expect(

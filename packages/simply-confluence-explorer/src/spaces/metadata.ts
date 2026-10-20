@@ -233,24 +233,18 @@ export class MetadataPipeline {
 
   /**
    * Pages with no current metadata, or, when the engine embeds, no vectors for their version. It reads
-   * each page's metadata, so for a large space it pauses every few hundred pages to let other requests
-   * through.
+   * each page's metadata, so it lets other requests through as it goes.
    */
   private async missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
     const model = this.embeddingModel();
     const pages = await this.pagesOf(spaceKey, rootPageId, pageIds);
-    const out: PageDetail[] = [];
-    for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      if (
+    const wanted = await mapChunked(
+      pages,
+      (p) =>
         !this.exclusions.isPageExcluded(p, spaceKey) &&
-        (!isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)) || (!!model && !this.vectors?.has(p, model)))
-      )
-        out.push(p);
-      // eslint-disable-next-line no-await-in-loop -- the pause is the point: other requests run in it
-      if (i % 200 === 199) await pause();
-    }
-    return out;
+        (!isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)) || (!!model && !this.vectors?.has(p, model))),
+    );
+    return pages.filter((_, i) => wanted[i]);
   }
 
   /**
@@ -373,6 +367,10 @@ export class MetadataPipeline {
         // Pages a stopped pack never reached are counted with it, so the total adds up when the run ends.
         job.processed += pack.length - counted;
         job.requestsDone = (job.requestsDone ?? 0) + 1;
+        // A reply that comes back at once, as from a cache or a stand-in, would otherwise run every
+        // pack without ever letting another request through.
+        // eslint-disable-next-line no-await-in-loop -- the pause is the point
+        await pause();
       }
     };
     const parallel = Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length));

@@ -20,18 +20,25 @@
  */
 export const pause = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-/** How many items a chunk holds: small enough that one chunk of a large space takes a few milliseconds. */
-const CHUNK = 100;
+/**
+ * How long work runs before letting other requests through. It is measured in time, not in items,
+ * because the same chunk of pages takes ten times longer on a slow or busy machine.
+ */
+const SLICE_MS = 10;
 
 /**
- * Maps a list in chunks with a pause between them, for work that reads every page of a space, so
- * another request is answered between chunks however large the space is.
+ * Maps a list with a pause whenever a slice of time has passed, for work that reads every page of a
+ * space, so another request is answered in between however large the space and slow the machine.
  */
 export async function mapChunked<T, R>(items: T[], fn: (item: T) => R): Promise<R[]> {
   const out: R[] = [];
-  for (let i = 0; i < items.length; i += CHUNK) {
-    if (i > 0) await pause(); // eslint-disable-line no-await-in-loop -- the pause between chunks is the point
-    for (const item of items.slice(i, i + CHUNK)) out.push(fn(item));
+  let since = performance.now();
+  for (const item of items) {
+    if (performance.now() - since > SLICE_MS) {
+      await pause(); // eslint-disable-line no-await-in-loop -- the pause is the point
+      since = performance.now();
+    }
+    out.push(fn(item));
   }
   return out;
 }

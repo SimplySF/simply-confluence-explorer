@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { frontmatterOf, parsePage } from '../parser/convert.js';
 import type { PageDetail, PageMetadata } from '../api/types.js';
-import { pause } from '../util/pause.js';
+import { mapChunked } from '../util/pause.js';
 import { splitSections, type Section } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
 
@@ -76,8 +76,6 @@ export type SectionHit = { section: Section; title: string; score: number; cover
 const TITLE_WEIGHT = 3;
 const TAG_WEIGHT = 2;
 const HEADING_WEIGHT = 2;
-/** How many pages a build reads before letting other requests through. */
-const BUILD_CHUNK = 50;
 const K1 = 1.2;
 const B = 0.75;
 
@@ -220,18 +218,14 @@ export class SearchIndex {
     const docs: Doc[] = [];
     const df = new Map<string, number>();
     const seen = new Set<string>();
-    for (let i = 0; i < pages.length; i += BUILD_CHUNK) {
-      for (const page of pages.slice(i, i + BUILD_CHUNK)) {
-        seen.add(`${key}/${page.id}`);
-        for (const doc of this.docsFor(key, page)) {
-          docs.push(doc);
-          for (const t of doc.terms.keys()) df.set(t, (df.get(t) ?? 0) + 1);
-        }
+    await mapChunked(pages, (page) => {
+      seen.add(`${key}/${page.id}`);
+      for (const doc of this.docsFor(key, page)) {
+        docs.push(doc);
+        for (const t of doc.terms.keys()) df.set(t, (df.get(t) ?? 0) + 1);
       }
-      progress.done = Math.min(pages.length, i + BUILD_CHUNK);
-      // eslint-disable-next-line no-await-in-loop -- the pause between chunks is the point: other requests run in it
-      await pause();
-    }
+      progress.done++;
+    });
     // A page that left the space, or is now excluded, is dropped from the cache too.
     for (const cache of [this.pages, this.split])
       for (const id of cache.keys()) if (id.startsWith(`${key}/`) && !seen.has(id)) cache.delete(id);
