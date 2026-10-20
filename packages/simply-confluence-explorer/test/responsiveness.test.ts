@@ -22,6 +22,7 @@ import type http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { PerformanceObserver } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 import type { AiSessionView } from '../src/api/types.js';
 import { createServer } from '../src/server.js';
@@ -94,7 +95,19 @@ describe('a 3,200-page space', () => {
           body: JSON.stringify(body),
         })
       ).json() as Promise<T>;
+    // The first request starts this process's HTTP client, which takes a while on a slow machine and
+    // is not the server's doing, so it is made before anything is measured.
+    await fetch(`${base}/health`);
     const waits: number[] = [];
+    // Each wait is labelled with the step under way, and long garbage collections are noted, so a
+    // failure names what held the server.
+    let step = 'search index';
+    const labelled: string[] = [];
+    const collections: number[] = [];
+    const gc = new PerformanceObserver((list) =>
+      list.getEntries().forEach((e) => e.duration > 50 && collections.push(Math.round(e.duration))),
+    );
+    gc.observe({ entryTypes: ['gc'] });
     let working = true;
     const heartbeat = (async (): Promise<void> => {
       while (working) {
@@ -102,6 +115,7 @@ describe('a 3,200-page space', () => {
         // eslint-disable-next-line no-await-in-loop -- each check waits for its answer, which is what is measured
         await fetch(`${base}/health`);
         waits.push(Date.now() - at);
+        if (Date.now() - at > 100) labelled.push(`${step}: ${Date.now() - at} ms`);
         // eslint-disable-next-line no-await-in-loop -- as above
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
@@ -113,6 +127,7 @@ describe('a 3,200-page space', () => {
         coverage = await post('/space-cache/BIG/metadata/coverage', {});
       }
       // The AI index packs several pages into each request, so 3,200 pages take a few hundred.
+      step = 'AI index';
       const run = await post<{ jobId: string }>('/space-cache/BIG/metadata/generate', {});
       let status = 'running';
       while (status === 'running' || status === 'pending') {
@@ -123,9 +138,11 @@ describe('a 3,200-page space', () => {
         // eslint-disable-next-line no-await-in-loop -- as above
         status = ((await response.json()) as { status: string }).status;
       }
+      step = 'after the AI index';
       expect(status).toBe('completed');
       expect(await post('/space-cache/BIG/metadata/coverage', {})).toMatchObject({ missing: 0 });
       expect(indexRequests).toBeLessThanOrEqual(PAGES / 5);
+      step = 'question';
       const chat = await post<AiSessionView>('/ai/sessions', { scope: { kind: 'space', spaceKey: 'BIG' } });
       const answered = await post<AiSessionView>(`/ai/sessions/${chat.id}/messages`, {
         prompt: 'how do I roll back a failed deploy?',
@@ -134,9 +151,13 @@ describe('a 3,200-page space', () => {
     } finally {
       working = false;
       await heartbeat;
+      gc.disconnect();
       await new Promise((resolve) => server.close(resolve));
     }
     expect(waits.length).toBeGreaterThan(5);
-    expect(Math.max(...waits), `waits: ${waits.join(', ')}`).toBeLessThan(250);
+    expect(
+      Math.max(...waits),
+      `long waits: ${labelled.join(', ')}; garbage collections over 50 ms: ${collections.join(', ') || 'none'}`,
+    ).toBeLessThan(250);
   }, 120_000);
 });
