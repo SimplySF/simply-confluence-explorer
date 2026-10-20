@@ -178,13 +178,13 @@ export class ConfluenceClient {
   }
 
   /**
-   * Reads a page's current version and converts the new body to storage format, without writing
-   * anything. Content Confluence would not accept, such as raw HTML or an unclosed code fence, is
-   * refused here with a 400 that names the line, which is what a dry run reports.
+   * Reads a page's current version and prepares the new body, without writing anything. A body is
+   * given as storage format, or as Markdown that is converted here; Markdown Confluence would not
+   * accept, such as raw HTML or an unclosed code fence, is refused with a 400 that names the line.
    */
   public prepareUpdate(
     pageId: string,
-    change: { markdown: string; title?: string; append?: boolean },
+    change: { markdown?: string; body?: string; title?: string; append?: boolean },
   ): Promise<PageUpdatePlan> {
     return call(() => preparePageUpdate(this.lib(), pageId, change));
   }

@@ -21,6 +21,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { PageResponse, SyncProgress, WriteResult } from '../src/api/types.js';
 import { parseRecommendationResponse } from '../src/ai/improve.js';
+import { toEditForm } from '../src/parser/editForm.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
@@ -71,15 +72,15 @@ describe('a push', () => {
     expect((await post(`/pages/${page.id}/push`, { markdown: '# x' })).status).toBe(400);
   });
 
-  it('is refused for a page whose image would become placeholder text, and writes nothing', async () => {
+  it("is refused when it would lose a page's image, and writes nothing", async () => {
     const page = fake.page('OPS', 'Capacity Planning');
     const before = fake.writes.length;
     const original = page.storage;
     const markdown = 'See attached CSV.\n\n[image: capacity-chart.png]\n\n## Who to ask\n\nThe owning team.';
     const dry = await post<{ error: string }>(`/pages/${page.id}/dry-run`, { markdown, baseVersion: page.version });
     expect(dry.status).toBe(400);
-    expect(dry.body.error).toMatch(/^The dry run found a problem: this page has parts that Markdown cannot carry/);
-    expect(dry.body.error).toContain('1 image');
+    expect(dry.body.error).toMatch(/^The dry run found a problem: This change would remove parts of the page/);
+    expect(dry.body.error).toContain('⟦1 image: capacity-chart.png⟧');
     const push = await post<{ error: string }>(`/pages/${page.id}/push`, { markdown, baseVersion: page.version });
     expect(push.status).toBe(400);
     expect(push.body.error).toContain('Nothing was written');
@@ -87,14 +88,27 @@ describe('a push', () => {
     expect(page.storage).toBe(original);
   });
 
-  it('is refused for a page whose link to another page would become plain text', async () => {
+  it('is refused when it would turn a link to another page into plain text', async () => {
     const page = fake.page('OPS', 'On-Call Handbook');
     const res = await post<{ error: string }>(`/pages/${page.id}/push`, {
       markdown: 'Start here. See [Database Failover].',
       baseVersion: page.version,
     });
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('1 link to another page');
+    expect(res.body.error).toContain('link: Incident Response');
+  });
+
+  it("keeps a page's image exactly when the change keeps its marker, and rewrites only the changed text", async () => {
+    const page = fake.page('OPS', 'Capacity Planning');
+    const image = /<p><ac:image>.*?<\/ac:image><\/p>/.exec(page.storage)![0];
+    const form = toEditForm(page.storage);
+    expect(form.markdown).toBe('See attached CSV.\n\n⟦1 image: capacity-chart.png⟧');
+    const res = await post<WriteResult>(`/pages/${page.id}/push`, {
+      markdown: `${form.markdown.replace('See attached CSV.', 'See the attached CSV.')}\n\n## Who to ask\n\nThe owning team.`,
+      baseVersion: page.version,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(page.storage).toBe(`<p>See the attached CSV.</p>${image}<h2>Who to ask</h2><p>The owning team.</p>`);
   });
 
   it('is refused when the page changed after the proposal, and writes nothing', async () => {

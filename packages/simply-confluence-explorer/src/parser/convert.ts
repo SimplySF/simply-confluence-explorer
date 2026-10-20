@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { markdownToStorage, storageToMarkdown } from '@simplysf/simply-atlassian-core';
+import { storageToMarkdown } from '@simplysf/simply-atlassian-core';
 import yaml from 'yaml';
 import type { PageDetail, ParsedPage } from '../api/types.js';
 
@@ -70,13 +70,19 @@ export function storageToBody(storageXml: string): string {
   return storageToMarkdown(storageXml).trim();
 }
 
-/** The parts of a page that a rewrite from Markdown could drop, with a person's name for one and for several. */
+/** The parts of a page a write could drop, with a person's name for one and for several. */
 const PARTS: Array<[RegExp, string, string]> = [
   [/<ac:image\b/g, 'image', 'images'],
   [/<ac:link\b[^>]*>\s*<ri:page\b/g, 'link to another page', 'links to other pages'],
+  [/<ac:link\b[^>]*>\s*<ri:attachment\b/g, 'link to an attachment', 'links to attachments'],
+  [/<ac:link\b[^>]*\bac:anchor=/g, 'link to an anchor', 'links to anchors'],
   [/<ri:user\b/g, 'mention of a person', 'mentions of people'],
   [/<ac:task-list\b/g, 'task list', 'task lists'],
   [/<ac:layout\b/g, 'page layout', 'page layouts'],
+  [/<ac:emoticon\b/g, 'emoticon', 'emoticons'],
+  [/<ac:inline-comment-marker\b/g, 'inline comment', 'inline comments'],
+  [/<ac:adf-extension\b/g, 'extension', 'extensions'],
+  [/<time\b/g, 'date', 'dates'],
 ];
 
 /** Counts each kind of part in a page, keyed by its singular name; macros are counted by their own name. */
@@ -96,29 +102,19 @@ function partsOf(storage: string): Map<string, { n: number; plural: string }> {
 }
 
 /**
- * Names what a page would lose if its body were replaced by its own Markdown written back. Pages
- * are edited as Markdown, and Markdown has no form for an image, a macro such as a status label or a
- * panel, a link to another page, a mention or a task list, so converting the page shows each one as
- * placeholder text, and writing that text back would replace the real thing with the placeholder.
- * The page is converted to Markdown and back, and whatever is present before and missing after is
- * reported, so this follows the converter as it learns to carry more. A task list cannot be written
- * from Markdown at all, so it is counted as lost before the rest of the page is tried.
+ * Names the parts of a page that one storage body holds and another lacks: images, macros counted
+ * by name, links to pages, attachments and anchors, mentions, task lists, layouts, emoticons,
+ * inline comments, extensions and dates. A write compares the page as Confluence holds it with what
+ * it is about to send, so a part lost on the way is caught however it was lost.
  *
- * @param storageXml The page as Confluence holds it now.
- * @returns One phrase per kind of part that would be lost, such as `2 images`; empty when nothing would.
+ * @param before The page as Confluence holds it now.
+ * @param after The body about to be written.
+ * @returns One phrase per kind of part that is missing, such as `2 images`; empty when nothing is.
  */
-export function lostInRewrite(storageXml: string): string[] {
-  const before = partsOf(storageXml);
-  const withoutTasks = storageXml.replace(/<ac:task-list\b[\s\S]*?<\/ac:task-list>/g, '');
-  let after: Map<string, { n: number; plural: string }>;
-  try {
-    after = partsOf(markdownToStorage(storageToMarkdown(withoutTasks)));
-  } catch {
-    // The page's own Markdown could not be written back at all, so nothing in it can be assumed kept.
-    after = new Map();
-  }
-  return [...before].flatMap(([one, { n, plural }]) => {
-    const lost = n - (after.get(one)?.n ?? 0);
+export function missingParts(before: string, after: string): string[] {
+  const kept = partsOf(after);
+  return [...partsOf(before)].flatMap(([one, { n, plural }]) => {
+    const lost = n - (kept.get(one)?.n ?? 0);
     if (lost <= 0) return [];
     return [lost === 1 ? `1 ${one}` : `${lost} ${plural}`];
   });
