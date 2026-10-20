@@ -21,6 +21,7 @@ import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { ExclusionManager } from './exclusionManager.js';
+import { isCurrentMetadata } from './metadata.js';
 
 // A synced space lives in `<data dir>/spaces/<KEY>/`:
 //
@@ -132,8 +133,11 @@ export class SpaceStore {
         {
           ...manifest,
           pageCount: this.cachedIds(key).length,
+          // Only metadata of the current kind counts, so the Space menu offers to redo the rest.
           metadataCount: fs.existsSync(metadataDir)
-            ? fs.readdirSync(metadataDir).filter((f) => f.endsWith('.json')).length
+            ? fs
+                .readdirSync(metadataDir)
+                .filter((f) => f.endsWith('.json') && isCurrentMetadata(this.readMetadata(key, f.slice(0, -5)))).length
             : 0,
           hasTOC: fs.existsSync(path.join(dir, 'toc.json')),
         },

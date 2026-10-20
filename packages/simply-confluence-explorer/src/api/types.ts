@@ -223,6 +223,14 @@ export type PageMetadata = {
   documentType: string;
   systemsMentioned: string[];
   generatedAt: string;
+  /** 2 for metadata with the fields below (ADR-051); absent on the first kind, which is regenerated. */
+  version?: number;
+  /** Who reads the page, such as "on-call engineers". */
+  audience?: string;
+  /** The questions the page answers, which a question about the space is matched against. */
+  questions?: string[];
+  /** One line on each section, in the order `splitSections` gives them. */
+  sections?: Array<{ heading: string; summary: string }>;
 };
 
 /** The progress of generating AI summaries for a space, polled while it runs. */

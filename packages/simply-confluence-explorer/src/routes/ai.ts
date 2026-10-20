@@ -27,6 +27,7 @@ import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
 import { retrieveSpaceContext } from '../spaces/contextRetriever.js';
 import { generateMetadata } from '../spaces/metadata.js';
+import { tagIndex } from '../spaces/tags.js';
 import { errorMessage } from '../util/errors.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
@@ -191,7 +192,11 @@ export function addAiRoutes(router: Router, services: Services): Router {
       }))
       .add('POST', '/api/space-cache/:spaceKey/pages/:pageId/metadata/generate', async ({ params }) => {
         const { page, spaceKey } = await gate(params.pageId, params.spaceKey);
-        const result = await generateMetadata(page, ai);
+        const result = await generateMetadata(
+          page,
+          ai,
+          tagIndex(store, spaceKey).map((t) => t.tag),
+        );
         if (store.readPage(spaceKey, page.id)) store.writeMetadata(spaceKey, result);
         return { metadata: result };
       })

@@ -88,11 +88,20 @@
         {#each metadata.tags as t (t)}<span class="pill">#{t}</span>{/each}
         {#each metadata.systemsMentioned as s (s)}<span class="pill pill-plain">{s}</span>{/each}
       </div>
+      {#if metadata.audience}<p class="muted">Written for {metadata.audience}.</p>{/if}
+      {#if metadata.questions?.length}
+        <details class="details-questions">
+          <summary>Questions it answers ({metadata.questions.length})</summary>
+          <ul>
+            {#each metadata.questions as q (q)}<li>{q}</li>{/each}
+          </ul>
+        </details>
+      {/if}
     {:else}
       <p class="muted">
         {metadataLoading
           ? 'Loading…'
-          : 'No summary yet. Generate one for a two-sentence summary, topic tags and a document type.'}
+          : 'No summary yet. Generate one for a short summary, topics, and the questions this page answers.'}
       </p>
     {/if}
   </section>

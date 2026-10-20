@@ -36,7 +36,7 @@
     <span>
       Answers are better with AI summaries: {counts.pages - counts.missing} of {counts.pages} page{counts.pages === 1
         ? ''
-        : 's'} here have one.
+        : 's'} here have an up-to-date one.
     </span>
     <button
       type="button"

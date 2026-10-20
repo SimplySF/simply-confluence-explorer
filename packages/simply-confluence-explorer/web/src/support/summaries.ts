@@ -15,18 +15,19 @@
  */
 
 // What the Space menu offers for a space's AI summaries. A run only summarises pages that have no
-// summary yet, so once every page has one there is nothing for it to do, and the menu says so.
+// up-to-date summary, so once every page has one there is nothing for it to do, and the menu says so.
+// A summary of an older kind, or of an older version of its page, does not count (ADR-051).
 
 import type { SyncedSpace } from '../../../src/api/types.js';
 
 export type SummaryAction = { label: string; hint: string; done: boolean };
 
 export function summaryAction(manifest?: Pick<SyncedSpace, 'pageCount' | 'metadataCount'>): SummaryAction {
-  const offer = { hint: 'Summaries and tags for every page, and the table of contents', done: false };
+  const offer = { hint: 'Summaries, topics and the questions each page answers, which chats search', done: false };
   if (!manifest) return { ...offer, label: 'Generate AI summaries' };
   const { pageCount, metadataCount } = manifest;
   if (pageCount > 0 && metadataCount >= pageCount)
     return { label: 'Every page has an AI summary', hint: "Redo one page's summary from its Details tab", done: true };
-  if (metadataCount > 0) return { ...offer, label: `Resume AI summaries (${metadataCount}/${pageCount})` };
+  if (metadataCount > 0) return { ...offer, label: `Update AI summaries (${metadataCount}/${pageCount})` };
   return { ...offer, label: 'Generate AI summaries' };
 }

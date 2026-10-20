@@ -1813,6 +1813,14 @@ body {
   font-size: 0.9rem;
   line-height: 1.55;
 }
+.details-questions {
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+.details-questions ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
 .data-table {
   width: 100%;
   border-collapse: collapse;

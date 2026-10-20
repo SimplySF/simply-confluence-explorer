@@ -56,7 +56,7 @@ const B = 0.75;
 type PageDocs = { stamp: string; docs: Doc[] };
 type Index = { docs: Doc[]; df: Map<string, number>; avgLength: number };
 
-/** One page's sections as search documents. Each carries its page's title, labels, tags and summary. */
+/** One page's sections as search documents. Each carries its page's title, labels, tags, summary and questions. */
 function pageDocs(page: PageDetail, meta?: PageMetadata): Doc[] {
   const sections = splitSections(page.id, parsePage(page).markdown);
   const pageTerms = new Map<string, number>();
@@ -64,13 +64,14 @@ function pageDocs(page: PageDetail, meta?: PageMetadata): Doc[] {
     tokens(text).forEach((t) => terms.set(t, (terms.get(t) ?? 0) + weight));
   add(pageTerms, page.title, TITLE_WEIGHT);
   add(pageTerms, [...page.labels, ...(meta?.tags ?? [])].join(' '), TAG_WEIGHT);
-  add(pageTerms, meta?.summary ?? '', 1);
+  add(pageTerms, [meta?.summary, ...(meta?.questions ?? [])].join(' '), 1);
   // A page with no text still has its title to be found by.
   const all = sections.length ? sections : [{ pageId: page.id, index: 0, path: [], text: '' }];
   return all.map((section) => {
     const terms = new Map(pageTerms);
     add(terms, section.path.join(' '), HEADING_WEIGHT);
-    add(terms, section.text, 1);
+    // The section's summary is matched to it by position, as the metadata was written from the same split.
+    add(terms, `${meta?.sections?.[section.index]?.summary ?? ''} ${section.text}`, 1);
     return {
       section,
       title: page.title,

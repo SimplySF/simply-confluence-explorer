@@ -24,9 +24,9 @@ describe('the Space menu, for AI summaries', () => {
     expect(action.label).not.toMatch(/regenerate/i);
   });
 
-  it('offers to resume when some pages still have no summary', () => {
+  it('offers to update when some pages have no up-to-date summary', () => {
     expect(summaryAction({ pageCount: 12, metadataCount: 5 })).toMatchObject({
-      label: 'Resume AI summaries (5/12)',
+      label: 'Update AI summaries (5/12)',
       done: false,
     });
   });

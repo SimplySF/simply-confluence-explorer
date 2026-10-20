@@ -122,4 +122,22 @@ describe('the search index', () => {
     expect(index.sectionsOf('PLAT', '1')[0]).not.toBe(first[0]);
     expect(index.sectionsOf('PLAT', '1')[0].text).toBe('Promote the replica.');
   });
+
+  it('finds a section by its summary and a page by the questions it answers', () => {
+    const { index, store } = setup();
+    store.writeMetadata('PLAT', {
+      pageId: '3',
+      title: 'Production Credentials',
+      summary: 'Secrets storage.',
+      tags: [],
+      documentType: 'reference',
+      systemsMentioned: [],
+      generatedAt: '2026-01-01T00:00:00Z',
+      version: 2,
+      questions: ['Who rotates the vault keys?'],
+      sections: [{ heading: 'Production Credentials', summary: 'Explains the keystore layout.' }],
+    });
+    expect(index.searchSections('PLAT', 'keystore', 5).map((h) => h.section.pageId)).toEqual(['3']);
+    expect(ids(index, 'rotates vault')).toEqual(['3']);
+  });
 });

@@ -21,50 +21,94 @@ import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
 import type { ExclusionManager } from './exclusionManager.js';
+import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
+import { tagIndex } from './tags.js';
 
-const METADATA_PROMPT = `Analyze this Confluence page and return a JSON object with this exact schema:
+/** The kind of metadata this code writes. Metadata of an older kind counts as missing and is regenerated. */
+export const METADATA_VERSION = 2;
+
+/** How many of a space's topics the prompt offers, so pages on one subject reuse one tag. */
+const VOCABULARY = 60;
+/** How many sections are summarised; the rest of a very long page is found by its words alone. */
+const SUMMARISED_SECTIONS = 60;
+
+function metadataPrompt(vocabulary: string[], headings: string[]): string {
+  return `Analyze this Confluence page and return a JSON object with this exact schema:
 {
-  "summary": "1-2 sentence executive summary of this page",
-  "tags": ["tag1", "tag2", "tag3", "tag4"],
+  "summary": "1-2 sentence summary of what this page is for",
+  "tags": ["3 to 6 topics, lower case"],
   "documentType": "architecture" | "runbook" | "overview" | "policy" | "guide" | "reference",
-  "systemsMentioned": ["SystemA", "SystemB"]
+  "systemsMentioned": ["SystemA", "SystemB"],
+  "audience": "who reads this page, such as on-call engineers",
+  "questions": ["up to 6 questions a reader could answer from this page"],
+  "sections": ["one line on what each section below says, in the same order"]
 }
+${vocabulary.length ? `Choose topics from this list when one fits, and add a new one only for a subject none of them covers: ${vocabulary.join(', ')}.\n` : ''}The page's sections are:
+${headings.map((h, i) => `${i + 1}. ${h}`).join('\n')}
 Only output the valid JSON block, with no conversational filler.`;
+}
 
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
+/** Whether metadata is of the kind this code writes, so a run knows to redo it. */
+export function isCurrentMetadata(metadata?: Pick<PageMetadata, 'version'>): boolean {
+  return (metadata?.version ?? 1) >= METADATA_VERSION;
+}
+
 /**
- * Asks the AI for a summary, tags, a document type and the systems a page mentions. A reply without
- * a JSON object in it is an error, not an empty result, so a failed summary is never saved as if it
- * were one.
+ * Asks the AI for a page's summary, topics, document type, systems, audience, the questions it
+ * answers and a line on each section (ADR-051). A reply without a JSON object in it is an error, not
+ * an empty result, so a failed summary is never saved as if it were one.
  *
  * @param page The page, which the caller has already checked is not excluded.
  * @param ai The engine to ask.
+ * @param vocabulary The space's most-used topics, which the AI reuses where one fits.
  */
-export async function generateMetadata(page: PageDetail, ai: AiEngine): Promise<PageMetadata> {
+export async function generateMetadata(
+  page: PageDetail,
+  ai: AiEngine,
+  vocabulary: string[] = [],
+): Promise<PageMetadata> {
+  const { markdown } = parsePage(page);
+  const headings = splitSections(page.id, markdown)
+    .slice(0, SUMMARISED_SECTIONS)
+    .map((s) => sectionName(page.title, s));
   const reply = (
-    await ai.analyzeDocument(parsePage(page).markdown, METADATA_PROMPT, page.title, { spaceKey: page.spaceKey })
+    await ai.analyzeDocument(markdown, metadataPrompt(vocabulary.slice(0, VOCABULARY), headings), page.title, {
+      spaceKey: page.spaceKey,
+    })
   ).text;
   const json = /\{[\s\S]*\}/.exec(reply);
   if (!json) throw new Error('the AI reply contained no JSON metadata');
   const m = JSON.parse(json[0]) as Record<string, unknown>;
+  const lines = strings(m.sections);
   return {
     pageId: page.id,
     title: page.title,
     summary: typeof m.summary === 'string' ? m.summary : 'Documentation page.',
-    tags: strings(m.tags),
+    tags: strings(m.tags)
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean),
     documentType: typeof m.documentType === 'string' ? m.documentType : 'overview',
     systemsMentioned: strings(m.systemsMentioned),
     generatedAt: new Date().toISOString(),
+    version: METADATA_VERSION,
+    ...(typeof m.audience === 'string' ? { audience: m.audience.slice(0, 200) } : {}),
+    questions: strings(m.questions)
+      .slice(0, 6)
+      .map((q) => q.slice(0, 300)),
+    // Matched to the sections by position; a section the reply skipped has no line rather than another's.
+    sections: headings.map((heading, i) => ({ heading, summary: (lines[i] ?? '').slice(0, 300) })),
   };
 }
 
 /**
  * Generates AI summaries for every synced page in a space, or in one branch of it, as a background
- * job. Excluded pages are never sent, and a page that already has a summary is skipped, so the job
- * can be run again to fill in what failed. The table of contents is rebuilt afterwards, because it
+ * job. Excluded pages are never sent, and a page that already has current metadata is skipped, so the
+ * job can be run again to fill in what failed, and after a sync it redoes only the pages that changed
+ * (a new version of a page removes its metadata). The table of contents is rebuilt afterwards, because it
  * shows the summaries.
  */
 export class MetadataPipeline {
@@ -141,7 +185,8 @@ export class MetadataPipeline {
 
   private missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
     return this.pagesOf(spaceKey, rootPageId, pageIds).filter(
-      (p) => !this.exclusions.isPageExcluded(p, spaceKey) && !this.store.readMetadata(spaceKey, p.id),
+      (p) =>
+        !this.exclusions.isPageExcluded(p, spaceKey) && !isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)),
     );
   }
 
@@ -150,13 +195,18 @@ export class MetadataPipeline {
     const ai = this.ai();
     const targets = this.missing(spaceKey, rootPageId, pageIds);
     job.total = targets.length;
+    // The topics already in use, counted as the run tags pages, so later pages reuse earlier pages' topics.
+    const uses = new Map(tagIndex(this.store, spaceKey).map((t) => [t.tag, t.pages.length]));
     // One page at a time: a space can have thousands of pages, and providers limit request rates.
     for (const page of targets) {
       if (this.jobs.isCancelled(job.jobId)) return;
       job.currentPageTitle = page.title;
+      const vocabulary = [...uses].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
       try {
         // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
-        this.store.writeMetadata(spaceKey, await generateMetadata(page, ai));
+        const metadata = await generateMetadata(page, ai, vocabulary);
+        this.store.writeMetadata(spaceKey, metadata);
+        for (const tag of metadata.tags) uses.set(tag, (uses.get(tag) ?? 0) + 1);
       } catch {
         // Counted and skipped; running the job again retries every page still without a summary.
         job.errorCount++;
