@@ -55,6 +55,8 @@ export type Services = {
   index: SearchIndex;
   /** Section embeddings, when the AI provider makes them (ADR-051). */
   vectors: VectorIndex;
+  /** How many characters of pages one chat request may carry; a larger corpus is retrieved from. */
+  contextChars: number;
   /** The GitLab connection the server holds (ADR-050). */
   gitlab: GitLabStore;
   /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */

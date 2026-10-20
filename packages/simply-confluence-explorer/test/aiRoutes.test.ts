@@ -321,6 +321,9 @@ describe('AI summaries for chosen pages', () => {
       const salary = fake.page('PEOPLE', 'Salary Bands').id;
       expect((await coverage({ pageIds: [salary] })).body).toEqual({ pages: 0, missing: 0 });
       expect((await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', { pageIds: ['../x'] })).status).toBe(400);
+      // A directory counts with every page under it, as a chat on it reads them.
+      const policies = fake.page('PEOPLE', 'Policies').id;
+      expect((await coverage({ dirs: [policies] })).body).toEqual({ pages: 3, missing: 1 });
     });
   });
 });

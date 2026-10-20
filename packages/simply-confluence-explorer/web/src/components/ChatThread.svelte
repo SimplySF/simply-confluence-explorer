@@ -17,6 +17,7 @@
   import { tick, type Snippet } from 'svelte';
   import type { BranchFinding } from '../../../src/api/types.js';
   import type { AiChat } from '../support/chat.svelte.js';
+  import { readLabel } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChangeQueue from './ChangeQueue.svelte';
   import FindingsList from './FindingsList.svelte';
@@ -153,15 +154,12 @@
         {/if}
         {#if t.matchedPages?.length}
           <details class="chat-read">
-            <summary>
-              Read {t.matchedPages.length} page{t.matchedPages.length === 1 ? '' : 's'}{t.considered
-                ? ` · looked at ${t.considered}`
-                : ''}
-            </summary>
+            <summary>{readLabel(t)}</summary>
             <ul>
               {#each t.matchedPages as p (p.id)}
                 <li>
                   <button class="link-btn" onclick={() => onSelectPage(p.id)} title="Open this page">{p.title}</button>
+                  {#if p.sections?.length}<span> › {p.sections.map((s) => s.heading).join(', ')}</span>{/if}
                   {#if p.why}<span class="muted">: {p.why}</span>{/if}
                 </li>
               {/each}

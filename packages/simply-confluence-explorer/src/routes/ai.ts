@@ -25,22 +25,40 @@ import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
-import { retrieveSpaceContext } from '../spaces/contextRetriever.js';
+import { retrieveContext } from '../spaces/contextRetriever.js';
+import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
+import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { generateMetadata } from '../spaces/metadata.js';
+import type { SpaceStore } from '../spaces/spaceStore.js';
 import { tagIndex } from '../spaces/tags.js';
 import { errorMessage } from '../util/errors.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
-/** An optional list of up to 50 page ids, from a request body. */
-function pageIdsOf(body: unknown): string[] | undefined {
-  const value = fieldsOf(body).pageIds;
-  if (value === undefined) return undefined;
-  const raw: unknown[] = Array.isArray(value) ? value : [];
-  const ids = raw.map((v) => (typeof v === 'number' ? String(v) : v));
-  if (!Array.isArray(value) || ids.length === 0 || ids.length > 50 || !ids.every(isValidPageId))
-    throw new HttpError(400, 'pageIds is a list of 1 to 50 page ids');
-  return [...new Set(ids)];
+/**
+ * The pages a request chooses by directory, tag and page, as a chat's chosen pages are (ADR-051), or
+ * `undefined` when it chooses none. Directories and tags are resolved from the synced copy.
+ */
+function chosenIdsOf(
+  body: unknown,
+  spaceKey: string,
+  store: SpaceStore,
+  exclusions: ExclusionManager,
+): string[] | undefined {
+  const fields = fieldsOf(body);
+  if (fields.pageIds === undefined && fields.dirs === undefined && fields.tags === undefined) return undefined;
+  const list = (value: unknown): unknown[] =>
+    (Array.isArray(value) ? (value as unknown[]) : []).map((v) => (typeof v === 'number' ? String(v) : v));
+  const [pageIds, dirs] = [list(fields.pageIds), list(fields.dirs)];
+  const tags = list(fields.tags)
+    .filter((t): t is string => typeof t === 'string')
+    .map((t) => t.trim().toLowerCase());
+  if (pageIds.length + dirs.length > MAX_CORPUS_IDS || ![...pageIds, ...dirs].every(isValidPageId))
+    throw new HttpError(400, `pageIds and dirs are lists of at most ${MAX_CORPUS_IDS} page ids`);
+  const scope = { kind: 'pages' as const, spaceKey, pageIds: pageIds as string[], dirs: dirs as string[], tags };
+  const ids = corpusPages(store, exclusions, scope).map((p) => p.id);
+  if (ids.length === 0 && pageIds.length === 0) throw new HttpError(400, 'no synced pages are chosen');
+  return [...new Set([...ids, ...(pageIds as string[])])];
 }
 
 /** A settings change from the browser, with every value checked to be the string it must be. */
@@ -171,10 +189,12 @@ export function addAiRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body, signal }): Promise<AnalyzeResponse> => {
         const prompt = requiredPrompt(body);
         const key = params.spaceKey.toUpperCase();
-        const context = await retrieveSpaceContext(
+        const context = await retrieveContext(
           key,
+          store.visiblePages(key),
           { question: prompt },
-          { store, exclusions, dataDir, index, ai, signal },
+          { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
+          { budget: services.contextChars, outline: true },
         );
         const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, {
           spaceKey: key,
@@ -201,11 +221,19 @@ export function addAiRoutes(router: Router, services: Services): Router {
         return { metadata: result };
       })
       .add('POST', '/api/space-cache/:spaceKey/metadata/generate', ({ params, body }): MetadataProgress =>
-        metadata.start(params.spaceKey, optionalString(body, 'rootPageId'), pageIdsOf(body)),
+        metadata.start(
+          params.spaceKey,
+          optionalString(body, 'rootPageId'),
+          chosenIdsOf(body, params.spaceKey, store, exclusions),
+        ),
       )
       // How many of a space's, a section's or a list's pages have an AI summary, for a chat to show.
       .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', ({ params, body }) =>
-        metadata.coverage(params.spaceKey, optionalString(body, 'rootPageId'), pageIdsOf(body)),
+        metadata.coverage(
+          params.spaceKey,
+          optionalString(body, 'rootPageId'),
+          chosenIdsOf(body, params.spaceKey, store, exclusions),
+        ),
       )
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);

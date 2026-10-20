@@ -29,7 +29,7 @@ const MEANS: Record<string, string> = {
 };
 
 export function standInVector(text: string): number[] {
-  const vector = new Array<number>(64).fill(0);
+  const vector = new Array<number>(1024).fill(0);
   for (const word of text.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
     let hash = 0;
     for (const ch of MEANS[word] ?? word) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;

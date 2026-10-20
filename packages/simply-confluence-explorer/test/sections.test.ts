@@ -17,7 +17,7 @@
 // Splitting pages into the sections that retrieval searches and sends (ADR-051).
 
 import { describe, expect, it } from 'vitest';
-import { SECTION_CHARS, sectionName, splitSections } from '../src/spaces/sections.js';
+import { headingOf, SECTION_CHARS, sectionName, splitSections } from '../src/spaces/sections.js';
 
 describe('splitting a page into sections', () => {
   it('splits at headings and keeps the headings above each section', () => {
@@ -55,5 +55,15 @@ describe('splitting a page into sections', () => {
   it('cuts a single paragraph that is longer than a section', () => {
     const sections = splitSections('7', 'x'.repeat(SECTION_CHARS * 2 + 10));
     expect(sections.map((s) => s.text.length)).toEqual([SECTION_CHARS, SECTION_CHARS, 10]);
+  });
+});
+
+describe('naming a section', () => {
+  it('leaves out a first heading that only repeats the page title', () => {
+    const [intro, status] = splitSections('7', '# Architecture Overview\n\nWhat it is.\n\n## Status\n\nLive.');
+    expect(headingOf('Architecture Overview', intro)).toBe('Introduction');
+    expect(headingOf('Architecture Overview', status)).toBe('Status');
+    expect(sectionName('Architecture Overview', status)).toBe('Architecture Overview › Status');
+    expect(headingOf('Runbook', { path: ['Deploy'] })).toBe('Deploy');
   });
 });

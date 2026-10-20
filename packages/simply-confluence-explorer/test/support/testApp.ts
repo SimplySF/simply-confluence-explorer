@@ -62,7 +62,7 @@ export async function startTestApp(
   fake: FakeConfluence,
   reply: (payload: GuardedPayload, n: number, signal?: AbortSignal) => string | Promise<string> = echo,
   env: NodeJS.ProcessEnv = {},
-  options: { embeddings?: boolean } = {},
+  options: { embeddings?: boolean; contextChars?: number } = {},
 ): Promise<TestApp> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-app-'));
   fake.writeIgnoreFiles(dataDir);
@@ -82,6 +82,7 @@ export async function startTestApp(
       sent.push(payload);
       return Promise.resolve(reply(payload, sent.length, signal));
     },
+    contextChars: options.contextChars,
     ...(options.embeddings
       ? {
           embedTransport: (payload: GuardedPayload): Promise<number[][]> => {

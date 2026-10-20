@@ -100,8 +100,6 @@ const KINDS = new Set<string>([
   'placement',
   'gap',
 ]);
-/** How many pages one review may read: enough for a section or a tag, few enough to stay within one request. */
-export const MAX_REVIEW_PAGES = 50;
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIDABLE = new Set(['proposed', 'accepted', 'rejected', 'checked', 'check-failed', 'push-failed']);
 

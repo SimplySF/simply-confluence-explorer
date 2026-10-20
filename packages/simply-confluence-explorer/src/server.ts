@@ -30,6 +30,7 @@ import { BranchRunner } from './branches/branchRuns.js';
 import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
 import { MetadataPipeline } from './spaces/metadata.js';
+import { CONTEXT_CHAR_LIMIT } from './spaces/branchContext.js';
 import { SearchIndex } from './spaces/searchIndex.js';
 import { VectorIndex } from './spaces/vectors.js';
 import { GitLabStore } from './gitlab/client.js';
@@ -72,6 +73,11 @@ export type ServerOptions = {
   aiTransport?: Transport;
   /** Embeds texts in place of the configured provider, for the same reason. */
   embedTransport?: EmbedTransport;
+  /**
+   * How many characters of pages one chat request may carry. Tests set it low, so the small test
+   * spaces are retrieved from as a large space is.
+   */
+  contextChars?: number;
 };
 
 // Sent with every response. They stop the app being framed by another site, stop a browser
@@ -130,6 +136,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log }),
     index: new SearchIndex(store),
     vectors,
+    contextChars: options.contextChars ?? CONTEXT_CHAR_LIMIT,
     gitlab,
   });
   const isLocal = localOnly(env);

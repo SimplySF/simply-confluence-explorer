@@ -21,8 +21,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, test } from 'vitest';
 import type { AiSessionView } from '../src/api/types.js';
+import type { RetrievedContext } from '../src/spaces/contextRetriever.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
 import { extractText, historyToSend, SessionStore } from '../src/ai/sessions.js';
+import { expectations } from '../../../test-env/fixtures/dataset.mjs';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
@@ -59,8 +61,11 @@ const pageScope = (): { scope: { kind: string; spaceKey: string; pageId: string;
   scope: { kind: 'page', spaceKey: 'OPS', pageId: fake.page('OPS', 'On-Call Handbook').id, title: 'On-Call Handbook' },
 });
 
-async function withApp(run: (app: TestApp) => Promise<void>): Promise<void> {
-  const app = await startTestApp(fake);
+/** The test spaces hold a few hundred characters, so a limit this low makes a chat retrieve from them as from a large space. */
+const RETRIEVING = 300;
+
+async function withApp(run: (app: TestApp) => Promise<void>, contextChars?: number): Promise<void> {
+  const app = await startTestApp(fake, undefined, {}, { contextChars });
   try {
     await run(app);
   } finally {
@@ -237,11 +242,12 @@ test('Space chat finds a page from its text alone, and a follow-up keeps the pag
     // "Economy" appears only in the Travel Policy's table, not in any title, label or summary.
     const first = await ask(app, c.id, 'Which flights can be booked in economy?');
     assert.ok(sources(first).includes('Travel Policy'), sources(first).join(', '));
+    assert.equal(first.turns.at(-1)?.corpus?.mode, 'retrieved');
     const second = await ask(app, c.id, 'And how many days remote per week?');
     assert.ok(sources(second).includes('Travel Policy'), 'the earlier source is kept');
     assert.ok(sources(second).includes('Remote Work Policy'), sources(second).join(', '));
     assert.equal(second.title, 'Which flights can be booked in economy?');
-  });
+  }, RETRIEVING);
 });
 
 test('Space chat never sends an excluded page, and holds back and names a page with a secret', async () => {
@@ -258,44 +264,76 @@ test('Space chat never sends an excluded page, and holds back and names a page w
     const withheld = await ask(app, ops.id, 'What do the deploy notes say?');
     assert.ok(!sources(withheld).includes('Deploy Notes'));
     assert.match(withheld.turns.at(-1)?.guardSummary ?? '', /Deploy Notes/);
-  });
+  }, RETRIEVING);
 });
 
-test('Space chat fills the context up to its limit and names what did not fit', async () => {
-  const { retrieveSpaceContext } = await import('../src/spaces/contextRetriever.js');
+/** The retriever on an app's data directory, as the routes build it. */
+async function retriever(app: TestApp): Promise<{
+  context: (
+    q: { question: string; previous?: string; keep?: Array<{ pageId: string; index?: number }> },
+    budget?: number,
+  ) => Promise<RetrievedContext>;
+}> {
+  const { retrieveContext } = await import('../src/spaces/contextRetriever.js');
+  const { SpaceStore } = await import('../src/spaces/spaceStore.js');
+  const { ExclusionManager } = await import('../src/spaces/exclusionManager.js');
+  const { SearchIndex } = await import('../src/spaces/searchIndex.js');
+  const exclusions = new ExclusionManager(app.dataDir, () => undefined);
+  const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
+  const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
+  return {
+    context: (q, budget = RETRIEVING) =>
+      retrieveContext('PEOPLE', store.visiblePages('PEOPLE'), q, deps, { budget, outline: true }),
+  };
+}
+
+test('a corpus that fits is read in full, and a larger one sends only the sections it retrieves, within the limit', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');
-    const { SpaceStore } = await import('../src/spaces/spaceStore.js');
-    const { ExclusionManager } = await import('../src/spaces/exclusionManager.js');
-    const { SearchIndex } = await import('../src/spaces/searchIndex.js');
-    const exclusions = new ExclusionManager(app.dataDir, () => undefined);
-    const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
-    const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
-    const small = await retrieveSpaceContext('PEOPLE', { question: 'policy remote travel economy' }, deps, 700);
+    const { context } = await retriever(app);
+    const full = await context({ question: 'anything' }, 400_000);
+    assert.equal(full.corpus.mode, 'full');
+    assert.equal(full.selectedPages.length, full.corpus.pages);
+    const small = await context({ question: 'policy remote travel economy' }, 120);
+    assert.equal(small.corpus.mode, 'retrieved');
     assert.ok(small.overflow.length > 0, 'something did not fit');
-    assert.ok(small.contextMarkdown.length <= 800, `${small.contextMarkdown.length}`);
+    const body = small.contextMarkdown.slice(small.contextMarkdown.indexOf('---'));
+    assert.ok(body.length <= 120 + 200, `${body.length}`);
+    assert.ok(
+      small.selectedPages.every((p) => p.sections?.length),
+      'each page names the sections read',
+    );
   });
 });
 
-test('a chat on chosen pages reads only them; each must be allowed, in the space, and at most 50', async () => {
+test('chosen pages are directories, tags and pages, resolved on every turn; each must be allowed and in the space', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');
     const id = (title: string): string => fake.page('PEOPLE', title).id;
-    const create = (pageIds: unknown): Promise<{ status: number; body: AiSessionView }> =>
-      app.call<AiSessionView>('POST', '/ai/sessions', { scope: { kind: 'pages', spaceKey: 'PEOPLE', pageIds } });
-    assert.equal((await create([id('Salary Bands')])).status, 403);
-    assert.equal((await create([fake.page('OPS', 'On-Call Handbook').id])).status, 400);
-    assert.equal((await create(['../x'])).status, 400);
-    assert.equal((await create([])).status, 400);
-    assert.equal((await create(Array.from({ length: 51 }, (_, i) => `${i + 1}`))).status, 400);
-    const chosen = await create([id('Benefits Overview'), id('Travel Policy')]);
+    const create = (scope: Record<string, unknown>): Promise<{ status: number; body: AiSessionView }> =>
+      app.call<AiSessionView>('POST', '/ai/sessions', { scope: { kind: 'pages', spaceKey: 'PEOPLE', ...scope } });
+    assert.equal((await create({ pageIds: [id('Salary Bands')] })).status, 403);
+    assert.equal((await create({ dirs: [id('Salary Bands')] })).status, 403);
+    assert.equal((await create({ pageIds: [fake.page('OPS', 'On-Call Handbook').id] })).status, 400);
+    assert.equal((await create({ pageIds: ['../x'] })).status, 400);
+    assert.equal((await create({ pageIds: [] })).status, 400);
+    const many = Array.from({ length: 10_001 }, (_, i) => `${i + 1}`);
+    assert.equal((await create({ pageIds: many })).status, 400);
+
+    const chosen = await create({ dirs: [id('Policies')], pageIds: [id('Benefits Overview')] });
     assert.equal(chosen.status, 200);
     const answered = await ask(app, chosen.body.id, 'Which flights can be booked in economy?');
-    assert.deepEqual(sources(answered), ['Benefits Overview', 'Travel Policy']);
-    assert.doesNotMatch(app.sentText(), /Up to 5 days remote/);
-    // A page excluded after it was chosen is no longer read.
+    assert.deepEqual(sources(answered), ['Benefits Overview', 'Policies', 'Remote Work Policy', 'Travel Policy']);
+    // A page excluded after it was chosen is no longer read, though its directory still is.
     await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
-    assert.deepEqual(sources(await ask(app, chosen.body.id, 'And business class?')), ['Benefits Overview']);
+    assert.deepEqual(sources(await ask(app, chosen.body.id, 'And business class?')), [
+      'Benefits Overview',
+      'Policies',
+      'Remote Work Policy',
+    ]);
+
+    const tagged = await create({ tags: ['People'] });
+    assert.deepEqual(tagged.body.scope.tags, ['people']);
   });
 });
 
@@ -307,12 +345,12 @@ test('a Space chat changes between the whole space and chosen pages, with the sa
       app.call<AiSessionView>('PATCH', `/ai/sessions/${c.id}`, { scope });
     const benefits = fake.page('PEOPLE', 'Benefits Overview').id;
     assert.equal((await change({ kind: 'pages', pageIds: [fake.page('PEOPLE', 'Salary Bands').id] })).status, 403);
-    const narrowed = await change({ kind: 'pages', pageIds: [benefits], tags: ['benefits'] });
+    const narrowed = await change({ kind: 'pages', pageIds: [benefits], tags: ['no-such-tag'] });
     assert.deepEqual(narrowed.body.scope, {
       kind: 'pages',
       spaceKey: 'PEOPLE',
       pageIds: [benefits],
-      tags: ['benefits'],
+      tags: ['no-such-tag'],
     });
     assert.deepEqual(sources(await ask(app, c.id, 'Which flights can be booked in economy?')), ['Benefits Overview']);
     assert.equal((await change({ kind: 'space' })).body.scope.kind, 'space');
@@ -336,18 +374,12 @@ test('a conversation is renamed only to a name of 1 to 80 characters', async () 
   });
 });
 
-test('a follow-up finds its pages through the question before it, and through the pages the last answers used', async () => {
-  const { retrieveSpaceContext } = await import('../src/spaces/contextRetriever.js');
-  const { SpaceStore } = await import('../src/spaces/spaceStore.js');
-  const { ExclusionManager } = await import('../src/spaces/exclusionManager.js');
-  const { SearchIndex } = await import('../src/spaces/searchIndex.js');
+test('a follow-up finds its sections through the question before it, and through the sections the last answers read', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');
-    const exclusions = new ExclusionManager(app.dataDir, () => undefined);
-    const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
-    const deps = { store, exclusions, index: new SearchIndex(store), dataDir: app.dataDir };
-    const titles = async (q: Parameters<typeof retrieveSpaceContext>[1]): Promise<string[]> =>
-      (await retrieveSpaceContext('PEOPLE', q, deps)).selectedPages.map((p) => p.title);
+    const { context } = await retriever(app);
+    const titles = async (q: Parameters<typeof context>[0]): Promise<string[]> =>
+      (await context(q)).selectedPages.map((p) => p.title);
     const vague = 'and who signs it off';
     assert.ok(!(await titles({ question: vague })).includes('Travel Policy'));
     assert.ok(
@@ -355,9 +387,9 @@ test('a follow-up finds its pages through the question before it, and through th
         'Travel Policy',
       ),
     );
-    assert.ok(
-      (await titles({ question: vague, keep: [fake.page('PEOPLE', 'Travel Policy').id] })).includes('Travel Policy'),
-    );
+    const travel = fake.page('PEOPLE', 'Travel Policy').id;
+    assert.ok((await titles({ question: vague, keep: [{ pageId: travel }] })).includes('Travel Policy'));
+    assert.ok((await titles({ question: vague, keep: [{ pageId: travel, index: 0 }] })).includes('Travel Policy'));
   });
 });
 
@@ -374,20 +406,25 @@ async function summarise(app: TestApp, spaceKey: string): Promise<void> {
   }
 }
 
-const choosing = (p: GuardedPayload): boolean => p.system.includes('choosing which Confluence pages to read');
+const choosing = (p: GuardedPayload): boolean => p.system.includes('choosing which sections of Confluence pages');
 const textOf = (p: GuardedPayload): string => [p.system, ...p.messages.map((m) => m.content)].join('\n');
 
-test('a whole-space question lets the AI choose its pages from their summaries, never their text', async () => {
+test('a whole-space question lets the AI choose its sections from their summaries, never their text', async () => {
   let choice = '';
-  const app = await startTestApp(fake, (payload) => {
-    if (payload.system.includes('return a JSON object')) {
-      const title = /# Document Title: (.+)/.exec(payload.messages[0].content)?.[1] ?? '';
-      const summary = title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
-      return JSON.stringify({ summary, tags: [], documentType: 'policy', systemsMentioned: [] });
-    }
-    if (choosing(payload)) return choice;
-    return 'an answer';
-  });
+  const app = await startTestApp(
+    fake,
+    (payload) => {
+      if (payload.system.includes('return a JSON object')) {
+        const title = /# Document Title: (.+)/.exec(payload.messages[0].content)?.[1] ?? '';
+        const summary = title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
+        return JSON.stringify({ summary, tags: [], documentType: 'policy', systemsMentioned: [] });
+      }
+      if (choosing(payload)) return choice;
+      return 'an answer';
+    },
+    {},
+    { contextChars: RETRIEVING },
+  );
   try {
     await syncSpace(app, 'PEOPLE');
     await summarise(app, 'PEOPLE');
@@ -396,19 +433,19 @@ test('a whole-space question lets the AI choose its pages from their summaries, 
     // Interview Guide matches nothing in the question, so it is not offered, and choosing it reads nothing.
     const guide = fake.page('PEOPLE', 'Interview Guide').id;
     choice = JSON.stringify({
-      pages: [
-        { id: remote, why: 'remote rules' },
-        { id: guide, why: 'not offered' },
+      sections: [
+        { id: `${remote}#0`, why: 'remote rules' },
+        { id: `${guide}#0`, why: 'not offered' },
       ],
     });
     const c = await spaceChat(app);
     const before = app.sent.length;
     const answered = await ask(app, c.id, 'What are the travel and remote work policies?');
     const asked = app.sent.slice(before).filter(choosing);
-    assert.equal(asked.length, 1, 'one request chooses the pages');
+    assert.equal(asked.length, 1, 'one request chooses the sections');
     assert.match(textOf(asked[0]), /Rules for travel and remote work\./);
-    assert.match(textOf(asked[0]), new RegExp(travel));
-    assert.doesNotMatch(textOf(asked[0]), new RegExp(`${guide} \\|`));
+    assert.match(textOf(asked[0]), new RegExp(`${travel}#0`));
+    assert.doesNotMatch(textOf(asked[0]), new RegExp(`${guide}#0 \\|`));
     assert.doesNotMatch(textOf(asked[0]), /Flights over 6h|Up to 5 days remote/, 'no page text is sent to choose');
     const turn = answered.turns.at(-1)!;
     assert.deepEqual(
@@ -436,7 +473,65 @@ test('without summaries, a whole-space question reads the top search results and
     await syncSpace(app, 'PEOPLE');
     const c = await spaceChat(app);
     const before = app.sent.length;
-    await ask(app, c.id, 'Which flights can be booked in economy?');
+    const answered = await ask(app, c.id, 'Which flights can be booked in economy?');
     assert.equal(app.sent.slice(before).filter(choosing).length, 0);
+    assert.ok(sources(answered).includes('Travel Policy'));
+  }, RETRIEVING);
+});
+
+test('with embeddings, a question finds a section by its meaning when none of its words are in it', async () => {
+  for (const embeddings of [false, true]) {
+    // eslint-disable-next-line no-await-in-loop -- the two apps run one after the other
+    const app = await startTestApp(fake, undefined, {}, { contextChars: 2000, embeddings });
+    try {
+      /* eslint-disable no-await-in-loop -- as above */
+      await syncSpace(app, 'PLAT');
+      await summarise(app, 'PLAT');
+      const c = await spaceChat(app, 'PLAT');
+      const answered = await ask(app, c.id, 'Everything went offline');
+      /* eslint-enable no-await-in-loop */
+      assert.equal(sources(answered).includes('Incident Response'), embeddings, sources(answered).join(', '));
+      if (embeddings) {
+        const asked = app.embedded.at(-1)?.messages.map((m) => m.content);
+        assert.deepEqual(asked, ['Everything went offline'], 'the question is embedded through the guard');
+        for (const title of expectations.PLAT.excluded)
+          assert.doesNotMatch(
+            app.embedded.map(textOf).join('\n'),
+            new RegExp(title),
+            'an excluded page is never embedded',
+          );
+      }
+    } finally {
+      // eslint-disable-next-line no-await-in-loop -- as above
+      await app.close();
+    }
+  }
+});
+
+test('an excluded page is left out of a corpus, and an excluded directory refuses its chat', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const { corpusPages } = await import('../src/spaces/corpus.js');
+    const { SpaceStore } = await import('../src/spaces/spaceStore.js');
+    const { ExclusionManager } = await import('../src/spaces/exclusionManager.js');
+    const exclusions = new ExclusionManager(app.dataDir, () => undefined);
+    const store = new SpaceStore(app.dataDir, exclusions, () => undefined);
+    const id = (title: string): string => fake.page('PEOPLE', title).id;
+    const before = app.sent.length;
+    const { body: c } = await app.call<AiSessionView>('POST', '/ai/sessions', {
+      scope: { kind: 'branch', spaceKey: 'PEOPLE', pageId: id('Internal') },
+    });
+    const refused = await app.call('POST', `/ai/sessions/${c.id}/messages`, { prompt: 'Summarise these' });
+    assert.equal(refused.status, 403);
+    assert.equal(app.sent.length, before, 'nothing is sent');
+
+    // Excluded after it was synced, so its copy is still on disk.
+    await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
+    const titles = corpusPages(store, exclusions, {
+      kind: 'pages',
+      spaceKey: 'PEOPLE',
+      pageIds: [id('Travel Policy'), id('Remote Work Policy')],
+    }).map((p) => p.title);
+    assert.deepEqual(titles, ['Remote Work Policy']);
   });
 });

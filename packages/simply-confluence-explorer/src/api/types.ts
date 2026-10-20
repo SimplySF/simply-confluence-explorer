@@ -260,9 +260,11 @@ export type SessionScope = {
   kind: 'page' | 'branch' | 'pages' | 'space' | 'draft';
   spaceKey: string;
   pageId?: string;
-  /** For chosen pages: their ids, at most 50. */
+  /** For chosen pages: directories, each read with every page under it at the time of asking (ADR-051). */
+  dirs?: string[];
+  /** For chosen pages: single pages. */
   pageIds?: string[];
-  /** For chosen pages: the tags they were chosen by, to name the chat's context. */
+  /** For chosen pages: tags, each read as every page that carries it at the time of asking. */
   tags?: string[];
   title?: string;
 };
@@ -274,10 +276,21 @@ export type SessionTurn = {
   /** On an answer: what the outbound guard removed, and which pages were left out of the context. */
   guardSummary?: string;
   engine?: string;
-  /** The pages an answer read, each with why it was chosen when the AI chose it (ADR-048). */
-  matchedPages?: Array<{ id: string; title: string; score: number; why?: string }>;
-  /** For a whole-space answer: how many candidate pages were looked at. */
+  /**
+   * The pages an answer read, each with why it was chosen when the AI chose it, and the sections read
+   * when only some of the page was (ADR-048, ADR-051).
+   */
+  matchedPages?: Array<{
+    id: string;
+    title: string;
+    score: number;
+    why?: string;
+    sections?: Array<{ index: number; heading: string }>;
+  }>;
+  /** For a retrieved answer: how many candidate sections were looked at. */
   considered?: number;
+  /** How many pages the chat reads from, and whether they were read in full or retrieved from. */
+  corpus?: { pages: number; mode: 'full' | 'retrieved' };
   /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
   findings?: BranchFinding[];
   /** The pages the answer read, by title, so a suggestion's pages can be found. */

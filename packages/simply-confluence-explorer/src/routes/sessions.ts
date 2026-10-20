@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 
-import type { AiSessionView, SessionScope, SessionTurn } from '../api/types.js';
+import type { AiSessionView, BranchFinding, SessionScope, SessionTurn } from '../api/types.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
-import { MAX_REVIEW_PAGES, parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
+import { parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { collectBranch, CONTEXT_CHAR_LIMIT, contextCollector, leftOutNote } from '../spaces/branchContext.js';
-import { retrieveSpaceContext } from '../spaces/contextRetriever.js';
+import { collectBranch, leftOutNote } from '../spaces/branchContext.js';
+import { retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
+import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
@@ -48,18 +49,52 @@ function scopeFrom(value: unknown): SessionScope {
   const title = typeof scope.title === 'string' ? scope.title.slice(0, 200) : undefined;
   if (kind === 'space') return { kind, spaceKey, title };
   if (kind === 'pages') {
-    const raw: unknown[] = Array.isArray(scope.pageIds) ? scope.pageIds : [];
-    const pageIds = raw.map(idOf);
-    if (pageIds.length === 0 || pageIds.length > MAX_REVIEW_PAGES || !pageIds.every(isValidPageId))
-      throw new HttpError(400, `chosen pages are between 1 and ${MAX_REVIEW_PAGES} page ids`);
-    const tags = Array.isArray(scope.tags)
-      ? scope.tags.filter((t): t is string => typeof t === 'string').map((t) => t.slice(0, 100))
-      : undefined;
-    return { kind, spaceKey, pageIds: [...new Set(pageIds)], ...(tags?.length ? { tags } : {}), title };
+    const ids = (field: unknown): unknown[] => [...new Set((Array.isArray(field) ? field : []).map(idOf))];
+    const dirs = ids(scope.dirs);
+    const pageIds = ids(scope.pageIds);
+    const tags = [
+      ...new Set(
+        (Array.isArray(scope.tags) ? scope.tags : [])
+          .filter((t): t is string => typeof t === 'string')
+          .map((t) => t.trim().toLowerCase().slice(0, 100))
+          .filter(Boolean),
+      ),
+    ];
+    if (dirs.length + pageIds.length + tags.length === 0)
+      throw new HttpError(400, 'chosen pages need at least one directory, tag or page');
+    if (dirs.length + pageIds.length > MAX_CORPUS_IDS || tags.length > 200)
+      throw new HttpError(400, `chosen pages name at most ${MAX_CORPUS_IDS} pages and 200 tags`);
+    if (![...dirs, ...pageIds].every(isValidPageId)) throw new HttpError(400, 'chosen pages are named by page id');
+    return {
+      kind,
+      spaceKey,
+      ...(dirs.length ? { dirs: dirs as string[] } : {}),
+      ...(pageIds.length ? { pageIds: pageIds as string[] } : {}),
+      ...(tags.length ? { tags } : {}),
+      title,
+    };
   }
   const pageId = idOf(scope.pageId);
   if (!isValidPageId(pageId)) throw new HttpError(400, 'a page or section scope needs a pageId');
   return { kind: kind as SessionScope['kind'], spaceKey, pageId, title };
+}
+
+/** The ids of the chat's pages that suggestions name by title, so each can be queued. */
+function pageIdsNamed(findings: BranchFinding[], pages: Array<{ id: string; title: string }>): Record<string, string> {
+  const named = new Set(findings.flatMap((f) => f.pages));
+  return Object.fromEntries(pages.filter((p) => named.has(p.title)).map((p) => [p.title, p.id]));
+}
+
+/** The sections the last two answers read, so a follow-up keeps reading them. */
+function keptSections(session: AiSessionView): SectionRef[] {
+  return session.turns
+    .filter((t) => t.role === 'assistant')
+    .slice(-2)
+    .flatMap((t) =>
+      (t.matchedPages ?? []).flatMap((p) =>
+        p.sections?.length ? p.sections.map((s) => ({ pageId: p.id, index: s.index })) : [{ pageId: p.id }],
+      ),
+    );
 }
 
 type TurnContext = {
@@ -68,6 +103,9 @@ type TurnContext = {
   note: string;
   matchedPages?: SessionTurn['matchedPages'];
   considered?: number;
+  corpus?: SessionTurn['corpus'];
+  /** Every page the chat reads from, so a suggestion can name one that was not retrieved this turn. */
+  pages: Array<{ id: string; title: string }>;
 };
 
 /**
@@ -89,7 +127,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
 
   /** Refuses chosen pages that are in another space or excluded, so a chat never starts on one. */
   const checkedScope = async (scope: SessionScope): Promise<SessionScope> => {
-    for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
+    for (const id of scope.kind === 'pages' ? [...(scope.dirs ?? []), ...(scope.pageIds ?? [])] : []) {
       // eslint-disable-next-line no-await-in-loop -- each page is checked in turn, and the first refusal stops it
       const gate = await gatePageForAi(id, scope.spaceKey, deps);
       if (gate.page && gate.page.spaceKey.toUpperCase() !== scope.spaceKey)
@@ -99,36 +137,66 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     return scope;
   };
 
+  /** A page chat, or a directory chat in a space that is not synced, read from Confluence as before. */
+  const unsyncedContext = async (scope: SessionScope): Promise<TurnContext> => {
+    const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
+    if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
+    const root = parsePage(gate.page).markdown;
+    const ctx: TurnContext = {
+      context: `## [Page: ${gate.page.title}]\n${root}`,
+      withheld: [],
+      note: '',
+      matchedPages: [{ id: gate.page.id, title: gate.page.title, score: 1 }],
+      pages: [{ id: gate.page.id, title: gate.page.title }],
+    };
+    if (scope.kind === 'branch') {
+      const branch = await collectBranch(
+        scope.pageId!,
+        scope.spaceKey,
+        deps,
+        dataDir,
+        services.contextChars - root.length,
+      );
+      ctx.context += branch.pages.map((p) => `\n\n---\n\n## [Page: ${p.page.title}]\n${p.markdown}`).join('');
+      ctx.withheld = branch.withheld;
+      ctx.note = leftOutNote(branch);
+      ctx.matchedPages = [
+        ...(ctx.matchedPages ?? []),
+        ...branch.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
+      ];
+      ctx.pages = ctx.matchedPages.map(({ id, title }) => ({ id, title }));
+    }
+    return ctx;
+  };
+
+  /**
+   * The context of one turn (ADR-051). The chat's corpus is resolved from the synced copy on every
+   * turn, so a rule added since applies, and a page added under a chosen directory is read. A corpus
+   * that fits is read in full; a larger one is retrieved from for this question.
+   */
   const contextFor = async (session: AiSessionView, prompt: string, signal: AbortSignal): Promise<TurnContext> => {
     const { scope } = session;
     let ctx: TurnContext;
-    if (scope.kind === 'pages') {
-      // Each chosen page is read again and checked on every turn (contextCollector applies the rules),
-      // so a rule added since it was chosen applies.
-      const { consider, result } = contextCollector(scope.spaceKey, deps, dataDir);
-      for (const id of scope.pageIds ?? []) {
+    if (scope.kind === 'page' || (scope.kind === 'branch' && !store.isSynced(scope.spaceKey))) {
+      ctx = await unsyncedContext(scope);
+    } else {
+      // A directory chat refuses an excluded directory page outright, as a page chat does.
+      if (scope.kind === 'branch') await unsyncedContext({ ...scope, kind: 'page' });
+      const corpus = corpusPages(store, exclusions, scope);
+      // A chosen page the synced copy does not hold yet is read from Confluence, through the gate.
+      for (const id of scope.kind === 'pages' ? (scope.pageIds ?? []) : []) {
+        if (corpus.some((p) => p.id === id)) continue;
         // eslint-disable-next-line no-await-in-loop -- pages are read in the order they were chosen
         const gate = await gatePageForAi(id, scope.spaceKey, deps);
-        if (gate.page?.spaceKey.toUpperCase() === scope.spaceKey) consider(gate.page);
+        if (gate.allowed && gate.page?.spaceKey.toUpperCase() === scope.spaceKey) corpus.push(gate.page);
       }
-      ctx = {
-        context: result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n'),
-        withheld: result.withheld,
-        note: leftOutNote(result),
-        matchedPages: result.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
-      };
-    } else if (scope.kind === 'space') {
-      // The question before this one, and the pages the last two answers used, carry the conversation.
-      const earlier = session.turns;
-      const previous = earlier.filter((t) => t.role === 'user').at(-1)?.text;
-      const keep = earlier
-        .filter((t) => t.role === 'assistant')
-        .slice(-2)
-        .flatMap((t) => (t.matchedPages ?? []).map((p) => p.id));
-      const r = await retrieveSpaceContext(
+      const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
+      const r = await retrieveContext(
         scope.spaceKey,
-        { question: prompt, previous, keep },
-        { store, exclusions, dataDir, index, ai, signal },
+        corpus,
+        { question: prompt, previous, keep: keptSections(session) },
+        { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
+        { budget: services.contextChars, outline: scope.kind === 'space' },
       );
       ctx = {
         context: r.contextMarkdown,
@@ -136,33 +204,9 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         note: leftOutNote(r),
         matchedPages: r.selectedPages,
         considered: r.considered,
+        corpus: r.corpus,
+        pages: corpus.map(({ id, title }) => ({ id, title })),
       };
-    } else {
-      const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
-      if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
-      const root = parsePage(gate.page).markdown;
-      ctx = {
-        context: `## [Page: ${gate.page.title}]\n${root}`,
-        withheld: [],
-        note: '',
-        matchedPages: [{ id: gate.page.id, title: gate.page.title, score: 1 }],
-      };
-      if (scope.kind === 'branch') {
-        const branch = await collectBranch(
-          scope.pageId!,
-          scope.spaceKey,
-          deps,
-          dataDir,
-          CONTEXT_CHAR_LIMIT - root.length,
-        );
-        ctx.context += branch.pages.map((p) => `\n\n---\n\n## [Page: ${p.page.title}]\n${p.markdown}`).join('');
-        ctx.withheld = branch.withheld;
-        ctx.note = leftOutNote(branch);
-        ctx.matchedPages = [
-          ...(ctx.matchedPages ?? []),
-          ...branch.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
-        ];
-      }
     }
     const files = sessions.filesContext(session.id);
     if (files) ctx.context += `\n\n---\n\n# Files added to this conversation\n\n${files}`;
@@ -211,9 +255,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           engine: ai.getEngine(),
           matchedPages: ctx.matchedPages,
           ...(ctx.considered ? { considered: ctx.considered } : {}),
-          ...(findings
-            ? { findings, pageIds: Object.fromEntries((ctx.matchedPages ?? []).map((p) => [p.title, p.id])) }
-            : {}),
+          ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
+          ...(findings ? { findings, pageIds: pageIdsNamed(findings, ctx.pages) } : {}),
         },
       ],
       guard.exportState(),

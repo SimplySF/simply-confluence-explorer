@@ -90,7 +90,17 @@ export function splitSections(pageId: string, markdown: string): Section[] {
   return sections;
 }
 
+/** The headings above a section, without a first heading that only repeats the page's title, as many pages open with. */
+function ownPath(pageTitle: string, section: Pick<Section, 'path'>): string[] {
+  return section.path[0]?.trim().toLowerCase() === pageTitle.trim().toLowerCase() ? section.path.slice(1) : section.path;
+}
+
+/** A section's heading within its page, such as "Deploy › Rollback", or "Introduction" before the first one. */
+export function headingOf(pageTitle: string, section: Pick<Section, 'path'>): string {
+  return ownPath(pageTitle, section).join(' › ') || 'Introduction';
+}
+
 /** A section's name as an answer cites it, such as "Runbook › Rollback". */
 export function sectionName(pageTitle: string, section: Pick<Section, 'path'>): string {
-  return [pageTitle, ...section.path].join(' › ');
+  return [pageTitle, ...ownPath(pageTitle, section)].join(' › ');
 }
