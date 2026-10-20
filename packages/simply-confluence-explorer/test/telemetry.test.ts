@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AiSessionView, MetadataProgress } from '../src/api/types.js';
+import { patternOf, queryLogs } from '../src/telemetry/query.js';
 import { Telemetry, type SpanRecord, type TelemetryRecord } from '../src/telemetry/telemetry.js';
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -179,6 +180,112 @@ describe('a frozen server', () => {
       expect(t.now().problems.map((p) => p.problem)).toContain('frozen');
     } finally {
       t.close();
+    }
+  });
+});
+
+describe('the Logs view', () => {
+  const log = (at: number, level: string, kind: string, message: string, spaceKey?: string): TelemetryRecord =>
+    ({
+      type: 'log',
+      at: new Date(Date.UTC(2026, 9, 20, 0, 0, at)).toISOString(),
+      level,
+      kind,
+      message,
+      ...(spaceKey ? { attrs: { spaceKey } } : {}),
+    }) as TelemetryRecord;
+  // Newest first, as the files are read.
+  const records = [
+    log(9, 'warn', 'index', 'Page 9 was not indexed: timeout after 120 s', 'OPS'),
+    log(8, 'warn', 'index', 'Page 8 was not indexed: timeout after 120 s', 'OPS'),
+    log(7, 'error', 'ai', 'quota exceeded'),
+    log(6, 'info', 'sync', 'synced 12 pages', 'PEOPLE'),
+    log(5, 'warn', 'index', 'Page 5 was not indexed: timeout after 90 s', 'PEOPLE'),
+  ];
+
+  it('counts each facet across the other filters, and groups copies of one message', () => {
+    const page = queryLogs(records, { levels: ['warn'] });
+    expect(page.events.map((e) => e.message.slice(0, 6))).toEqual(['Page 9', 'Page 8', 'Page 5']);
+    expect(page.facets.level).toEqual({ warn: 3, error: 1, info: 1 });
+    expect(page.facets.kind).toEqual({ index: 3 });
+    expect(page.facets.space).toEqual({ OPS: 2, PEOPLE: 1 });
+    expect(page.groups).toEqual([
+      expect.objectContaining({ count: 3, kind: 'index', first: records[4].at, last: records[0].at }),
+    ]);
+  });
+
+  it('pages by time, and filters by text and space', () => {
+    const first = queryLogs(records, { limit: 2 });
+    expect(first.events).toHaveLength(2);
+    const second = queryLogs(records, { limit: 2, before: first.next });
+    expect(second.events.map((e) => e.message)).toEqual(['quota exceeded', 'synced 12 pages']);
+    expect(queryLogs(records, { text: 'QUOTA' }).events).toHaveLength(1);
+    expect(queryLogs(records, { spaceKey: 'PEOPLE' }).events).toHaveLength(2);
+  });
+
+  it('lists a failed AI request, but not a failed step that wrote its own warning, so a failure is said once', () => {
+    const span = (kind: string): TelemetryRecord =>
+      ({
+        type: 'span',
+        at: '2026-10-20T00:00:10.000Z',
+        traceId: 't',
+        spanId: kind,
+        kind,
+        name: kind === 'ai' ? 'complete' : 'page',
+        durationMs: 40,
+        outcome: 'error',
+        attrs: {},
+        error: 'rate limited',
+      }) as TelemetryRecord;
+    const page = queryLogs([span('index'), span('ai')], {});
+    expect(page.events.map((e) => e.kind)).toEqual(['ai']);
+    expect(page.events[0].message).toBe('complete failed after 40 ms: rate limited');
+  });
+
+  it('names a message by its pattern, without numbers or ids', () => {
+    expect(patternOf('Page 9 was not indexed: timeout after 120 s')).toBe(
+      patternOf('Page 5 was not indexed: timeout after 90 s'),
+    );
+  });
+});
+
+describe('the Observability routes', () => {
+  it('show what is happening now, the events, and one trace with its spans', async () => {
+    const app = await startTestApp(fake, (payload) => {
+      if (payload.system.includes('return a JSON object')) throw new Error('quota exceeded');
+      return 'answer';
+    });
+    try {
+      const { body: sync } = await app.call<{ jobId: string }>('POST', '/space-cache/sync', { spaceKey: 'PEOPLE' });
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+        const { body } = await app.call<{ status: string }>('GET', `/space-cache/sync/status/${sync.jobId}`);
+        if (body.status !== 'running' && body.status !== 'pending') break;
+      }
+      const { body: started } = await app.call<MetadataProgress>('POST', '/space-cache/PEOPLE/metadata/generate', {});
+      let run = started;
+      while (run.status === 'pending' || run.status === 'running') {
+        // eslint-disable-next-line no-await-in-loop -- as above
+        run = (await app.call<MetadataProgress>('GET', `/space-cache/metadata/status/${started.jobId}`)).body;
+      }
+      expect(run.failures?.[0].error).toBe('quota exceeded');
+      const logs = (
+        await app.call<{ facets: { kind: Record<string, number> }; groups: unknown[] }>(
+          'GET',
+          '/observe/logs?level=warn',
+        )
+      ).body;
+      expect(logs.facets.kind.index).toBe(run.errorCount);
+      expect(logs.groups).toHaveLength(1);
+      const trace = (await app.call<{ spans: SpanRecord[] }>('GET', `/observe/traces/${run.traceId}`)).body;
+      expect(trace.spans[0]).toMatchObject({ kind: 'job', name: 'meta' });
+      expect(trace.spans.filter((s) => s.kind === 'index' && s.outcome === 'error')).toHaveLength(run.errorCount);
+      const now = (await app.call<{ problems: Array<{ problem: string }>; jobs: unknown[] }>('GET', '/observe/now'))
+        .body;
+      expect(now.problems.map((p) => p.problem)).toContain('index-failures');
+      expect((await app.call('GET', '/observe/traces/not-a-trace')).status).toBe(400);
+    } finally {
+      await app.close();
     }
   });
 });

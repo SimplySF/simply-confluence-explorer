@@ -33,6 +33,7 @@ const healthy = (over: Partial<DoctorDeps> = {}): DoctorDeps => ({
   guardFiles: [{ spaceKey: 'PLAT', rules: 2 }],
   ai: { available: true, engine: 'Claude (claude-opus-5-5)' },
   license: () => Promise.resolve({ expired: false, expiryDate: 2 * HOUR }),
+  telemetry: { path: '/data/telemetry', problems: [] },
   now: 0,
   ...over,
 });
@@ -165,5 +166,22 @@ describe('the doctor', () => {
     const text = renderDoctor(await runDoctor(healthy({ connection: { baseUrl: '', token: '' } })));
     expect(text).toContain('confluence-config');
     expect(text).toMatch(/\d+ passed, 1 warning\(s\), 0 failure\(s\), 4 not applicable/);
+  });
+});
+
+describe('the problems telemetry raised', () => {
+  it('are listed with their trace ids, newest first, as a warning that does not fail the doctor', async () => {
+    const problems = Array.from({ length: 7 }, (_, i) => ({
+      at: `2026-10-20T0${9 - i}:00:00.000Z`,
+      message: `problem ${i}`,
+      traceId: `trace${i}`,
+    }));
+    const report = await runDoctor(healthy({ telemetry: { path: '/data/telemetry', problems } }));
+    const check = report.results.find((r) => r.id === 'telemetry')!;
+    expect(check.level).toBe('warn');
+    expect(check.summary).toContain('7 problems in the last day');
+    expect(check.summary).toContain('2026-10-20 09:00 problem 0 (trace trace0)');
+    expect(check.summary).not.toContain('problem 5');
+    expect(report.ok).toBe(true);
   });
 });

@@ -167,6 +167,7 @@ export type SyncProgress = {
   currentPageTitle?: string;
   startedAt?: string;
   completedAt?: string;
+  traceId?: string;
 };
 
 /** One entry in a space's table of contents. */
@@ -252,6 +253,7 @@ export type MetadataProgress = {
   currentPageTitle?: string;
   startedAt?: string;
   completedAt?: string;
+  traceId?: string;
 };
 
 /** What a conversation is about: one page, a page and everything below it, or a whole space. */
@@ -510,6 +512,7 @@ export type BatchProgress = {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   startedAt?: string;
   completedAt?: string;
+  traceId?: string;
   sessionId: string;
   spaceKey: string;
   kind: 'review' | 'changes';

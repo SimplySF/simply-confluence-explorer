@@ -23,6 +23,8 @@ export type JobRecord = {
   status: JobStatus;
   startedAt?: string;
   completedAt?: string;
+  /** The trace the job is recorded under, so a failure can be traced (ADR-054). */
+  traceId?: string;
 };
 
 const KEEP_FINISHED_MS = 60 * 60 * 1000;
@@ -52,7 +54,16 @@ export class JobRunner<J extends JobRecord> {
     // Each job is a trace of its own, linked to the request that started it, because it outlives it.
     const startedBy = this.tracer.current()?.traceId;
     this.tracer
-      .span('job', this.prefix, { jobId, ...(startedBy ? { startedBy } : {}) }, () => work(job), { root: true })
+      .span(
+        'job',
+        this.prefix,
+        { jobId, ...(startedBy ? { startedBy } : {}) },
+        (span) => {
+          job.traceId = span.traceId;
+          return work(job);
+        },
+        { root: true },
+      )
       .catch((error: unknown) => {
         if (job.status === 'cancelled') return;
         job.status = 'failed';

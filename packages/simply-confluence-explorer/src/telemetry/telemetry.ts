@@ -20,49 +20,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { errorMessage } from '../util/errors.js';
+import type { LiveJob, MetricRecord, ProblemRecord, TelemetryRecord } from './records.js';
 import type { ActiveSpan, Attrs, Level, Metric, Outcome, ProblemKind, SpanKind, Tracer } from './tracer.js';
 
 // The app's traces, logs and health numbers, kept on this machine (ADR-054, design doc 0008). Records
 // are JSON lines in one file per day under `<data dir>/telemetry/`, written in batches so recording
 // never waits on the disk, and read newest first by the Observability page.
 
-export type SpanRecord = {
-  type: 'span';
-  at: string;
-  traceId: string;
-  spanId: string;
-  parentId?: string;
-  kind: SpanKind;
-  name: string;
-  durationMs: number;
-  outcome: Outcome;
-  attrs: Attrs;
-  error?: string;
-};
-export type LogRecord = {
-  type: 'log';
-  at: string;
-  level: Level;
-  kind: SpanKind;
-  message: string;
-  traceId?: string;
-  spanId?: string;
-  attrs?: Attrs;
-};
-export type MetricRecord = { type: 'metric'; at: string; values: Record<string, number> };
-export type ProblemRecord = { type: 'problem'; at: string; problem: ProblemKind; message: string; traceId?: string };
-export type TelemetryRecord = SpanRecord | LogRecord | MetricRecord | ProblemRecord;
-
-/** Work running in the background, as the Observability page lists it. */
-export type LiveJob = {
-  jobId: string;
-  kind: string;
-  label: string;
-  processed: number;
-  total: number;
-  startedAt?: string;
-  current?: string;
-};
+export type { LiveJob, LogRecord, MetricRecord, ProblemRecord, SpanRecord, TelemetryRecord } from './records.js';
 
 export type TelemetryOptions = {
   dataDir: string;
@@ -207,7 +172,8 @@ export class Telemetry implements Tracer {
     const now = Date.now();
     return {
       jobs: [...this.jobSources].flatMap((source) => source()),
-      inflight: [...this.inflight.values()].map((r) => ({ ...r, ms: now - r.start })),
+      // Only requests that have waited a while: the page's own quick checks are not worth listing.
+      inflight: [...this.inflight.values()].map((r) => ({ ...r, ms: now - r.start })).filter((r) => r.ms >= 1000),
       lagMs: this.lagNow,
       points: this.points.filter((p) => now - Date.parse(p.at) <= DAY),
       problems: this.problems.slice(-20),

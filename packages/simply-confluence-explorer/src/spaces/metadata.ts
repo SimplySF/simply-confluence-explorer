@@ -275,7 +275,12 @@ export class MetadataPipeline {
           { pageId: page.id, title: page.title, error: errorMessage(error) },
         ].slice(-200);
         this.tracer.count('index.failures');
-        this.tracer.log('warn', 'index', `${page.title} was not indexed: ${errorMessage(error)}`, { pageId: page.id });
+        // The reason alone is the message, so copies of one failure group together; the page is an attribute.
+        this.tracer.log('warn', 'index', `A page was not indexed: ${errorMessage(error)}`, {
+          pageId: page.id,
+          title: page.title,
+          spaceKey,
+        });
       }
       job.processed++;
     }

@@ -20,6 +20,7 @@
 
 import type { BatchProgress, BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
 import { api, batches, branches, type Chosen } from './api.js';
+import { observe } from './observe.svelte.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
@@ -119,6 +120,9 @@ class Jobs {
                 ? `${job(q).label}: the suggestions are ready.`
                 : `${job(q).label}: ${q.error ?? q.status}.`,
               q.status === 'completed' ? 'success' : 'error',
+              q.status === 'failed' && q.traceId
+                ? { label: 'See why', run: () => observe.show('trace', { traceId: q.traceId }) }
+                : undefined,
             );
           this.finish(job(q), q.status);
         },
@@ -250,11 +254,16 @@ class Jobs {
       pollJob(() => api.metadataStatus(p.jobId), {
         onProgress: (q) => this.put(job(q)),
         onFinished: (q) => {
+          // A run that left pages out leads to its trace, where each page's reason is recorded.
+          const failed = q.errorCount > 0 || q.status === 'failed';
           toast(
             q.status === 'completed'
               ? `${job(q).label}: done${q.errorCount ? `, ${q.errorCount} failed` : ''}.`
               : `${job(q).label}: ${q.status}.`,
-            q.status === 'completed' ? 'success' : 'info',
+            failed ? 'error' : q.status === 'completed' ? 'success' : 'info',
+            failed && q.traceId
+              ? { label: 'See why', run: () => observe.show('trace', { traceId: q.traceId }) }
+              : undefined,
           );
           this.finish(job(q), q.status);
         },

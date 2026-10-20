@@ -38,6 +38,7 @@ import { addBranchRoutes } from './branches.js';
 import { addBrowseRoutes } from './browse.js';
 import { addDraftRoutes } from './drafts.js';
 import { addPageRoutes } from './pages.js';
+import { addObserveRoutes } from './observe.js';
 import { addSessionRoutes } from './sessions.js';
 import { addSpaceRoutes } from './spaces.js';
 
@@ -116,6 +117,7 @@ export function createApi(services: Services): Router {
     addPageRoutes,
     addBranchRoutes,
     addDraftRoutes,
+    addObserveRoutes,
   ])
     add(router, services);
   return router;

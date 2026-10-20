@@ -42,6 +42,8 @@ import type {
   SyncProgress,
   TaggedPages,
 } from '../../../src/api/types.js';
+import type { LogPage, ObservedEvent } from '../../../src/telemetry/query.js';
+import type { LiveJob, MetricRecord, ProblemRecord, SpanRecord } from '../../../src/telemetry/records.js';
 
 const key = encodeURIComponent;
 
@@ -187,6 +189,20 @@ export const sessions = {
 };
 
 const RUNS = '/branches/runs';
+
+/** What the app has recorded about itself, for the Observability page (design doc 0008). */
+export const observability = {
+  now: () => call<ObserveNow>('/observe/now'),
+  logs: (params: Record<string, string>) => call<LogPage>(`/observe/logs?${new URLSearchParams(params).toString()}`),
+  trace: (traceId: string) => call<{ spans: SpanRecord[]; events: ObservedEvent[] }>(`/observe/traces/${key(traceId)}`),
+};
+export type ObserveNow = {
+  jobs: LiveJob[];
+  inflight: Array<{ method: string; path: string; ms: number; traceId: string }>;
+  lagMs: { p50: number; max: number };
+  points: MetricRecord[];
+  problems: ProblemRecord[];
+};
 
 /** Batched reviews of more pages than one request carries. */
 export const batches = {

@@ -10,6 +10,7 @@
 
 <script lang="ts">
   import {
+    Activity,
     Check,
     Clock,
     Code2,
@@ -28,6 +29,7 @@
   import { sessions } from '../support/api.js';
   import type { AiChat } from '../support/chat.svelte.js';
   import { jobs } from '../support/jobs.svelte.js';
+  import { observe } from '../support/observe.svelte.js';
   import { readLabel } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChangeQueue from './ChangeQueue.svelte';
@@ -176,6 +178,15 @@
             {t.engine || 'AI'} · {new Date(t.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
           <span class="chat-msg-tools">
+            {#if t.traceId}
+              <button
+                class="btn btn-secondary btn-xs"
+                title="How this answer was made: what was searched, what was sent, and how long each step took"
+                onclick={() => observe.show('trace', { traceId: t.traceId })}
+              >
+                <Activity size={11} /> Trace
+              </button>
+            {/if}
             <button class="btn btn-secondary btn-xs" onclick={() => (raw[i] = !raw[i])}>
               <Code2 size={11} />
               {raw[i] ? 'Formatted' : 'Markdown'}
