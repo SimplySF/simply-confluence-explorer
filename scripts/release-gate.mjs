@@ -134,6 +134,18 @@ export const REVIEW_GUIDE = [
         check:
           'It accepts only a `GuardedPayload`, the type the outbound guard produces, so unchecked text cannot be sent.',
       },
+      {
+        file: `${SRC}/ai/providers.ts`,
+        symbol: 'embed',
+        check:
+          'Sends section text for embeddings, again only as a `GuardedPayload`, and only to OpenAI or Gemini; Claude and the Gemini CLI offer none, so nothing is sent.',
+      },
+      {
+        file: `${SRC}/branches/corpusReview.ts`,
+        symbol: 'CorpusReviews',
+        check:
+          'A review of more pages than one request carries sends each batch only after `contextCollector` has left out excluded pages and pages holding a secret. A stopped run writes nothing.',
+      },
     ],
   },
   {
@@ -146,8 +158,14 @@ export const REVIEW_GUIDE = [
           'Secrets such as keys and passwords stop the request; personal data such as email addresses and card numbers is replaced with placeholders.',
       },
       {
+        file: `${SRC}/ai/guard.ts`,
+        symbol: 'inspectTexts',
+        check: 'For embeddings, a text holding a secret is not sent at all, and personal data is replaced.',
+      },
+      {
         file: `${SRC}/ai/engine.ts`,
-        check: 'Runs the guard. No path to an AI skips it.',
+        check:
+          'Runs the guard on every question and every embedding request, and records each in the audit log. No path to an AI skips it.',
       },
     ],
   },
@@ -197,7 +215,8 @@ export const REVIEW_GUIDE = [
       {
         file: `${SRC}/spaces/spaceStore.ts`,
         symbol: 'removePage',
-        check: "Every path it deletes is inside that space's folder.",
+        check:
+          "Every path it deletes, including the page's AI index entry and embeddings, is inside that space's folder.",
       },
     ],
   },
@@ -228,8 +247,15 @@ export const REVIEW_GUIDE = [
         check: 'Refuses a page whenever it cannot confirm the page is allowed, rather than sending it.',
       },
       {
+        file: `${SRC}/spaces/corpus.ts`,
+        symbol: 'corpusPages',
+        check:
+          'Works out the pages a chat reads from on every turn, so a page excluded after it was chosen is no longer read.',
+      },
+      {
         file: `${SRC}/spaces/contextRetriever.ts`,
-        check: 'Leaves excluded pages out of what is sent with a question about a whole space.',
+        check:
+          'Sends a large chat only the sections it chose, and only their headings and summaries while choosing; a chat read in full goes through `contextCollector`, which leaves excluded pages out.',
       },
       { file: `${SRC}/routes/browse.ts`, check: 'Hides excluded pages from the page tree and refuses to serve them.' },
     ],
