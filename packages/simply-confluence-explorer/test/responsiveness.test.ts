@@ -27,6 +27,7 @@ import type { AiSessionView } from '../src/api/types.js';
 import { createServer } from '../src/server.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
+import { metadataReply } from './support/testApp.js';
 
 const PAGES = 3200;
 const WORDS =
@@ -66,6 +67,7 @@ function generatedSpace(): string {
 describe('a 3,200-page space', () => {
   it('is indexed and asked about without the server stopping answering, which once froze it for minutes', async () => {
     const dataDir = generatedSpace();
+    let indexRequests = 0;
     const server: http.Server = createServer({
       webRoot: dataDir,
       dataDir,
@@ -75,7 +77,11 @@ describe('a 3,200-page space', () => {
         ANTHROPIC_API_KEY: 'k',
         AI_PROVIDER: 'anthropic',
       },
-      aiTransport: () => Promise.resolve('an answer'),
+      aiTransport: (payload) => {
+        if (!payload.system.includes('return a JSON object')) return Promise.resolve('an answer');
+        indexRequests++;
+        return Promise.resolve(metadataReply(payload, { summary: 'A page about operations.', tags: ['ops'] }));
+      },
       telemetryTimers: false,
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -106,6 +112,20 @@ describe('a 3,200-page space', () => {
         // eslint-disable-next-line no-await-in-loop -- asks again until the index is built, as the chat does
         coverage = await post('/space-cache/BIG/metadata/coverage', {});
       }
+      // The AI index packs several pages into each request, so 3,200 pages take a few hundred.
+      const run = await post<{ jobId: string }>('/space-cache/BIG/metadata/generate', {});
+      let status = 'running';
+      while (status === 'running' || status === 'pending') {
+        // eslint-disable-next-line no-await-in-loop -- polls until the run ends, as the header does
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        // eslint-disable-next-line no-await-in-loop -- as above
+        const response = await fetch(`${base}/space-cache/metadata/status/${run.jobId}`);
+        // eslint-disable-next-line no-await-in-loop -- as above
+        status = ((await response.json()) as { status: string }).status;
+      }
+      expect(status).toBe('completed');
+      expect(await post('/space-cache/BIG/metadata/coverage', {})).toMatchObject({ missing: 0 });
+      expect(indexRequests).toBeLessThanOrEqual(PAGES / 5);
       const chat = await post<AiSessionView>('/ai/sessions', { scope: { kind: 'space', spaceKey: 'BIG' } });
       const answered = await post<AiSessionView>(`/ai/sessions/${chat.id}/messages`, {
         prompt: 'how do I roll back a failed deploy?',
