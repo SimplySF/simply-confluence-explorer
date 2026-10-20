@@ -17,6 +17,7 @@
 import type { PageDetail, SpaceTocNode } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
+import { frontmatterOf } from '../parser/convert.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SearchIndex } from './searchIndex.js';
@@ -129,20 +130,29 @@ function outlineOf(key: string, deps: RetrieverDeps): string {
 }
 
 /**
- * About how many characters reading every page would take, from the section index, so deciding
- * whether a corpus fits does not convert every page. Each section counts its heading too.
+ * About how many characters reading every page would take: each page's frontmatter and its sections
+ * from the section index, each with its heading, so deciding whether a corpus fits does not convert
+ * every page.
  */
 export function corpusSize(spaceKey: string, pages: PageDetail[], index: SearchIndex): number {
-  return pages.reduce((n, p) => n + index.sectionsOf(spaceKey, p.id).reduce((m, s) => m + s.text.length + 20, 0), 0);
+  return pages.reduce(
+    (n, p) =>
+      n + frontmatterOf(p).length + index.sectionsOf(spaceKey, p.id).reduce((m, s) => m + s.text.length + 20, 0),
+    0,
+  );
 }
 
 type Candidate = { id: string; summary?: string; line: string };
 type Chosen = Array<{ id: string; why?: string }>;
 
-/** Reads a corpus that fits in one request, each page checked by `contextCollector`. */
-function readInFull(key: string, pages: PageDetail[], deps: RetrieverDeps, budget: number): RetrievedContext {
+/**
+ * Reads a corpus that fits in one request, each page checked by `contextCollector`; `null` when a page
+ * would be left out for size after all, so the corpus is retrieved from rather than read in part.
+ */
+function readInFull(key: string, pages: PageDetail[], deps: RetrieverDeps, budget: number): RetrievedContext | null {
   const { consider, result } = contextCollector(key, deps, deps.dataDir, budget);
   pages.forEach(consider);
+  if (result.overflow.length > 0) return null;
   return {
     contextMarkdown: result.pages.length
       ? result.pages.map((p) => `## [Page: ${p.page.title}]\n${p.markdown}`).join('\n\n---\n\n')
@@ -236,7 +246,8 @@ export async function retrieveContext(
 ): Promise<RetrievedContext> {
   const key = spaceKey.toUpperCase();
   const budget = options.budget ?? CONTEXT_CHAR_LIMIT;
-  if (corpusSize(key, pages, deps.index) <= budget) return readInFull(key, pages, deps, budget);
+  const whole = corpusSize(key, pages, deps.index) <= budget ? readInFull(key, pages, deps, budget) : null;
+  if (whole) return whole;
 
   const byId = new Map(pages.map((p) => [p.id, p]));
   const candidates = await candidatesFor(key, byId, [query.question, query.previous].filter(Boolean).join(' '), deps);

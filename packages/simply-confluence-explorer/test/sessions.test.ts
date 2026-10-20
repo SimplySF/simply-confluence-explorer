@@ -572,7 +572,7 @@ test('a review of more pages than one request carries reads them in batches and 
         : 'an answer';
     },
     {},
-    { contextChars: RETRIEVING },
+    { contextChars: 900 },
   );
   try {
     await syncSpace(app, 'PEOPLE');
@@ -583,6 +583,7 @@ test('a review of more pages than one request carries reads them in batches and 
     });
     assert.ok(started.body.batch, 'a batch job is started');
     const done = await finished(app, started.body.batch.jobId);
+    // The limit is above any one page of the space and below all of them together.
     assert.equal(done.status, 'completed');
     assert.ok(done.total > 1, `${done.total} batches`);
     const sent = app.sent.slice(before);
@@ -654,4 +655,20 @@ test('stopping a batched review ends it and leaves nothing in the conversation',
   } finally {
     await app.close();
   }
+});
+
+test('a corpus judged to fit is never read with pages left out for size; it is retrieved from instead', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const { context } = await retriever(app);
+    // Budgets around the size of the pages' text alone, which leaves out the frontmatter each page carries.
+    for (const budget of [300, 400, 600, 900, 1500, 2500, 4000]) {
+      // eslint-disable-next-line no-await-in-loop -- each budget is checked in turn
+      const r = await context({ question: 'policy remote travel' }, budget);
+      assert.ok(
+        !(r.corpus.mode === 'full' && r.overflow.length > 0),
+        `${budget}: read in part: ${r.overflow.join(', ')}`,
+      );
+    }
+  });
 });

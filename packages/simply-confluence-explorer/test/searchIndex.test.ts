@@ -141,3 +141,27 @@ describe('the search index', () => {
     expect(ids(index, 'rotates vault')).toEqual(['3']);
   });
 });
+
+describe('reading a corpus in full', () => {
+  it('retrieves instead when the pages turn out larger than estimated, rather than leaving some out', async () => {
+    const { retrieveContext, corpusSize } = await import('../src/spaces/contextRetriever.js');
+    const { store, index, dataDir } = setup();
+    const long = page('9', 'Headings', '');
+    // Long headings count for little in the estimate but take their full length when the page is read.
+    long.storageXml = Array.from({ length: 8 }, (_, i) => `<h2>${'Heading words '.repeat(12)}${i}</h2><p>x</p>`).join(
+      '',
+    );
+    store.writePage('PLAT', long, '', []);
+    const pages = store.visiblePages('PLAT');
+    const exclusions = new ExclusionManager(dataDir, () => undefined);
+    const budget = corpusSize('PLAT', pages, index) + 50;
+    const r = await retrieveContext(
+      'PLAT',
+      pages,
+      { question: 'heading words' },
+      { store, exclusions, index, dataDir },
+      { budget },
+    );
+    expect(r.corpus.mode).toBe('retrieved');
+  });
+});
