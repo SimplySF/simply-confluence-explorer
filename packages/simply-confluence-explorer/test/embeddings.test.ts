@@ -76,6 +76,27 @@ describe('embedding texts', () => {
     expect(stubbed.embeddingModel()).toBeNull();
   });
 
+  it('embeds with the provider chosen for it, whatever answers questions, only when its key is set', async () => {
+    const cli = (embeddings?: string, env: NodeJS.ProcessEnv = { GEMINI_API_KEY: 'k' }): ReturnType<typeof engine> => {
+      const made = engine({ AI_PROVIDER: 'gemini-cli', ...env });
+      if (embeddings) made.ai.settings.update({ embeddings: embeddings as never });
+      return made;
+    };
+    expect(cli().ai.embeddingModel()).toBeNull();
+    expect(cli('openai', { OPENAI_API_KEY: 'k' }).ai.embeddingModel()).toBe('text-embedding-3-small');
+    expect(cli('openai').ai.embeddingModel()).toBeNull();
+    const chosen = cli('gemini');
+    expect(chosen.ai.embeddingModel()).toBe('gemini-embedding-001');
+    expect(await chosen.ai.embed(['Deploy steps.'], {})).toHaveLength(1);
+    expect(chosen.sent).toHaveLength(1);
+    const audit = fs.readFileSync(path.join(chosen.dataDir, 'data', 'ai-audit.jsonl'), 'utf8');
+    expect(JSON.parse(audit.trim())).toMatchObject({ engine: 'gemini embeddings (gemini-embedding-001)' });
+    const { ai: off } = engine({ OPENAI_API_KEY: 'k', AI_PROVIDER: 'openai' });
+    off.settings.update({ embeddings: 'none' });
+    expect(off.embeddingModel()).toBeNull();
+    expect(() => off.settings.update({ embeddings: 'anthropic' as never })).toThrow(/embeddings must be one of/);
+  });
+
   it('leaves out a text holding a secret, replaces personal data, and records the request', async () => {
     const { ai, sent, dataDir } = engine({ OPENAI_API_KEY: 'k', AI_PROVIDER: 'openai' });
     const vectors = await ai.embed(['Ask jane.doe@example.com.', `The key is ${AWS_KEY}.`, 'Deploy.'], {});

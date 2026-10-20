@@ -194,9 +194,8 @@ export class ConfiguredAi implements AiEngine {
 
   public embeddingModel(): string | null {
     if (this.options.transport) return this.options.embedTransport ? 'stand-in' : null;
-    const s = this.settings.resolve();
-    if (s.provider === 'gemini-cli' || !s.api[s.provider].apiKey) return null;
-    return EMBEDDING_MODELS[s.provider] ?? null;
+    const provider = this.embeddingProvider();
+    return provider ? (EMBEDDING_MODELS[provider] ?? null) : null;
   }
 
   /**
@@ -216,7 +215,7 @@ export class ConfiguredAi implements AiEngine {
         .filter((i) => !skipped.includes(i));
       if (ctx.signal?.aborted) throw new AiStopped();
       const entry = {
-        engine: `${this.getEngine()} embeddings (${model})`,
+        engine: `${this.options.transport ? this.getEngine() : (this.embeddingProvider() ?? 'no provider')} embeddings (${model})`,
         spaceKey: ctx.spaceKey ?? null,
         chars: payload.messages.reduce((n, m) => n + m.content.length, 0),
         texts: sent.length,
@@ -239,11 +238,24 @@ export class ConfiguredAi implements AiEngine {
     return vectors;
   }
 
+  /**
+   * The provider that embeds sections: the one chosen for embeddings, or the chat provider when it
+   * makes them, provided its key is set. Answers still come from the chat provider, so a Gemini CLI
+   * user can search by meaning with a Gemini or OpenAI key (design doc 0008).
+   */
+  private embeddingProvider(): ApiProvider | null {
+    const s = this.settings.resolve();
+    if (s.embeddings === 'none') return null;
+    const provider = s.embeddings === 'chat' ? s.provider : s.embeddings;
+    if (provider === 'gemini-cli' || !EMBEDDING_MODELS[provider] || !s.api[provider].apiKey) return null;
+    return provider;
+  }
+
   private sendEmbed(payload: GuardedPayload, signal?: AbortSignal): Promise<number[][]> {
     if (this.options.embedTransport) return this.options.embedTransport(payload, signal);
-    const s = this.settings.resolve();
-    if (s.provider === 'gemini-cli') throw new Error('the Gemini CLI offers no embeddings');
-    return embed(s.provider, s.api[s.provider], payload, signal);
+    const provider = this.embeddingProvider();
+    if (!provider) throw new Error('no provider is set to make embeddings');
+    return embed(provider, this.settings.resolve().api[provider], payload, signal);
   }
 
   private async send(payload: GuardedPayload, signal?: AbortSignal): Promise<Reply> {

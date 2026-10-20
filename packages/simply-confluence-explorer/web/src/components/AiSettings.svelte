@@ -1,6 +1,6 @@
 <script lang="ts">
   import { List, Save, Sparkles, Zap } from '@lucide/svelte';
-  import type { AiProvider, AiSettingsView } from '../../../src/api/types.js';
+  import type { AiEmbeddings, AiProvider, AiSettingsView } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
 
@@ -23,11 +23,23 @@
   let apiKey = $state('');
   let cliPath = $state('');
   let parallel = $state(2);
+  let embeddings = $state<AiEmbeddings>('chat');
+  let embedKey = $state('');
   let models = $state<string[]>([]);
   let message = $state('');
 
   const isApi = $derived(provider !== 'gemini-cli');
   const status = $derived(view && provider !== 'gemini-cli' ? view.providers[provider] : null);
+  // A provider chosen for embeddings other than the chat provider needs its own key.
+  const embedOwn = $derived(
+    embeddings === 'openai' || embeddings === 'gemini' ? (embeddings === provider ? null : embeddings) : null,
+  );
+  const EMBEDDINGS: Array<{ id: AiEmbeddings; label: string }> = [
+    { id: 'chat', label: 'The provider above, when it offers them' },
+    { id: 'gemini', label: 'Gemini API (needs a Gemini key)' },
+    { id: 'openai', label: 'OpenAI API (needs an OpenAI key)' },
+    { id: 'none', label: 'Off: search by words only' },
+  ];
 
   function load(v: AiSettingsView, chosen: AiProvider = v.provider): void {
     view = v;
@@ -37,6 +49,8 @@
     baseUrl = settings?.baseUrl ?? '';
     cliPath = v.geminiCli.path;
     parallel = v.parallel;
+    embeddings = v.embeddings;
+    embedKey = '';
     apiKey = '';
     models = [];
   }
@@ -52,8 +66,9 @@
   async function save(): Promise<void> {
     message = '';
     try {
-      const update: Record<string, unknown> = { provider, parallel: Number(parallel) };
+      const update: Record<string, unknown> = { provider, parallel: Number(parallel), embeddings };
       if (isApi) update[provider] = { model, baseUrl, ...(apiKey ? { apiKey } : {}) };
+      if (embedOwn && embedKey) update[embedOwn] = { apiKey: embedKey };
       else update.geminiCli = { path: cliPath };
       load(await api.saveAiSettings(update), provider);
       message = 'Saved.';
@@ -190,6 +205,30 @@
           />
         </div>
       {/if}
+
+      <div class="form-group">
+        <label class="form-label" for="ai-embeddings">Search by meaning</label>
+        <select id="ai-embeddings" class="form-input" bind:value={embeddings}>
+          {#each EMBEDDINGS as e (e.id)}<option value={e.id}>{e.label}</option>{/each}
+        </select>
+        <div class="muted field-note">
+          Embeddings let a question find sections that use other words for the same thing. Claude and the Gemini CLI
+          make none, so another provider can make them while answers still come from the one above. Section text is sent
+          to it through the leak guard when a space is indexed.
+        </div>
+        {#if embedOwn}
+          <input
+            class="form-input"
+            type="password"
+            autocomplete="off"
+            aria-label="{embedOwn === 'gemini' ? 'Gemini' : 'OpenAI'} API key for embeddings"
+            placeholder={view.providers[embedOwn].keySet
+              ? `Leave blank to keep the ${embedOwn === 'gemini' ? 'Gemini' : 'OpenAI'} key`
+              : `Paste a ${embedOwn === 'gemini' ? 'Gemini' : 'OpenAI'} API key`}
+            bind:value={embedKey}
+          />
+        {/if}
+      </div>
 
       <div class="row">
         <button type="button" class="btn btn-primary btn-sm" onclick={save}><Save size={13} /> Save AI settings</button>

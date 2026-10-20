@@ -202,7 +202,15 @@ export type AiSettingsView = {
   geminiCliFound: string | null;
   /** How many requests the AI index sends at once. */
   parallel: number;
+  /** Which provider embeds sections for search by meaning (design doc 0008). */
+  embeddings: AiEmbeddings;
 };
+
+/**
+ * Who embeds sections for search by meaning: the chat provider when it can (`chat`), the OpenAI or
+ * Gemini API with its own key whatever answers questions, or nobody (`none`).
+ */
+export type AiEmbeddings = 'chat' | 'openai' | 'gemini' | 'none';
 
 /** What the outbound guard did to a request: what it blocked and how much personal data it replaced. */
 export type GuardReport = {

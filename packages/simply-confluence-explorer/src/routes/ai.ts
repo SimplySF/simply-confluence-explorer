@@ -90,6 +90,8 @@ function settingsUpdate(body: unknown): SettingsUpdate {
     if (typeof fields.parallel !== 'number') throw new Error('parallel must be a number');
     update.parallel = fields.parallel;
   }
+  const embeddings = text(fields.embeddings, 'embeddings');
+  if (embeddings !== undefined) update.embeddings = embeddings as SettingsUpdate['embeddings'];
   return update;
 }
 
