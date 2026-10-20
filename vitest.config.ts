@@ -31,13 +31,26 @@ const packagesDir = fileURLToPath(new URL('./packages/', import.meta.url));
 // Each package also gets an `<name>-e2e` project for its end-to-end suite (test/e2e/*.e2e.ts). It is
 // kept out of the unit project, so `pnpm test` never needs the Confluence test environment, and its
 // files run one at a time because they share that one environment.
+// A package that gives each run its own temporary folder, deleted afterwards, names its setup here.
+const tempRoot = (root: string): string[] =>
+  fs.existsSync(`${root}test/support/tempRoot.ts`) ? [`${root}test/support/tempRoot.ts`] : [];
+
 const packageProjects = fs
   .readdirSync(packagesDir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .flatMap((entry) => {
     const root = fileURLToPath(new URL(`./packages/${entry.name}/`, import.meta.url));
     return [
-      { test: { name: entry.name, root, globals: true, environment: 'node', include: ['test/**/*.test.ts'] } },
+      {
+        test: {
+          name: entry.name,
+          root,
+          globals: true,
+          environment: 'node',
+          include: ['test/**/*.test.ts'],
+          globalSetup: tempRoot(root),
+        },
+      },
       {
         test: {
           name: `${entry.name}-e2e`,
@@ -46,6 +59,7 @@ const packageProjects = fs
           environment: 'node',
           include: ['test/e2e/**/*.e2e.ts'],
           fileParallelism: false,
+          globalSetup: tempRoot(root),
           testTimeout: 120_000,
           hookTimeout: 120_000,
         },
