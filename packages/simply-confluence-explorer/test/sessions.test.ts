@@ -717,3 +717,14 @@ test('a batch whose reply cannot be read is asked again, then named as not revie
     await app.close();
   }
 });
+
+test('an answer built on pages that share few words with the question says its matches are weak', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const c = await spaceChat(app);
+    const weak = await ask(app, c.id, 'zebra quantum festival tickets');
+    assert.equal(weak.turns.at(-1)?.weakMatch, true);
+    const strong = await ask(app, c.id, 'Which flights can be booked in economy?');
+    assert.equal(strong.turns.at(-1)?.weakMatch, undefined);
+  }, RETRIEVING);
+});

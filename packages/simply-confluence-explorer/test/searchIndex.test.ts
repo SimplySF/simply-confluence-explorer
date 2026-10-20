@@ -22,7 +22,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { PageDetail } from '../src/api/types.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
-import { SearchIndex, tokens } from '../src/spaces/searchIndex.js';
+import { SearchIndex, stem, tokens } from '../src/spaces/searchIndex.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 
 const page = (id: string, title: string, body: string, version = 1): PageDetail => ({
@@ -52,8 +52,19 @@ function setup(): { store: SpaceStore; index: SearchIndex; dataDir: string } {
 const ids = (index: SearchIndex, query: string): string[] => index.search('PLAT', query).map((h) => h.pageId);
 
 describe('the search index', () => {
-  it('leaves out short and common words', () => {
-    expect(tokens('How to fail over the DB, and promote it')).toEqual(['fail', 'promote']);
+  it('leaves out short and common words, and compares words by their stem', () => {
+    expect(tokens('How to fail over the DB, and promote it')).toEqual(['fail', 'promot']);
+    expect(new Set(['rolled', 'rolling', 'rolls', 'roll'].map(stem)).size).toBe(1);
+    expect(stem('billed')).toBe(stem('billing'));
+    expect(stem('spiked')).toBe(stem('spike'));
+    expect(stem('policies')).toBe(stem('policy'));
+    expect(stem('stopped')).toBe(stem('stop'));
+  });
+
+  it('finds a page by another form of the word it uses', () => {
+    const { index } = setup();
+    // Page 1 says "Promote the replica"; the question asks about promoting replicas.
+    expect(ids(index, 'promoting replicas')[0]).toBe('1');
   });
 
   it('ranks a page whose title matches above one that only mentions the words', () => {

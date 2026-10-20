@@ -2881,3 +2881,7 @@ div.disclosure-body {
     grid-template-columns: 1fr;
   }
 }
+.chat-weak {
+  margin: 0.35rem 0;
+  font-size: 0.8rem;
+}

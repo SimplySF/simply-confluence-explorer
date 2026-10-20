@@ -203,6 +203,12 @@
             {t.guardSummary}
           </div>
         {/if}
+        {#if t.weakMatch}
+          <div class="alert alert-warning chat-weak">
+            Weak matches: the pages found share few words with the question, so this answer may not be about it. Try
+            naming the system or page, or choose the pages to read under Reading.
+          </div>
+        {/if}
         {#if t.sent}
           {@const lines = sentLines(t.sent)}
           <details class="chat-read">

@@ -319,6 +319,8 @@ export type SessionTurn = {
   sent?: ManifestSummary;
   /** The model stopped before finishing this answer. */
   cutOff?: 'length' | 'blocked';
+  /** The sections found shared few of the question's words, so the answer may not be about it. */
+  weakMatch?: boolean;
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
   /** On a co-writer's answer: a proposed series, an overview page then its child pages. */

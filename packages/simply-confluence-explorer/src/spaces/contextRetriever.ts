@@ -51,6 +51,8 @@ export type RetrievedContext = {
   considered: number;
   /** How many pages the chat reads from, and whether they were read in full or retrieved from. */
   corpus: { pages: number; mode: 'full' | 'retrieved' };
+  /** The sections found share few of the question's words, so the answer may not be about it. */
+  weak?: boolean;
 };
 
 export type ContextQuery = {
@@ -77,6 +79,8 @@ const CANDIDATES = 40;
 const CHOSEN = 12;
 /** Reciprocal rank fusion's constant: a lower rank in one list still counts for something. */
 const RRF_K = 60;
+/** The share of a question's words the best section must hold for the match not to count as weak. */
+const WEAK_COVER = 0.5;
 
 const CHOOSE_PROMPT = `You are choosing which sections of Confluence pages to read before answering a question.
 The question, and the question before it if any, come first; then a catalogue of candidate sections, one per line, with each section's id, its page's title, the page's place in the space, the section's heading, and a summary.
@@ -174,16 +178,22 @@ async function candidatesFor(
   key: string,
   byId: Map<string, PageDetail>,
   text: string,
+  question: string,
   deps: RetrieverDeps,
-): Promise<Candidate[]> {
-  const keyword = deps.index.searchSections(key, text, CANDIDATES, new Set(byId.keys())).map((h) => refKey(h.section));
+): Promise<{ candidates: Candidate[]; weak: boolean }> {
+  const hits = deps.index.searchSections(key, text, CANDIDATES, new Set(byId.keys()));
+  const keyword = hits.map((h) => refKey(h.section));
   let semantic: string[] = [];
   const model = deps.ai?.embeddingModel?.();
   if (model && deps.ai?.embed && deps.vectors) {
     const [vector] = await deps.ai.embed([text], { spaceKey: key, signal: deps.signal });
     if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, CANDIDATES).map(refKey);
   }
-  return fuse([keyword, semantic], CANDIDATES).flatMap((id) => {
+  // Weak when even the best section holds under half of this question's words, the one before it
+  // aside, and nothing matched by meaning: the answer may rest on pages that are not about it.
+  const best = deps.index.searchSections(key, question, 1, new Set(byId.keys()))[0];
+  const weak = (best?.covers ?? 0) < WEAK_COVER && semantic.length === 0;
+  const candidates = fuse([keyword, semantic], CANDIDATES).flatMap((id) => {
     const [pageId, index] = id.split('#');
     const section = sectionAt(key, deps, pageId, Number(index));
     const page = byId.get(pageId);
@@ -200,6 +210,7 @@ async function candidatesFor(
       },
     ];
   });
+  return { candidates, weak };
 }
 
 /** The AI's choice among the candidates, from their summaries, or `null` when it was not asked or not understood. */
@@ -256,7 +267,13 @@ export async function retrieveContext(
 
   await pause();
   const byId = new Map(pages.map((p) => [p.id, p]));
-  const candidates = await candidatesFor(key, byId, [query.question, query.previous].filter(Boolean).join(' '), deps);
+  const { candidates, weak } = await candidatesFor(
+    key,
+    byId,
+    [query.question, query.previous].filter(Boolean).join(' '),
+    query.question,
+    deps,
+  );
   let chosen: Chosen =
     (await choose(key, query, candidates, deps)) ?? candidates.slice(0, CHOSEN).map((c) => ({ id: c.id }));
   // A question that matches nothing still gets an answer from a few pages, rather than none.
@@ -288,6 +305,7 @@ export async function retrieveContext(
     contextMarkdown: `# Sections read from ${pages.length} pages\n\n${outline}${read.contextMarkdown}`,
     considered: candidates.length,
     corpus: { pages: pages.length, mode: 'retrieved' },
+    ...(weak ? { weak } : {}),
   };
 }
 

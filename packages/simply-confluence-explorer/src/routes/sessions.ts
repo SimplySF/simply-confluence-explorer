@@ -133,6 +133,7 @@ type TurnContext = {
   matchedPages?: SessionTurn['matchedPages'];
   considered?: number;
   corpus?: SessionTurn['corpus'];
+  weak?: boolean;
   /** Every page the chat reads from, so a suggestion can name one that was not retrieved this turn. */
   pages: Array<{ id: string; title: string }>;
 };
@@ -252,6 +253,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         matchedPages: r.selectedPages,
         considered: r.considered,
         corpus: r.corpus,
+        weak: r.weak,
         pages: corpus.map(({ id, title }) => ({ id, title })),
       };
     }
@@ -334,6 +336,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           matchedPages: ctx.matchedPages,
           ...(ctx.considered ? { considered: ctx.considered } : {}),
           ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
+          ...(ctx.weak ? { weakMatch: true } : {}),
           ...(findings ? { findings, pageIds: pageIdsNamed(findings, ctx.pages) } : {}),
           traceId,
         },

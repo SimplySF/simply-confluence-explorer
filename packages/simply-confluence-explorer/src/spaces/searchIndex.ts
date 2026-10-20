@@ -28,7 +28,30 @@ const STOP = new Set(
 );
 
 /**
- * Splits text into the lower-case words a search compares, without common words that match everything.
+ * A word reduced to a common stem, so "rolled", "rolling" and "rolls" all compare as "roll", and
+ * "billed" finds "billing". It is a small set of English suffix rules rather than a full stemmer: a
+ * search only needs the same word in different forms to meet, not a correct root.
+ *
+ * @param word A lower-case word.
+ */
+export function stem(word: string): string {
+  let w = word.length > 4 && word.endsWith('ies') ? `${word.slice(0, -3)}y` : word;
+  for (const suffix of ['ing', 'ed', 'es', 's', 'ly']) {
+    if (w.length - suffix.length >= 3 && w.endsWith(suffix)) {
+      w = w.slice(0, -suffix.length);
+      break;
+    }
+  }
+  if (w.endsWith('ie')) w = `${w.slice(0, -2)}y`;
+  if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);
+  // A doubled last letter, as in "stopped" or "billing", meets the single one, as in "stop" or "bill".
+  if (w.length > 3 && w.at(-1) === w.at(-2) && !/[aeiou]/.test(w.at(-1)!)) w = w.slice(0, -1);
+  return w;
+}
+
+/**
+ * Splits text into the stems of the lower-case words a search compares, without common words that
+ * match everything.
  *
  * @param text The text to split.
  */
@@ -37,13 +60,15 @@ export function tokens(text: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
-    .filter((t) => t.length > 2 && !STOP.has(t));
+    .filter((t) => t.length > 2 && !STOP.has(t))
+    .map(stem);
 }
 
 type Doc = { section: Section; title: string; excerpt: string; length: number; terms: Map<string, number> };
 export type SearchHit = { pageId: string; title: string; excerpt: string; score: number };
 /** A section that matched, with the page it belongs to. */
-export type SectionHit = { section: Section; title: string; score: number };
+/** A section that matched, with the page it belongs to and the share of the question's words it holds. */
+export type SectionHit = { section: Section; title: string; score: number; covers: number };
 
 // A word in the title says more about what a page is for than one in its body, and a word in a
 // section's heading says more about the section than one in its text.
@@ -124,7 +149,7 @@ export class SearchIndex {
       this.rank(spaceKey, query)
         .filter((hit) => !within || within.has(hit.doc.section.pageId))
         .slice(0, limit)
-        .map((hit) => ({ section: hit.doc.section, title: hit.doc.title, score: hit.score })),
+        .map((hit) => ({ section: hit.doc.section, title: hit.doc.title, score: hit.score, covers: hit.covers })),
     );
   }
 
@@ -164,21 +189,23 @@ export class SearchIndex {
     return [...this.builds].map(([spaceKey, b]) => ({ spaceKey, done: b.done, total: b.total }));
   }
 
-  private rank(spaceKey: string, query: string): Array<{ doc: Doc; score: number }> {
+  private rank(spaceKey: string, query: string): Array<{ doc: Doc; score: number; covers: number }> {
     if (!this.store.isSynced(spaceKey)) return [];
     const { docs, df, avgLength } = this.indexFor(spaceKey.toUpperCase());
     const q = [...new Set(tokens(query))];
     return docs
       .map((doc) => {
         let score = 0;
+        let found = 0;
         for (const t of q) {
           const f = doc.terms.get(t);
           if (!f) continue;
+          found++;
           const n = df.get(t) ?? 0;
           const idf = Math.log(1 + (docs.length - n + 0.5) / (n + 0.5));
           score += (idf * f * (K1 + 1)) / (f + K1 * (1 - B + (B * doc.length) / avgLength));
         }
-        return { doc, score };
+        return { doc, score, covers: q.length ? found / q.length : 0 };
       })
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score);
