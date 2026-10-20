@@ -40,6 +40,8 @@ export type ApiRequest = {
   body: unknown;
   /** The raw response, for a handler that streams instead of returning JSON. */
   res: http.ServerResponse;
+  /** Aborted when the browser drops the request, as it does when the person presses Stop. */
+  signal: AbortSignal;
 };
 
 /**
@@ -93,6 +95,10 @@ export class Router {
     // the parameter checks could see it and refuse it.
     const rawPath = (req.url ?? '/').split('?')[0];
     const method = req.method ?? 'GET';
+    const dropped = new AbortController();
+    res.on('close', () => {
+      if (!res.writableFinished) dropped.abort();
+    });
     try {
       const { route, params } = this.match(method, rawPath);
       const body = METHODS_WITH_BODY.has(method) ? await readJsonBody(req) : undefined;
@@ -104,6 +110,7 @@ export class Router {
         query: url.searchParams,
         body,
         res,
+        signal: dropped.signal,
       });
       if (!res.headersSent) sendJson(res, 200, result ?? {});
     } catch (error) {

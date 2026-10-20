@@ -10,10 +10,10 @@
     Sparkles,
     Trash2,
   } from '@lucide/svelte';
-  import { onDestroy } from 'svelte';
-  import type { MetadataProgress, SyncProgress, SyncedSpace } from '../../../src/api/types.js';
+  import type { SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
-  import { pollJob } from '../support/poll.js';
+  import { jobs } from '../support/jobs.svelte.js';
+  import { summaryAction } from '../support/summaries.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import SpaceRulesDialog from './SpaceRulesDialog.svelte';
   import TocViewer from './TocViewer.svelte';
@@ -22,7 +22,7 @@
   import JobProgress from './ui/JobProgress.svelte';
   import Menu from './ui/Menu.svelte';
 
-  // Everything done to a space as a whole: sync, AI summaries, its table of contents, a ZIP, and its rules.
+  // Everything done to a space as a whole: sync, the AI index, its table of contents, a ZIP, and its rules.
   type Props = {
     spaceKey: string;
     /** The space's synced copy, if there is one. */
@@ -33,115 +33,12 @@
   };
 
   let { spaceKey, manifest, onChanged, onSelectPage }: Props = $props();
-  let sync = $state<SyncProgress | null>(null);
-  let meta = $state<MetadataProgress | null>(null);
   let dialog = $state<'toc' | 'rules' | 'purge' | null>(null);
-  let stopSyncPoll = (): void => undefined;
-  let stopMetaPoll = (): void => undefined;
-  onDestroy(() => {
-    stopSyncPoll();
-    stopMetaPoll();
-  });
 
-  const running = (status: string): boolean => status === 'running' || status === 'pending';
-
-  function watchMeta(job: MetadataProgress): void {
-    meta = job;
-    stopMetaPoll();
-    stopMetaPoll = pollJob(() => api.metadataStatus(job.jobId), {
-      onProgress: (p) => (meta = p),
-      onFinished: (p) => {
-        meta = null;
-        onChanged();
-        toast(
-          p.status === 'completed' ? `AI summaries ready for ${spaceKey}.` : `AI summaries ${p.status}.`,
-          p.status === 'completed' ? 'success' : 'info',
-        );
-      },
-      onError: () => (meta = null),
-    });
-  }
-
-  // A summary run outlives a page reload, so one already running is picked up again.
-  $effect(() => {
-    const key = spaceKey;
-    meta = null;
-    stopMetaPoll();
-    api.activeMetadata(key).then(
-      (job) => job && running(job.status) && watchMeta(job),
-      () => undefined, // No run in progress is the common answer, and there is nothing to show.
-    );
-  });
-
-  async function startSync(): Promise<void> {
-    try {
-      const started = await api.sync(spaceKey);
-      sync = started;
-      stopSyncPoll = pollJob(
-        () => api.syncStatus(started.jobId),
-        {
-          onProgress: (p) => (sync = p),
-          onFinished: (p) => {
-            sync = null;
-            onChanged();
-            toast(
-              p.status === 'completed'
-                ? `${spaceKey} synced: ${p.downloadedCount} page${p.downloadedCount === 1 ? '' : 's'} downloaded, ${p.skippedCount} already current or excluded.`
-                : `Sync ${p.status}${p.errors.length ? `: ${p.errors[0].error}` : ''}.`,
-              p.status === 'completed' ? 'success' : 'error',
-            );
-          },
-          onError: (e) => {
-            sync = null;
-            toast(`Sync stopped reporting: ${messageOf(e)}`, 'error');
-          },
-        },
-        400,
-      );
-    } catch (e) {
-      toast(`Sync did not start: ${messageOf(e)}`, 'error');
-    }
-  }
-
-  async function stopSync(): Promise<void> {
-    if (!sync) return;
-    try {
-      await api.cancelSync(sync.jobId);
-    } catch (e) {
-      toast(`Could not stop the sync: ${messageOf(e)}`, 'error');
-    }
-    stopSyncPoll();
-    sync = null;
-  }
-
-  async function startMeta(): Promise<void> {
-    try {
-      const { jobId } = await api.generateMetadata(spaceKey);
-      watchMeta({
-        jobId,
-        status: 'running',
-        spaceKey,
-        total: manifest?.pageCount ?? 0,
-        processed: manifest?.metadataCount ?? 0,
-        errorCount: 0,
-        currentPageTitle: 'Starting…',
-      });
-    } catch (e) {
-      toast(`AI summaries did not start: ${messageOf(e)}`, 'error');
-    }
-  }
-
-  async function pauseMeta(): Promise<void> {
-    if (!meta) return;
-    try {
-      await api.cancelMetadata(meta.jobId);
-    } catch (e) {
-      toast(`Could not pause the AI summaries: ${messageOf(e)}`, 'error');
-    }
-    stopMetaPoll();
-    meta = null;
-    onChanged();
-  }
+  // Sync and summary runs are held in the jobs store, so they keep reporting after this menu goes away.
+  const sync = $derived(jobs.sync(spaceKey));
+  const meta = $derived(jobs.summaries(spaceKey));
+  $effect(() => jobs.onFinished((j) => j.spaceKey === spaceKey && onChanged()));
 
   async function purgeStale(): Promise<void> {
     dialog = null;
@@ -166,13 +63,7 @@
 
   const synced = $derived(!!manifest);
   const needSync = $derived(synced ? undefined : 'Sync the space first');
-  const metaLabel = $derived.by(() => {
-    if (!manifest) return 'Generate AI summaries';
-    if (manifest.metadataCount > 0 && manifest.metadataCount < manifest.pageCount)
-      return `Resume AI summaries (${manifest.metadataCount}/${manifest.pageCount})`;
-    if (manifest.pageCount > 0 && manifest.metadataCount >= manifest.pageCount) return 'Regenerate AI summaries';
-    return 'Generate AI summaries';
-  });
+  const summaries = $derived(summaryAction(manifest));
 </script>
 
 <div class="space-actions">
@@ -192,15 +83,15 @@
           label: synced ? 'Update space' : 'Sync space',
           icon: FolderSync,
           hint: 'Download changed pages to this machine',
-          onSelect: startSync,
+          onSelect: () => jobs.startSync(spaceKey),
           disabled: !!sync,
         },
         {
-          label: metaLabel,
+          label: summaries.label,
           icon: Sparkles,
-          hint: needSync ?? 'Summaries and tags for every page, and the table of contents',
-          onSelect: startMeta,
-          disabled: !synced || !!meta || !!sync,
+          hint: needSync ?? summaries.hint,
+          onSelect: () => jobs.startSummaries(spaceKey),
+          disabled: !synced || !!meta || !!sync || summaries.done,
         },
         {
           label: 'Table of contents',
@@ -241,16 +132,16 @@
     <JobProgress
       processed={sync.processed}
       total={sync.total}
-      current={sync.currentPageTitle || 'Starting sync…'}
-      onStop={stopSync}
+      current={sync.current || 'Starting sync…'}
+      onStop={() => jobs.stop(sync!)}
     />
   {/if}
   {#if meta}
     <JobProgress
       processed={meta.processed}
       total={meta.total}
-      current={meta.currentPageTitle}
-      onStop={pauseMeta}
+      current={meta.current}
+      onStop={() => jobs.stop(meta!)}
       stopLabel="Pause"
     />
   {/if}

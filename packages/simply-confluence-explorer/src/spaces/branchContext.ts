@@ -35,10 +35,41 @@ export type BranchContext = {
 };
 
 /**
- * Collects the pages below a page that may be sent to an AI. Excluded pages are left out without
- * being named, because even their titles must not be sent. Pages holding a secret are left out and
- * named, so a person knows why. Once the size limit is reached, the remaining pages are named as
- * left out. The synced copy is used when the branch is on disk, otherwise Confluence is read.
+ * Decides, one page at a time, which pages may join an AI request. Excluded pages are left out
+ * without being named, because even their titles must not be sent. Pages holding a secret are left
+ * out and named, so a person knows why. Once the size limit is reached, the remaining pages are named
+ * as left out.
+ *
+ * @param spaceKey The space the pages belong to.
+ * @param deps Where the exclusion rules come from.
+ * @param dataDir The data directory, for the space's guard rules.
+ * @param budget How many characters the collected pages may take.
+ */
+export function contextCollector(
+  spaceKey: string,
+  deps: Pick<GateDeps, 'exclusions'>,
+  dataDir: string,
+  budget = CONTEXT_CHAR_LIMIT,
+): { consider: (page: PageDetail) => void; result: BranchContext } {
+  const screen = new OutboundGuard(loadGuardRules(dataDir, spaceKey));
+  const result: BranchContext = { pages: [], withheld: [], overflow: [] };
+  let used = 0;
+  const consider = (page: PageDetail): void => {
+    if (deps.exclusions.isPageExcluded(page, spaceKey || page.spaceKey)) return;
+    const { markdown } = parsePage(page);
+    if (screen.secretsIn(markdown).length > 0) result.withheld.push(page.title);
+    else if (used + markdown.length > budget) result.overflow.push(page.title);
+    else {
+      used += markdown.length;
+      result.pages.push({ page, markdown });
+    }
+  };
+  return { consider, result };
+}
+
+/**
+ * Collects the pages below a page that may be sent to an AI, each checked by `contextCollector`. The
+ * synced copy is used when the branch is on disk, otherwise Confluence is read.
  *
  * @param pageId The page whose descendants to collect.
  * @param spaceKey The space it belongs to.
@@ -53,20 +84,7 @@ export async function collectBranch(
   dataDir: string,
   budget = CONTEXT_CHAR_LIMIT,
 ): Promise<BranchContext> {
-  const screen = new OutboundGuard(loadGuardRules(dataDir, spaceKey));
-  const result: BranchContext = { pages: [], withheld: [], overflow: [] };
-  let used = 0;
-  const consider = (page: PageDetail): void => {
-    if (deps.exclusions.isPageExcluded(page, spaceKey || page.spaceKey)) return;
-    const { markdown } = parsePage(page);
-    if (screen.secretsIn(markdown).length > 0) result.withheld.push(page.title);
-    else if (used + markdown.length > budget) result.overflow.push(page.title);
-    else {
-      used += markdown.length;
-      result.pages.push({ page, markdown });
-    }
-  };
-
+  const { consider, result } = contextCollector(spaceKey, deps, dataDir, budget);
   const synced = deps.store.descendants(spaceKey, pageId);
   if (synced.length > 0) {
     for (const node of synced) {

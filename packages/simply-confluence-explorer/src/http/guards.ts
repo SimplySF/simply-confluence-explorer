@@ -40,6 +40,7 @@ export const PARAMS: Readonly<Record<string, { label: string; valid: (value: str
   fileId: { label: 'file id', valid: (v) => UUID.test(v) },
   runId: { label: 'run id', valid: (v) => UUID.test(v) },
   provider: { label: 'provider', valid: (v) => /^[a-z-]{1,32}$/.test(v) },
+  turn: { label: 'turn number', valid: (v) => /^\d{1,4}$/.test(v) },
 };
 
 /**

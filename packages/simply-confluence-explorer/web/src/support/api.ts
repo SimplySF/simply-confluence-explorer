@@ -18,6 +18,7 @@
 // nothing here ever names a Confluence or carries a token (ADR-019).
 
 import type {
+  BatchProgress,
   AiSessionView,
   AiSettingsView,
   AnalyzeResponse,
@@ -26,29 +27,30 @@ import type {
   ConfluenceSpace,
   ConnectionUpdate,
   ConnectionView,
+  GitLabView,
   IgnoreRules,
   MetadataProgress,
   PageMetadata,
   PageResponse,
   PageTreeResponse,
   PurgeResult,
-  RecommendationResponse,
   RedundancyDecision,
   ResolveResponse,
   SessionScope,
   SpaceTocNode,
   SyncedSpace,
   SyncProgress,
-  WriteResult,
+  TaggedPages,
 } from '../../../src/api/types.js';
 
 const key = encodeURIComponent;
 
-async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
+async function call<T>(url: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`/api${url}`, {
     method,
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   const text = await res.text();
   let parsed: unknown;
@@ -62,8 +64,11 @@ async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> 
   return parsed as T;
 }
 
-export type BranchRunSummary = Omit<BranchRun, 'items' | 'findings' | 'reportText'> & { pages: number };
 export type Descendants = { count: number; descendantIds: string[]; titles: string[] };
+/** Pages chosen as a chat chooses them: directories with every page under them, single pages, and tags. */
+export type Chosen = { dirs?: string[]; pageIds?: string[]; tags?: string[] };
+/** How many of some pages are in the AI index, and whether all of them fit one request. */
+export type Coverage = { pages: number; missing: number; fits: boolean };
 export type DraftSummary = AiSessionView & { turnCount: number };
 
 export const api = {
@@ -77,12 +82,13 @@ export const api = {
   resolve: (input: string) => call<ResolveResponse>('/spaces/resolve-url', 'POST', { input }),
   page: (pageId: string, spaceKey: string) =>
     call<PageResponse>(`/pages/${key(pageId)}?${new URLSearchParams({ spaceKey })}`),
-  parse: (storageXml: string) => call<{ markdown: string }>('/parse', 'POST', { storageXml }),
 
   synced: () => call<{ spaces: SyncedSpace[] }>('/space-cache/cached').then((r) => r.spaces),
   sync: (spaceKey: string) => call<SyncProgress>('/space-cache/sync', 'POST', { spaceKey }),
   syncStatus: (jobId: string) => call<SyncProgress>(`/space-cache/sync/status/${key(jobId)}`),
   cancelSync: (jobId: string) => call(`/space-cache/sync/cancel/${key(jobId)}`, 'POST'),
+  activeSync: (spaceKey: string) =>
+    call<{ activeJob: SyncProgress | null }>(`/space-cache/${key(spaceKey)}/sync/active`).then((r) => r.activeJob),
   toc: (spaceKey: string) => call<{ toc: SpaceTocNode[] }>(`/space-cache/${key(spaceKey)}/toc`).then((r) => r.toc),
   zipUrl: (spaceKey: string) => `/api/space-cache/${key(spaceKey)}/zip`,
   purgeStale: (spaceKey: string) => call<PurgeResult>(`/space-cache/${key(spaceKey)}/cache/purge`, 'POST'),
@@ -110,15 +116,21 @@ export const api = {
       `/space-cache/${key(spaceKey)}/pages/${key(pageId)}/metadata/generate`,
       'POST',
     ).then((r) => r.metadata),
-  generateMetadata: (spaceKey: string, rootPageId?: string) =>
-    call<{ jobId: string }>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId }),
+  generateMetadata: (spaceKey: string, rootPageId?: string, chosen?: Chosen) =>
+    call<MetadataProgress>(`/space-cache/${key(spaceKey)}/metadata/generate`, 'POST', { rootPageId, ...chosen }),
   metadataStatus: (jobId: string) => call<MetadataProgress>(`/space-cache/metadata/status/${key(jobId)}`),
   activeMetadata: (spaceKey: string) =>
     call<{ activeJob: MetadataProgress | null }>(`/space-cache/${key(spaceKey)}/metadata/active`).then(
       (r) => r.activeJob,
     ),
+  summaryCoverage: (spaceKey: string, body: { rootPageId?: string } & Chosen) =>
+    call<Coverage>(`/space-cache/${key(spaceKey)}/metadata/coverage`, 'POST', body),
   cancelMetadata: (jobId: string) => call(`/space-cache/metadata/cancel/${key(jobId)}`, 'POST'),
 
+  gitlab: () => call<GitLabView>('/gitlab'),
+  saveGitlab: (update: { baseUrl?: string; token?: string }) => call<GitLabView>('/gitlab', 'PUT', update),
+  testGitlab: (candidate: { baseUrl?: string; token?: string }) =>
+    call<{ ok: boolean; user?: { username: string; name: string }; error?: string }>('/gitlab/test', 'POST', candidate),
   aiSettings: () => call<AiSettingsView>('/ai/settings'),
   saveAiSettings: (update: Record<string, unknown>) => call<AiSettingsView>('/ai/settings', 'PUT', update),
   aiModels: (provider: string) => call<{ models: string[] }>(`/ai/models/${key(provider)}`).then((r) => r.models),
@@ -127,12 +139,7 @@ export const api = {
   askSpace: (spaceKey: string, prompt: string) =>
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
-  recommend: (pageId: string, body: { spaceKey: string; focusArea: string; prompt?: string }) =>
-    call<RecommendationResponse>(`/pages/${key(pageId)}/recommend`, 'POST', body),
-  dryRun: (pageId: string, body: { markdown: string; spaceKey: string; baseVersion: number }) =>
-    call<WriteResult>(`/pages/${key(pageId)}/dry-run`, 'POST', body),
-  push: (pageId: string, body: { markdown: string; spaceKey: string; baseVersion: number }) =>
-    call<WriteResult>(`/pages/${key(pageId)}/push`, 'POST', body),
+  tags: (spaceKey: string) => call<{ tags: TaggedPages[] }>(`/space-cache/${key(spaceKey)}/tags`).then((r) => r.tags),
 };
 
 const SESSIONS = '/ai/sessions';
@@ -149,7 +156,22 @@ export const sessions = {
   },
   get: (id: string) => call<AiSessionView>(`${SESSIONS}/${key(id)}`),
   create: (scope: SessionScope) => call<AiSessionView>(SESSIONS, 'POST', { scope }),
-  send: (id: string, prompt: string) => call<AiSessionView>(`${SESSIONS}/${key(id)}/messages`, 'POST', { prompt }),
+  /** A space's conversations, newest first, without their turns. */
+  inSpace: (spaceKey: string) =>
+    call<{ sessions: DraftSummary[] }>(`${SESSIONS}?${new URLSearchParams({ kind: 'space,pages', spaceKey })}`).then(
+      (r) => r.sessions,
+    ),
+  /** Asks for suggestions; for more pages than one request carries, a batched review starts instead (ADR-051). */
+  suggest: (id: string, kind: 'review' | 'changes', signal?: AbortSignal) =>
+    call<AiSessionView & { batch?: BatchProgress }>(`${SESSIONS}/${key(id)}/suggest`, 'POST', { kind }, signal),
+  batch: (id: string) => call<{ batch: BatchProgress | null }>(`${SESSIONS}/${key(id)}/batch`),
+  queue: (id: string, turn: number, findings: number[]) =>
+    call<BranchRun>(`${SESSIONS}/${key(id)}/turns/${turn}/queue`, 'POST', { findings }),
+  update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
+    call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
+  remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
+  send: (id: string, prompt: string, signal?: AbortSignal) =>
+    call<AiSessionView>(`${SESSIONS}/${key(id)}/messages`, 'POST', { prompt }, signal),
   addFile: async (id: string, file: File): Promise<AiSessionView> => {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = '';
@@ -166,16 +188,13 @@ export const sessions = {
 
 const RUNS = '/branches/runs';
 
+/** Batched reviews of more pages than one request carries. */
+export const batches = {
+  get: (jobId: string) => call<BatchProgress>(`/ai/batches/${key(jobId)}`),
+  cancel: (jobId: string) => call<{ cancelled: boolean }>(`/ai/batches/${key(jobId)}/cancel`, 'POST'),
+};
+
 export const branches = {
-  start: (body: {
-    kind: 'review' | 'improve';
-    spaceKey: string;
-    pageId: string;
-    focus?: string;
-    instructions?: string;
-  }) => call<BranchRun>(RUNS, 'POST', body),
-  list: (spaceKey: string, pageId: string) =>
-    call<{ runs: BranchRunSummary[] }>(`${RUNS}?${new URLSearchParams({ spaceKey, pageId })}`).then((r) => r.runs),
   get: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}`),
   cancel: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/cancel`, 'POST'),
   decide: (id: string, pageId: string, decision: 'accept' | 'reject' | 'reset', proposed?: string) =>
@@ -196,9 +215,20 @@ export const drafts = {
   recheck: (id: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/recheck`, 'POST'),
   decide: (id: string, decision: RedundancyDecision, linkedPageIds: string[]) =>
     call<AiSessionView>(`${DRAFTS}/${key(id)}/decision`, 'POST', { decision, linkedPageIds }),
-  save: (id: string, patch: { title?: string; markdown?: string }) =>
-    call<AiSessionView>(`${DRAFTS}/${key(id)}`, 'PUT', patch),
-  send: (id: string, prompt: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/messages`, 'POST', { prompt }),
+  addRepository: (id: string, link: string) =>
+    call<AiSessionView>(`${DRAFTS}/${key(id)}/repositories`, 'POST', { link }),
+  save: (
+    id: string,
+    patch: {
+      title?: string;
+      markdown?: string;
+      examplePageId?: string;
+      template?: string;
+      children?: Array<{ title: string; markdown: string }>;
+    },
+  ) => call<AiSessionView>(`${DRAFTS}/${key(id)}`, 'PUT', patch),
+  send: (id: string, prompt: string, signal?: AbortSignal) =>
+    call<AiSessionView>(`${DRAFTS}/${key(id)}/messages`, 'POST', { prompt }, signal),
   check: (id: string) => call<unknown>(`${DRAFTS}/${key(id)}/check`, 'POST'),
   create: (id: string) => call<AiSessionView>(`${DRAFTS}/${key(id)}/create`, 'POST'),
 };

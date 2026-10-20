@@ -191,3 +191,150 @@ describe('a draft', () => {
     });
   });
 });
+
+describe('what the co-writer reads', () => {
+  const ready = async (app: TestApp): Promise<string> => {
+    const { body } = await start(app, 'Billing Service', 'The billing service and its API');
+    await app.call('POST', `/drafts/${body.id}/decision`, { decision: 'continue' });
+    return body.id;
+  };
+
+  it('follows an example page and a pasted structure, and refuses an excluded example', async () => {
+    await withApp(async (app) => {
+      const id = await ready(app);
+      const example = fake.page('PLAT', 'Auth Service').id;
+      const excluded = fake.page('PLAT', 'Production Credentials').id;
+      expect((await app.call('PUT', `/drafts/${id}`, { examplePageId: excluded })).status).toBe(403);
+      expect((await app.call('PUT', `/drafts/${id}`, { examplePageId: '../x' })).status).toBe(400);
+      await app.call('PUT', `/drafts/${id}`, { examplePageId: example, template: '## Overview\n## Runbook' });
+      await app.call('POST', `/drafts/${id}/messages`, { prompt: 'Draft it' });
+      const sent = app.sentText();
+      expect(sent).toContain('Example page whose structure to follow: Auth Service');
+      expect(sent).toContain('## Structure to follow\n## Overview\n## Runbook');
+      // An example excluded after it was chosen is no longer sent.
+      const rules = await app.call<{ patterns: string[] }>('GET', '/space-cache/PLAT/ignore');
+      await app.call('POST', '/space-cache/PLAT/ignore', {
+        patterns: [...rules.body.patterns, `id:${example}`],
+        purge: false,
+      });
+      const before = app.sent.length;
+      await app.call('POST', `/drafts/${id}/messages`, { prompt: 'Again' });
+      expect(
+        app.sent
+          .slice(before)
+          .map((p) => p.messages.map((m) => m.content).join('\n'))
+          .join('\n'),
+      ).not.toContain('Example page whose structure to follow');
+    });
+  });
+
+  it('reads a GitLab repository, through the guard, only once GitLab is set up', async () => {
+    const { startFakeGitLab, GITLAB_PROJECT, GITLAB_TOKEN } = await import('./support/fakeGitLab.js');
+    const gitlab = await startFakeGitLab();
+    try {
+      await withApp(async (app) => {
+        const id = await ready(app);
+        const link = `${gitlab.url}/${GITLAB_PROJECT}`;
+        expect((await app.call('POST', `/drafts/${id}/repositories`, { link })).status).toBe(400);
+        await app.call('PUT', '/gitlab', { baseUrl: gitlab.url, token: GITLAB_TOKEN });
+        const added = await app.call<AiSessionView>('POST', `/drafts/${id}/repositories`, { link });
+        expect(added.body.files.map((f) => f.name)).toEqual(['billing-service (GitLab).md']);
+        await app.call('POST', `/drafts/${id}/messages`, { prompt: 'Draft it from the repository' });
+        expect(app.sentText()).toContain('Charges customers each month.');
+        expect(
+          (await app.call('POST', `/drafts/${id}/repositories`, { link: 'https://evil.example.test/a/b' })).status,
+        ).toBe(400);
+
+        gitlab.files.set('README.md', `Deploy key: ${['AKIA', 'IOSFODNN7', 'EXAMPLE'].join('')}`);
+        const second = await ready(app);
+        await app.call('POST', `/drafts/${second}/repositories`, { link });
+        const blocked = await app.call('POST', `/drafts/${second}/messages`, { prompt: 'Draft it' });
+        expect(blocked.status).toBe(422);
+      });
+    } finally {
+      await gitlab.close();
+    }
+  });
+});
+
+describe('a series of pages', () => {
+  const seriesReply = (payload: GuardedPayload): string => {
+    if (payload.system.includes('overlaps with the planned page')) return '{"pages":[]}';
+    return [
+      'Here is a series.',
+      '<<<SERIES>>>',
+      '<<<PAGE: Billing Service>>>',
+      '# Billing Service\n\nAn overview.',
+      '<<<PAGE: Billing API>>>',
+      '# Billing API\n\nThe endpoints.',
+      '<<<PAGE: Billing Operations>>>',
+      '# Billing Operations\n\nHow to run it.',
+      '<<<END SERIES>>>',
+    ].join('\n');
+  };
+
+  it('is read from the co-writer, and its pages are checked for similar titles', async () => {
+    const { parseSeries } = await import('../src/drafts/drafts.js');
+    expect(
+      parseSeries(seriesReply({ system: '', messages: [] } as unknown as GuardedPayload)).map((p) => p.title),
+    ).toEqual(['Billing Service', 'Billing API', 'Billing Operations']);
+    expect(parseSeries('No series here.')).toEqual([]);
+    const app = await startTestApp(fake, seriesReply);
+    try {
+      const { body } = await start(app, 'Billing Service', 'The billing service');
+      await app.call('POST', `/drafts/${body.id}/decision`, { decision: 'continue' });
+      const answered = (await app.call<AiSessionView>('POST', `/drafts/${body.id}/messages`, { prompt: 'Draft it' }))
+        .body;
+      const series = answered.turns.at(-1)!.proposedSeries!;
+      expect(series.map((p) => p.title)).toEqual(['Billing Service', 'Billing API', 'Billing Operations']);
+      expect(answered.turns.at(-1)!.text).toContain('Proposed a series of 3 pages');
+      const saved = await app.call<AiSessionView>('PUT', `/drafts/${body.id}`, {
+        children: [{ title: 'Database Failover Notes', markdown: '# Notes\n\nText.' }],
+      });
+      expect(saved.body.draft!.children![0].similar!.map((s) => s.title)).toContain('Database Failover');
+      const tooMany = Array.from({ length: 12 }, (_, i) => ({ title: `Page ${i}`, markdown: 'x' }));
+      expect((await app.call('PUT', `/drafts/${body.id}`, { children: tooMany })).status).toBe(400);
+      expect((await app.call('PUT', `/drafts/${body.id}`, { children: [{ title: ' ', markdown: 'x' }] })).status).toBe(
+        400,
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('is created overview first, children under it in order; a failure partway names what was created, and creating again finishes', async () => {
+    await withApp(async (app) => {
+      const { body } = await start(app, 'Replica Promotion Guide', 'Promoting a replica');
+      await app.call('POST', `/drafts/${body.id}/decision`, { decision: 'continue' });
+      await app.call('PUT', `/drafts/${body.id}`, {
+        markdown: '# Replica Promotion Guide\n\nThe overview.',
+        children: [
+          { title: 'Replica Promotion Steps', markdown: '# Steps\n\n1. Check lag.' },
+          // A title the space already has: Confluence refuses it when the page is created.
+          { title: 'Database Failover', markdown: '# Checks\n\nAfter promotion.' },
+        ],
+      });
+      const failed = await app.call<{ error: string }>('POST', `/drafts/${body.id}/create`);
+      expect(failed.status).toBeGreaterThanOrEqual(400);
+      expect(failed.body.error).toContain('Created Replica Promotion Guide, Replica Promotion Steps');
+      expect(failed.body.error).toContain('“Database Failover” was not');
+      const draft = (await app.call<AiSessionView>('GET', `/ai/sessions/${body.id}`)).body.draft!;
+      const overview = fake.pages.get(draft.createdPageId!)!;
+      expect(overview.ancestors.at(-1)?.id).toBe(parent());
+      const steps = fake.pages.get(draft.children![0].createdPageId!)!;
+      expect(steps.ancestors.at(-1)?.id).toBe(overview.id);
+      expect((await app.call('PUT', `/drafts/${body.id}`, { markdown: 'changed' })).status).toBe(409);
+      await app.call('PUT', `/drafts/${body.id}`, {
+        children: [
+          { title: 'Replica Promotion Steps', markdown: '# Steps\n\n1. Check lag.' },
+          { title: 'Replica Promotion Checks', markdown: '# Checks\n\nAfter promotion.' },
+        ],
+      });
+      const done = await app.call<AiSessionView>('POST', `/drafts/${body.id}/create`);
+      expect(done.status).toBe(200);
+      const children = done.body.draft!.children!;
+      expect(children[0].createdPageId).toBe(steps.id);
+      expect(fake.pages.get(children[1].createdPageId!)?.ancestors.at(-1)?.id).toBe(overview.id);
+    });
+  });
+});

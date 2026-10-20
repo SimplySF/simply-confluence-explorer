@@ -1,14 +1,23 @@
 <script lang="ts">
-  import { FileCode, FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
+  import { FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
   import { onMount, untrack } from 'svelte';
-  import type { ConfluenceSpace, ConnectionView, PageResponse, PageTreeNode } from '../../src/api/types.js';
+  import type {
+    BranchFinding,
+    ConfluenceSpace,
+    ConnectionView,
+    PageResponse,
+    PageTreeNode,
+  } from '../../src/api/types.js';
+  import JobsBar from './components/JobsBar.svelte';
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
+  import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
+  import type { SpacePage } from './support/pages.js';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
-  import SnippetDialog from './components/SnippetDialog.svelte';
   import Toasts from './components/ui/Toasts.svelte';
   import { api } from './support/api.js';
+  import { jobs, type Job } from './support/jobs.svelte.js';
   import { applyTheme, theme, toggleTheme } from './support/theme.svelte.js';
   import { messageOf } from './support/toast.svelte.js';
 
@@ -58,7 +67,26 @@
 
   let sidebarWidth = $state(Math.max(260, Math.min(850, Number(remembered('sidebar_width')) || 340)));
   let resizing = $state(false);
-  let dialog = $state<'settings' | 'snippet' | 'new-page' | null>(null);
+  let dialog = $state<'settings' | 'new-page' | null>(null);
+  // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
+  let view = $state<'page' | 'chat'>('page');
+  let chatSeed = $state<ChatSeed | null>(null);
+  // Every page with where it sits and the pages under it, so a chat can add a directory in one step.
+  const flatten = (nodes: PageTreeNode[], path: string[] = []): SpacePage[] =>
+    nodes.flatMap((n) => {
+      const below = flatten(n.children, [...path, n.title]);
+      const under = below.map((p) => p.id);
+      return [{ id: n.id, title: n.title, path: path.join(' › '), under }, ...below];
+    });
+  const allPages = $derived(flatten(tree));
+
+  function openPage(id: string): void {
+    selectedPageId = id;
+    view = 'page';
+  }
+
+  // What a review said a new page should cover, to start the new-page dialog with.
+  let newPageNotes = $state('');
 
   onMount(() => {
     applyTheme();
@@ -183,6 +211,28 @@
     };
   });
 
+  // Work started earlier, in this tab or before a reload, keeps reporting in the header.
+  $effect(() => {
+    if (activeSpace) jobs.resume(activeSpace);
+  });
+
+  function openJob(job: Job): void {
+    chooseSpace(job.spaceKey);
+    if (job.kind !== 'review' && job.kind !== 'batch') {
+      if (job.rootPageId) openPage(job.rootPageId);
+      return;
+    }
+    // Edits and batched reviews are shown in the chat they came from: a page's Chat tab, or Space chat.
+    jobs.requested = job;
+    if (job.rootPageId) openPage(job.rootPageId);
+    else view = 'chat';
+  }
+
+  function writeNewPage(finding: BranchFinding): void {
+    newPageNotes = [finding.detail, finding.suggestion].filter(Boolean).join('\n\n');
+    dialog = 'new-page';
+  }
+
   function chooseSpace(spaceKey: string): void {
     const key = spaceKey.trim().toUpperCase();
     remember('active_space', key);
@@ -216,6 +266,7 @@
         <span class="status-dot"></span>
         <span>{statusLabel}</span>
       </button>
+      <JobsBar onOpen={openJob} />
     </div>
     <div class="header-actions">
       <button
@@ -227,13 +278,6 @@
           : 'Choose the page the new one goes under, in the tree'}
       >
         <FilePlus2 size={14} /> New page
-      </button>
-      <button
-        class="btn btn-secondary btn-sm"
-        onclick={() => (dialog = 'snippet')}
-        title="Convert a pasted storage-format snippet to Markdown"
-      >
-        <FileCode size={14} /> Snippet parser
       </button>
       <button
         class="btn btn-secondary btn-sm"
@@ -261,10 +305,23 @@
         onSelectSpace={chooseSpace}
         {tree}
         {selectedPageId}
-        onSelectPage={(id) => (selectedPageId = id)}
+        onSelectPage={openPage}
         onJump={(target) => {
           chooseSpace(target.spaceKey);
-          if (target.pageId) selectedPageId = target.pageId;
+          if (target.pageId) openPage(target.pageId);
+        }}
+        chatOpen={view === 'chat'}
+        onOpenChat={() => (view = 'chat')}
+        onAskTag={(t) => {
+          chatSeed = {
+            title: `#${t.tag}`,
+            scope: {
+              kind: 'pages',
+              spaceKey: activeSpace,
+              tags: [t.tag],
+            },
+          };
+          view = 'chat';
         }}
         loading={treeLoading}
         error={treeError}
@@ -284,34 +341,57 @@
       title="Drag to resize"
     ></div>
     <!-- A page read again after a write stays on screen, so an open workspace and its results survive. -->
-    <PageView
-      {activeSpace}
-      {page}
-      loading={pageLoading && page?.detail.id !== selectedPageId}
-      error={pageError}
-      onSelectPage={(id) => (selectedPageId = id)}
-      onPagesChanged={() => {
-        reloadTree();
-        pageRev++;
-      }}
-      onPagePurged={() => {
-        reloadTree();
-        selectedPageId = null;
-        page = null;
-      }}
-    />
+    <div class="main-slot" hidden={view !== 'page'}>
+      <PageView
+        {activeSpace}
+        {page}
+        loading={pageLoading && page?.detail.id !== selectedPageId}
+        error={pageError}
+        onSelectPage={(id) => (selectedPageId = id)}
+        onPagesChanged={() => {
+          reloadTree();
+          pageRev++;
+        }}
+        onPagePurged={() => {
+          reloadTree();
+          selectedPageId = null;
+          page = null;
+        }}
+        onWriteNewPage={writeNewPage}
+      />
+    </div>
+    {#if activeSpace}
+      <div class="main-slot" hidden={view !== 'chat'}>
+        <SpaceChat
+          spaceKey={activeSpace}
+          pages={allPages}
+          seed={chatSeed}
+          onSeeded={() => (chatSeed = null)}
+          active={view === 'chat'}
+          onSelectPage={openPage}
+          onPushed={() => {
+            reloadTree();
+            pageRev++;
+          }}
+          onWriteNewPage={writeNewPage}
+        />
+      </div>
+    {/if}
   </div>
 
   {#if dialog === 'settings'}
     <SettingsDialog onClose={() => (dialog = null)} onSaved={() => connectionRev++} />
-  {:else if dialog === 'snippet'}
-    <SnippetDialog onClose={() => (dialog = null)} />
   {:else if dialog === 'new-page' && page}
     <NewPageDialog
       spaceKey={(page.detail.spaceKey || activeSpace).toUpperCase()}
       parentId={page.detail.id}
       parentTitle={page.detail.title}
-      onClose={() => (dialog = null)}
+      notes={newPageNotes}
+      pages={allPages}
+      onClose={() => {
+        dialog = null;
+        newPageNotes = '';
+      }}
       onOpenPage={(id) => {
         dialog = null;
         selectedPageId = id;

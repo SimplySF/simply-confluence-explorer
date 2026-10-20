@@ -15,6 +15,7 @@
   import { api } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
   import AiSettings from './AiSettings.svelte';
+  import GitLabSettings from './GitLabSettings.svelte';
   import Dialog from './ui/Dialog.svelte';
 
   type Props = {
@@ -201,6 +202,7 @@
   {/if}
 
   <AiSettings />
+  <GitLabSettings />
 
   {#snippet footer()}
     {#if saveError}<span class="field-error footer-message">{saveError}</span>{/if}

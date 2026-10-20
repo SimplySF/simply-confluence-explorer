@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-import type { BranchRun } from '../api/types.js';
-import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
-import { fieldsOf, optionalString } from './browse.js';
+import { optionalString } from './browse.js';
 
-const FOCUS = new Set(['polish', 'completeness', 'structure', 'runbook']);
 const DECISIONS = new Set(['accept', 'reject', 'reset']);
 
 /**
- * Adds the routes that review or improve a page and everything under it (ADR-024). Improving fills a
- * queue of proposals; only the pages a person accepts are checked and pushed, one at a time, each
- * against the version its proposal was made from.
+ * Adds the routes for a queue of staged edits: read it, stop it, decide on each page, and check or
+ * push the accepted ones (ADR-024). A queue is filled from a chat's suggestions (ADR-049); only the
+ * pages a person accepts are checked and pushed, one at a time, each against the version its edit was
+ * made from.
  *
  * @param router The router to add to.
  * @param services What the routes share.
@@ -35,35 +33,6 @@ export function addBranchRoutes(router: Router, services: Services): Router {
   const { branches } = services;
   return (
     router
-      .add('POST', '/api/branches/runs', async ({ body }): Promise<BranchRun> => {
-        const fields = fieldsOf(body);
-        const kind = fields.kind;
-        if (kind !== 'review' && kind !== 'improve') throw new HttpError(400, 'kind must be review or improve');
-        const spaceKey = optionalString(body, 'spaceKey');
-        const pageId = typeof fields.pageId === 'number' ? String(fields.pageId) : optionalString(body, 'pageId');
-        if (!isValidSpaceKey(spaceKey) || !isValidPageId(pageId))
-          throw new HttpError(400, 'spaceKey and pageId are required');
-        const focus = optionalString(body, 'focus');
-        if (focus !== undefined && !FOCUS.has(focus)) throw new HttpError(400, 'unknown focus');
-        const input = {
-          spaceKey: spaceKey.toUpperCase(),
-          rootPageId: pageId,
-          focus,
-          instructions: optionalString(body, 'instructions')?.slice(0, 2000),
-        };
-        return kind === 'improve' ? branches.startImprove(input) : branches.startReview(input);
-      })
-      .add('GET', '/api/branches/runs', ({ query }) => {
-        const runs = branches.store.list(query.get('spaceKey')?.toUpperCase(), query.get('pageId') ?? undefined);
-        return {
-          runs: runs.map(({ items, findings, reportText, ...run }) => ({
-            ...run,
-            pages: items.length || run.total,
-            findings: findings?.length,
-            hasReport: reportText !== undefined,
-          })),
-        };
-      })
       .add('GET', '/api/branches/runs/:runId', ({ params }) => branches.get(params.runId))
       .add('POST', '/api/branches/runs/:runId/cancel', ({ params }) => branches.cancel(params.runId))
       .add('PATCH', '/api/branches/runs/:runId/items/:pageId', ({ params, body }) => {

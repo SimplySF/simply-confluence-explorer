@@ -48,6 +48,9 @@ pnpm test
 
 `pnpm install` at the root installs and links every workspace package and sets up git hooks automatically via husky.
 
+To try the app without your company's Confluence, against a local Confluence filled with test spaces,
+follow [Trying it locally](https://simplysf.github.io/simply-confluence-explorer/guides/trying-it-locally/).
+
 To work on the app with hot reload, run:
 
 ```sh

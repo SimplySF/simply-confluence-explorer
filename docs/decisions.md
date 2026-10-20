@@ -578,7 +578,7 @@ directions, so every sample must be caught and every near-miss must be let throu
 
 ## ADR-023 — Conversations live on the server, and uploaded files are context extracted to text, never Confluence content
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-048.
 
 A conversation (`server/src/ai/sessions.ts`) is about one page, about a page and its sub-pages
 (called a branch), or about a whole space. It is stored in `data/sessions/<id>.json` with mode
@@ -622,7 +622,7 @@ runs as, and each conversation can be deleted.
 
 ## ADR-024 — Branch work goes through a review queue: nothing is written that a person did not accept, page by page
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-041, ADR-046 and ADR-047.
 
 "Work on branch" acts on a page and everything under it (`server/src/branches/branchRuns.ts`). Each
 piece of work is a run, saved in `data/branch-runs/`. There are two kinds of run:
@@ -694,7 +694,7 @@ says so.
 ## ADR-026 — The page has four tabs, a space's actions live in one Space menu, and branch work starts from the page, not that menu
 
 **Status:** accepted, 2026-10-15. Amends ADR-025: the table of contents sits with Update space and
-the ZIP in the Space menu, rather than as buttons beside them.
+the ZIP in the Space menu, rather than as buttons beside them. Amended by ADR-046 and ADR-049.
 
 The layout is:
 
@@ -1358,3 +1358,171 @@ a plain `npx` installs. That is accepted because a release now gets a second per
 the end-to-end suite runs against a real Confluence on every pull request, and because in practice
 no beta was ever tried: the eight that were versioned never reached npm. Someone who wants to try `main` can still
 build and run it from a checkout.
+
+---
+
+## ADR-046 — Every improvement starts from a review whose suggestions the person chooses, and a page, a section and a tag are reviewed by the same flow
+
+**Status:** accepted, 2026-10-19. Amends ADR-024 and ADR-026. Amended by ADR-049.
+
+Before this record the app had three ways to improve pages, each with its own shape. The Improve tab
+asked for a focus, one of four, and returned a whole rewritten page. "Work on branch" could review a
+page and everything under it, but its findings could only be read, and its "Improve every page"
+rewrote every page with the same focus. The maintainer found that what they wanted was the review:
+a list of what is wrong, from which they pick what to fix.
+
+- **One flow.** A review works on a set of pages, chosen in one of three ways: one page (the Improve
+  tab), a page and everything under it, which the app now calls a **section** because "branch" read
+  as source control, or the pages that carry a **tag**. The person ticks the pages and the aspects to
+  look for (accuracy, repetition, staleness, clarity, depth, structure, runbooks), adds any context,
+  and gets suggestions, each with a tick box. **Apply selected** asks the AI for an edit of each page
+  the ticked suggestions name, carrying only those suggestions. The edits then go through the queue
+  ADR-024 describes, unchanged: accept, edit or reject each page, check, then push.
+- **One run.** On the server every review is a run in `data/branch-runs/` holding the ids of the
+  pages it read. The browser sends only page ids and suggestion numbers. The server checks each page
+  against the exclusion rules and the secrets check, and that a section's pages are inside it and a
+  tag's pages carry it.
+- **Removed:** "Improve every page", and the Improve tab's four focuses and whole-page rewrite. A
+  suggestion that needs a page moved, split, merged or written is shown but cannot be applied,
+  because no edit of an existing page does it.
+- **Layout (amends ADR-026).** "Work on branch" becomes "Review section". The sidebar gains a switch
+  between the page tree and a list of tags, and a **Space chat** for questions about the whole space,
+  with its saved conversations. Ask AI on a page asks about the page or its sub-pages, starting with
+  the sub-pages, and no longer about the whole space. The header shows work that is running in the
+  background, such as a sync, AI summaries or a review, and opens it when clicked.
+
+**The argument against:** a rewrite with a focus could make changes nobody thought to ask for, and a
+review only finds what it is asked to look for. That is accepted because the aspects all start
+ticked, the person can add their own instructions, and a change the person did not choose is
+exactly what ADR-024 exists to prevent.
+
+---
+
+## ADR-047 — A request to an AI can be stopped while it is in progress, and a stopped request leaves nothing behind
+
+**Status:** accepted, 2026-10-19. Amends ADR-024, which deferred cancelling a request in progress.
+
+Every chat (Ask AI, Space chat and the new-page writer) and every review has a **Stop** button while
+the AI is answering. Stopping aborts the browser's request; the server passes the abort to the
+provider's SDK or ends the Gemini CLI process, records `stopped` in the AI audit log, and discards a
+reply that arrives afterwards, so a conversation never gains half a turn and a review never gains
+findings after it was stopped. In a chat the question goes back into the box, so the person can
+correct it and send it again.
+
+**The argument against:** a stopped request may already have reached the provider, which may still
+bill for it and keep it under its own retention rules. Stopping therefore cannot undo a send, and
+the audit log records the request as sent and stopped rather than as never sent.
+
+---
+
+## ADR-048 — A whole-space question first asks the AI which pages to read, from their summaries alone, instead of sending the top search results
+
+**Status:** accepted, 2026-10-19. Amended by ADR-051. Amends ADR-023, which sent the best-matching pages for each question.
+
+A question about a whole space is answered in three steps (`src/spaces/contextRetriever.ts`).
+The BM25 index finds up to 25 candidate pages for the question, the question before it and the
+conversation so far. One small request then shows the AI those candidates by their metadata only,
+which is the title, place in the tree, AI summary, tags, document type and systems named, and asks
+which of them to read and why. Their full text, with the pages earlier answers used, then fills the
+context up to its limit. Each answer records the pages it read, with the reason, and how many it
+looked at. With no summaries, or a choice that cannot be read, the top search results are read.
+
+**The argument against:** every whole-space question costs a second request, and sends the AI the
+titles and summaries of up to 25 pages that may not be read in full. That is accepted because the
+summaries are already derived from pages the exclusion rules allow, they pass the outbound guard
+like everything else, and the person asking in an unfamiliar space (an incident at night, say) is
+exactly who cannot judge which pages to pin; a keyword search alone missed pages that summaries
+describe well.
+
+---
+
+## ADR-049 — Pages are changed from a chat's suggestions; the Improve tab and the separate review flow are removed
+
+**Status:** accepted, 2026-10-19. Amended by ADR-051. Amends ADR-046 and ADR-026.
+
+A chat reads a page, a directory (a page and everything under it), chosen pages such as those of
+one or more tags, or the whole space. Any answer can become suggestions with tick boxes: the chat's
+**Review for problems** and **Suggest improvements** actions ask for them, and **Turn this
+conversation into changes** turns what was discussed into them. The suggestions are stored with the
+turn on the server. **Queue selected** stages an edit of each page the ticked suggestions name,
+carrying only those suggestions, and the queue is reviewed and pushed as ADR-024 describes. The page
+has three tabs, Read, Chat and Details; the Improve tab, the Review section dialog and starting a
+review run outside a chat are removed.
+
+**The argument against:** a chat is less structured than a form, so a person may not find the
+review at all. That is accepted because the review is offered as a button in every chat that reads
+more than one page, and because the maintainer's own work (finding repeated pages across a space,
+fixing a drifted directory) starts as a conversation and only later becomes a list of changes.
+
+---
+
+## ADR-050 — The app reads GitLab repositories for new pages, through a connection the server holds, and only on the configured GitLab
+
+**Status:** accepted, 2026-10-19.
+
+A new page can be written from a GitLab repository: the person pastes its link, and the server reads
+its file list, README, Markdown docs, API description files and package manifest, within fixed
+limits on files and characters (`src/gitlab/client.ts`). The GitLab address and a personal access
+token are saved under **Settings → GitLab**, stored like the Confluence token and never returned to
+a browser. As with Confluence (ADR-019), a link on any other host is refused, so a web page cannot
+make the server fetch from a place of its choosing. The client uses Node's built-in `fetch`, so no
+dependency is added. What it reads is not Confluence content, so the exclusion rules do not apply;
+it passes the outbound guard like an uploaded file.
+
+**The argument against:** this is a second outbound connection and a second stored credential, and
+repository text may hold secrets. That is accepted because the token can be read-only, the host is
+fixed, and the outbound guard stops a request that carries a secret; both are added to the
+load-bearing table in `AGENTS.md`.
+
+---
+
+## ADR-051 — A chat chooses a corpus of any size and each question retrieves sections from it, instead of sending chosen pages in full
+
+**Status:** accepted, 2026-10-19. Amends ADR-048, which chose whole pages for a whole-space
+question, and ADR-049, which capped chosen pages at 50.
+
+What a chat reads is a **corpus**: a page, a directory with everything under it, any mix of
+directories, tags and single pages, or the whole space. A corpus has no size limit. When all of it
+fits in one request it is sent in full, as before. When it does not, each question retrieves from
+it (`src/spaces/contextRetriever.ts`):
+
+1. Pages are split into **sections** at their headings (`src/spaces/sections.ts`), and the BM25
+   index searches sections rather than whole pages.
+2. **Metadata version 2** adds, for each page, a one-line summary of each section, the questions the
+   page answers and its audience. Its topics are chosen from the space's existing topics where one
+   fits, so pages on one subject share a tag. Metadata older than its page is regenerated by the
+   same background job, which can be stopped and resumed.
+3. When the AI provider offers **embeddings** (OpenAI and Gemini do; Claude does not), each
+   section's text is embedded through the outbound guard and stored beside the synced copy. A
+   question is then matched by meaning as well as by its words. Without embeddings, retrieval uses
+   the keyword index and the metadata alone.
+4. The best 40 sections are shown to the AI by title, place, heading and section summary, never by
+   their text, and it picks up to 12. Those sections are sent in full, with the ones earlier answers
+   used. Each answer names the sections it read and why.
+
+A review or a request for changes over a corpus too large for one request runs as a background
+job. It reviews the pages in batches, grouped by shared topics so related pages are compared
+together, and merges the findings into one list of suggestions.
+
+**The argument against:** embeddings send every section of the space to a provider once, not only
+the sections a question needs, and a retrieved answer can miss a section a full read would have
+seen. That is accepted because embeddings are only made when the person has chosen a provider that
+offers them, each request passes the outbound guard and the audit log as every other request does,
+a section holding a secret is never embedded, and the data-safety guide says what is sent. A corpus
+that fits is still read in full, so retrieval is used only where a full read is impossible.
+
+---
+
+## ADR-052 — The Snippet parser is removed, because converting pasted storage format is not part of exploring, asking about or changing pages
+
+**Status:** accepted, 2026-10-19.
+
+The header's **Snippet parser** converted a piece of Confluence storage format, pasted in by hand,
+to Markdown, through `POST /api/parse`. It came with the app's first version as a way to see the
+converter at work. Nothing in syncing, chatting, changing pages or writing new ones uses it, and a
+page's own Markdown is shown on its Details tab, so it is removed with its route, test, guide
+section and screenshot. The converter itself stays: every other part of the app depends on it.
+
+**The argument against:** someone checking how a macro converts loses a quick way to do it. That is
+accepted because the Details tab shows how each real page converts, which is the case that matters,
+and the header is clearer with one button fewer.

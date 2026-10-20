@@ -7,6 +7,7 @@
     ChevronRight,
     ChevronsDown,
     ChevronsUp,
+    MessagesSquare,
     FileText,
     Folder,
     HardDrive,
@@ -14,10 +15,14 @@
     Search,
     X,
   } from '@lucide/svelte';
-  import type { ConfluenceSpace, PageTreeNode, SyncedSpace } from '../../../src/api/types.js';
+  import type { ConfluenceSpace, PageTreeNode, SyncedSpace, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
+  import { ancestorsOf, collapsedFor } from '../support/tree.js';
+  import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
+  import TagsView from './TagsView.svelte';
+  import Segmented from './ui/Segmented.svelte';
 
   type Props = {
     spaces: ConfluenceSpace[];
@@ -31,6 +36,10 @@
     error: string | null;
     /** The synced copy changed (a sync, a purge): reload the tree. */
     onTreeChanged: () => void;
+    /** Ask about the pages that carry a tag, in Space chat. */
+    onAskTag: (tag: TaggedPages) => void;
+    chatOpen: boolean;
+    onOpenChat: () => void;
   };
 
   let {
@@ -44,6 +53,9 @@
     loading,
     error,
     onTreeChanged,
+    onAskTag,
+    chatOpen,
+    onOpenChat,
   }: Props = $props();
 
   type Row = { node: PageTreeNode; depth: number; parentId: string | null; hasChildren: boolean; expanded: boolean };
@@ -83,6 +95,7 @@
   let spaceFilter = $state('');
   let pageFilter = $state('');
   let collapsed = $state(new Set<string>());
+  let view = $state<'pages' | 'tags'>('pages');
   let focusId = $state<string | null>(null);
   let saved = $state<SyncedSpace[]>([]);
   let switcher: HTMLDivElement;
@@ -108,6 +121,28 @@
     };
     document.addEventListener('mousedown', outside);
     return () => document.removeEventListener('mousedown', outside);
+  });
+
+  // A space's tree starts collapsed when it first loads; a reload of the same space, after a sync,
+  // keeps what the person opened.
+  let foldedFor = '';
+  $effect(() => {
+    const t = tree;
+    // The tree names its own space, so the old space's tree, still shown while the new one loads, is not the one folded.
+    const space = (t[0]?.spaceKey ?? '').toUpperCase();
+    if (!space || foldedFor === space) return;
+    foldedFor = space;
+    collapsed = collapsedFor(
+      t,
+      untrack(() => selectedPageId),
+    );
+  });
+
+  // A page opened from elsewhere, such as the header or a finding, is shown by opening the way to it.
+  $effect(() => {
+    const above = ancestorsOf(tree, selectedPageId);
+    const shut = untrack(() => collapsed);
+    if (above.some((id) => shut.has(id))) collapsed = new Set([...shut].filter((id) => !above.includes(id)));
   });
 
   const rows = $derived(visibleRows(tree, collapsed, pageFilter));
@@ -295,7 +330,29 @@
       />
     {/if}
 
-    <div class="row">
+    <button
+      type="button"
+      class={['btn btn-secondary btn-sm space-chat-open', chatOpen && 'active']}
+      disabled={!selectedSpace}
+      onclick={onOpenChat}
+      title="Ask about the whole space, in conversations kept on this machine"
+    >
+      <MessagesSquare size={13} /> Space chat
+    </button>
+
+    <div class="sidebar-view-switch">
+      <Segmented
+        label="Show"
+        value={view}
+        onChange={(v) => (view = v)}
+        options={[
+          { value: 'pages', label: 'Pages' },
+          { value: 'tags', label: 'Tags', title: 'Pages grouped by their labels and AI tags' },
+        ]}
+      />
+    </div>
+
+    <div class="row" hidden={view !== 'pages'}>
       <div class="search-field">
         <Search size={13} />
         <input
@@ -320,7 +377,11 @@
     </div>
   </div>
 
+  {#if view === 'tags'}
+    <TagsView spaceKey={selectedSpace} synced={!!manifest} {selectedPageId} {onSelectPage} onAsk={onAskTag} />
+  {/if}
   <div
+    hidden={view !== 'pages'}
     class="tree-view-content"
     role="tree"
     aria-label="Pages in {selectedSpace}"

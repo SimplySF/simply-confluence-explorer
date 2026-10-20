@@ -296,6 +296,29 @@ export class OutboundGuard {
   }
 
   /**
+   * Texts to embed, one message each (ADR-051). A text holding a secret is left out and its position
+   * returned in `skipped`, so one section with a key in it does not stop a whole page being indexed.
+   * Personal data is replaced as in any request.
+   */
+  public inspectTexts(texts: string[]): { payload: GuardedPayload; report: GuardReport; skipped: number[] } {
+    const redacted: Record<string, number> = {};
+    const skipped: number[] = [];
+    const messages: GuardedMessage[] = [];
+    texts.forEach((text, i) => {
+      const found: Finding[] = [];
+      const counts: Record<string, number> = {};
+      const content = this.scan('page content', text, found, counts);
+      if (found.length) {
+        skipped.push(i);
+        return;
+      }
+      messages.push({ role: 'user', content });
+      for (const [type, n] of Object.entries(counts)) redacted[type] = (redacted[type] ?? 0) + n;
+    });
+    return { ...this.finish('', messages, redacted), skipped };
+  }
+
+  /**
    * The secrets in one page, for choosing which pages go into a multi-page
    * context: such a page is left out, rather than the whole request refused.
    */

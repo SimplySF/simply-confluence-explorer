@@ -1,22 +1,22 @@
 <script lang="ts">
   import { ChevronDown, Download, FolderTree, RefreshCw, Sparkles } from '@lucide/svelte';
-  import { onDestroy } from 'svelte';
-  import type { MetadataProgress, PageMetadata, PageResponse } from '../../../src/api/types.js';
+  import type { PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
-  import { pollJob } from '../support/poll.js';
+  import { jobs } from '../support/jobs.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import JobProgress from './ui/JobProgress.svelte';
   import Menu from './ui/Menu.svelte';
 
-  // The AI summary of a page, its frontmatter, and its attachments.
+  // The page's entry in the AI index (its summary, topics and questions), its frontmatter, and its attachments.
   type Props = {
     page: PageResponse;
     spaceKey: string;
     descendantCount: number;
     metadata: PageMetadata | null;
     metadataLoading: boolean;
-    onMetadata: (m: PageMetadata | null) => void;
-    onMetadataLoading: (loading: boolean) => void;
+    /** A summary arrived for a page, which may no longer be the one on screen. */
+    onMetadata: (pageId: string, m: PageMetadata | null) => void;
+    onMetadataLoading: (pageId: string, loading: boolean) => void;
     reloadMetadata: () => void;
   };
 
@@ -30,64 +30,32 @@
     onMetadataLoading,
     reloadMetadata,
   }: Props = $props();
-  let job = $state<MetadataProgress | null>(null);
-  let stopPoll = (): void => undefined;
-  onDestroy(() => stopPoll());
   const detail = $derived(page.detail);
+  // The run lives in the jobs store, so it is still shown after the person opens another page and comes back.
+  const job = $derived(jobs.summaries(spaceKey, detail.id));
+  $effect(() => jobs.onFinished((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && reloadMetadata()));
 
   async function generateOne(): Promise<void> {
-    onMetadataLoading(true);
+    const pageId = detail.id;
+    onMetadataLoading(pageId, true);
     try {
-      onMetadata(await api.generatePageMetadata(spaceKey, detail.id));
+      onMetadata(pageId, await api.generatePageMetadata(spaceKey, pageId));
     } catch (e) {
-      toast(`Could not generate the summary: ${messageOf(e)}`, 'error');
+      toast(`The page was not indexed: ${messageOf(e)}`, 'error');
     } finally {
-      onMetadataLoading(false);
+      onMetadataLoading(pageId, false);
     }
   }
 
-  async function generateBranch(): Promise<void> {
-    try {
-      const { jobId } = await api.generateMetadata(spaceKey, detail.id);
-      job = { jobId, status: 'running', spaceKey, processed: 0, total: descendantCount + 1, errorCount: 0 };
-      stopPoll = pollJob(() => api.metadataStatus(jobId), {
-        onProgress: (p) => (job = p),
-        onFinished: (p) => {
-          job = null;
-          toast(
-            p.status === 'completed' ? 'Summaries generated for the branch.' : `Summaries for the branch ${p.status}.`,
-            p.status === 'completed' ? 'success' : 'info',
-          );
-          reloadMetadata();
-        },
-        onError: (e) => {
-          job = null;
-          toast(`The summary run stopped reporting: ${messageOf(e)}`, 'error');
-        },
-      });
-    } catch (e) {
-      toast(`Could not start summaries for the branch: ${messageOf(e)}`, 'error');
-    }
-  }
-
-  async function stop(): Promise<void> {
-    if (!job) return;
-    await api
-      .cancelMetadata(job.jobId)
-      .catch((e: unknown) => toast(`Could not stop the run: ${messageOf(e)}`, 'error'));
-    stopPoll();
-    job = null;
-  }
-
-  const generateLabel = $derived(metadataLoading ? 'Generating…' : metadata ? 'Regenerate' : 'Generate summary');
+  const generateLabel = $derived(metadataLoading ? 'Indexing…' : metadata ? 'Re-index' : 'Index this page');
 </script>
 
 <div class="details-panel">
   <section class="card">
     <div class="card-head">
-      <h4><Sparkles size={15} /> AI summary</h4>
+      <h4><Sparkles size={15} /> AI index</h4>
       {#if job}
-        <JobProgress processed={job.processed} total={job.total} current={job.currentPageTitle} onStop={stop} />
+        <JobProgress processed={job.processed} total={job.total} current={job.current} onStop={() => jobs.stop(job!)} />
       {:else if descendantCount > 0}
         <Menu
           items={[
@@ -95,7 +63,7 @@
             {
               label: `This page and its ${descendantCount} sub-pages`,
               icon: FolderTree,
-              onSelect: generateBranch,
+              onSelect: () => jobs.startSummaries(spaceKey, detail.id),
               disabled: metadataLoading,
             },
           ]}
@@ -120,11 +88,20 @@
         {#each metadata.tags as t (t)}<span class="pill">#{t}</span>{/each}
         {#each metadata.systemsMentioned as s (s)}<span class="pill pill-plain">{s}</span>{/each}
       </div>
+      {#if metadata.audience}<p class="muted">Written for {metadata.audience}.</p>{/if}
+      {#if metadata.questions?.length}
+        <details class="details-questions">
+          <summary>Questions it answers ({metadata.questions.length})</summary>
+          <ul>
+            {#each metadata.questions as q (q)}<li>{q}</li>{/each}
+          </ul>
+        </details>
+      {/if}
     {:else}
       <p class="muted">
         {metadataLoading
           ? 'Loading…'
-          : 'No summary yet. Generate one for a two-sentence summary, topic tags and a document type.'}
+          : 'Not indexed yet. Indexing gives the page a summary, topics and the questions it answers, which chats use to find it.'}
       </p>
     {/if}
   </section>

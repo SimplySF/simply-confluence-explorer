@@ -122,6 +122,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .brand-icon {
@@ -832,7 +833,7 @@ body {
   color: var(--text-dim);
 }
 
-/* Branch workspace: review findings and the improve queue */
+/* Reviews: choosing pages and aspects, the suggestions, and the staged edits */
 .branch-workspace {
   width: min(1200px, 96vw);
   max-width: none;
@@ -843,13 +844,13 @@ body {
 .branch-workspace .modal-body {
   overflow: auto;
 }
-.branch-start {
+.review-setup {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
   margin-bottom: 0.75rem;
 }
-.branch-start section {
+.review-setup section {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.85rem;
@@ -857,7 +858,45 @@ body {
   flex-direction: column;
   gap: 0.5rem;
 }
-.branch-start h4,
+.review-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 18rem;
+  overflow: auto;
+}
+.review-aspects {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.2rem 0.75rem;
+}
+.review-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.review-findings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.review-footer .branch-note {
+  margin-right: auto;
+}
+.review-setup h4,
 .branch-history h4 {
   display: flex;
   align-items: center;
@@ -865,7 +904,6 @@ body {
   margin: 0;
   font-size: 0.9rem;
 }
-.branch-start p,
 .branch-note {
   font-size: 0.78rem;
   color: var(--text-dim);
@@ -1016,11 +1054,7 @@ body {
   display: flex;
   gap: 0.4rem;
 }
-.branch-workspace .modal-footer .branch-note {
-  margin-right: auto;
-}
 @media (max-width: 760px) {
-  .branch-start,
   .branch-queue {
     grid-template-columns: 1fr;
   }
@@ -1500,6 +1534,25 @@ body {
   background-color: var(--accent-primary);
   transition: width 0.2s;
 }
+.job-progress-moving {
+  width: 35%;
+  animation: jobProgressSweep 1.4s ease-in-out infinite;
+}
+@keyframes jobProgressSweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .job-progress-moving {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
 .job-progress-label {
   flex: 1;
   min-width: 0;
@@ -1760,6 +1813,14 @@ body {
   font-size: 0.9rem;
   line-height: 1.55;
 }
+.details-questions {
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+.details-questions ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -1808,11 +1869,46 @@ body {
   flex: 1;
   min-height: 0;
 }
-.quick-actions {
+/* Ways to begin a chat, shown until the first question */
+.chat-starters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
+  max-width: 52rem;
+  margin: 0 auto 1rem;
+  width: 100%;
+}
+.chat-starter {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-starter:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  background: var(--accent-light);
+}
+.chat-starter:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.chat-starter-label {
+  display: inline-flex;
+  align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.8rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.chat-starter-detail {
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 .chat-stream {
   flex: 1;
@@ -1944,25 +2040,6 @@ body {
   font-size: 0.92rem;
 }
 
-/* Snippet parser */
-.snippet-input {
-  width: 100%;
-  height: 150px;
-  resize: vertical;
-}
-.snippet-output {
-  min-height: 260px;
-}
-.snippet-preview {
-  max-width: none;
-  margin: 0;
-  padding: 0.8rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background-color: var(--bg-panel-secondary);
-  overflow: auto;
-}
-
 @media (max-width: 760px) {
   .two-col {
     grid-template-columns: 1fr;
@@ -2028,4 +2105,409 @@ body {
 }
 div.disclosure-body {
   padding-left: 0.9rem;
+}
+
+/* Background work in the header */
+.jobs-bar {
+  display: flex;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.jobs-bar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 18rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  background: var(--accent-light);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.jobs-bar-item:hover {
+  background: var(--bg-hover);
+}
+
+.jobs-bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-bar-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pages by tag, in the sidebar */
+.tags-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.tags-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.tags-title {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tags-list,
+.tags-pages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.tags-item,
+.tags-page {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+}
+.tags-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+}
+.tags-item span:first-child,
+.tags-page-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.tags-item:hover,
+.tags-page:hover,
+.tags-page.selected {
+  background: var(--bg-hover);
+}
+.tags-count {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.tags-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+}
+.tags-page-path,
+.tags-page-summary {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding-left: 1.2rem;
+}
+.tags-page-summary {
+  color: var(--text-dim);
+}
+.sidebar-view-switch {
+  margin-bottom: 0.25rem;
+}
+
+/* Space chat: the space's conversations beside the one open */
+.main-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.main-slot[hidden] {
+  display: none;
+}
+.space-chat-open {
+  width: 100%;
+  justify-content: center;
+}
+.space-chat-open.active {
+  background: var(--accent-light);
+  border-color: var(--accent-primary);
+}
+.space-chat {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100%;
+  min-height: 0;
+}
+.space-chat-list {
+  border-right: 1px solid var(--border-color);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow: auto;
+}
+.space-chat-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.space-chat-list li {
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+.space-chat-list li.selected,
+.space-chat-list li:hover {
+  background: var(--bg-hover);
+}
+.space-chat-item {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.space-chat-item-title {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-chat-item-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.space-chat-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  min-width: 0;
+  min-height: 0;
+}
+.space-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.space-chat-head h3 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1.05rem;
+}
+.chat-context {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-panel-secondary);
+}
+.chat-context-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  border: none;
+  background: none;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-context-bar span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-context-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+}
+.chat-context-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.chat-context-panel .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.chat-context-tag {
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  font: inherit;
+}
+.chat-context-tag.active {
+  background: var(--accent-light);
+  border-color: var(--accent-primary);
+}
+@media (max-width: 900px) {
+  .space-chat {
+    grid-template-columns: 1fr;
+  }
+  .space-chat-list {
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    max-height: 30vh;
+  }
+}
+
+/* What an answer read, and why */
+.chat-read {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0.25rem 0;
+}
+.chat-read summary {
+  cursor: pointer;
+}
+.chat-read ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}
+
+/* A chat's actions that ask for suggestions, and the queues staged from them */
+.chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.chat-actions-note {
+  font-size: 0.78rem;
+}
+.change-queue {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* How many of a chat's pages are in the AI index */
+.summary-coverage {
+  margin: 0.15rem 0 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.chat-context-coverage:not(:empty) {
+  padding: 0 0.65rem 0.4rem;
+}
+.chat-context-line {
+  margin: 0;
+  padding: 0 0.65rem 0.35rem 2.05rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.chat-context-results,
+.chat-context-chosen {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat-context-results li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.chat-context-result-name {
+  flex: 1;
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+}
+.chat-context-chosen {
+  gap: 0.2rem;
+}
+.chat-context-chosen li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* What the co-writer of a new page reads */
+.new-page-reads {
+  font-size: 0.8rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+.new-page-reads summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.new-page-reads[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* The pages of a series in the New page dialog */
+.new-page-series {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+.new-page-series-tab {
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel-secondary);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.new-page-series-tab.active {
+  background: var(--accent-light);
+  border-color: var(--accent-primary);
 }

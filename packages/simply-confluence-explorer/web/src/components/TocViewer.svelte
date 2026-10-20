@@ -4,7 +4,7 @@
   import { api } from '../support/api.js';
   import TocItem from './TocItem.svelte';
 
-  // The space's site map with AI summaries and tags, built by the summary run.
+  // The space's site map with AI summaries and tags, built when the space is indexed.
   type Props = { spaceKey: string; onSelectPage: (pageId: string) => void };
 
   let { spaceKey, onSelectPage }: Props = $props();
@@ -76,7 +76,7 @@
     <p class="muted tree-message">Loading the table of contents…</p>
   {:else if nodes.length === 0}
     <p class="muted tree-message">
-      No table of contents yet. Choose <strong>Generate AI summaries</strong> in the Space menu to build it.
+      No table of contents yet. Choose <strong>Build the AI index</strong> in the Space menu to build it.
     </p>
   {:else}
     {#each nodes as n (n.id)}

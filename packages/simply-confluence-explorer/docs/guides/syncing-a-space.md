@@ -15,7 +15,8 @@ Choose a space in the sidebar, open the **Space** menu, and choose **Sync space*
 
 ![The Space menu, with Sync space at the top](../images/space-menu.webp)
 
-The menu shows progress as the pages arrive, with a **Stop** button. When the sync finishes, a
+The menu shows progress as the pages arrive, with a **Stop** button, and the header shows it too
+while you browse; if you reload the page, the progress comes back. When the sync finishes, a
 message says how many pages were downloaded and how many were already current or excluded, and the
 badge under the space picker changes from **Not synced** to the number of pages synced.
 
@@ -48,14 +49,6 @@ page's latest version, sync the space again.
 
 ![A page shown as Markdown, with its frontmatter at the top](../images/read-markdown.webp)
 
-### Convert a snippet
-
-**Snippet parser** in the header converts a piece of Confluence storage format that you paste in, such
-as a macro copied from another page's source, and shows its Markdown beside a rendered preview. It
-reads nothing from Confluence and saves nothing.
-
-![The snippet parser, with storage format above and its Markdown and rendered view below](../images/snippet.webp)
-
 ### What the Markdown looks like
 
 Each page's Markdown starts with a short block of details between `---` lines, called frontmatter:
@@ -77,7 +70,7 @@ rather than dropping them:
 | A task list                         | `- [x]` and `- [ ]`                           |
 
 This is also why some pages cannot be pushed back from Markdown; see
-[Improving a page](/guides/improving-pages/).
+[Changing pages from a chat](/guides/changing-pages/).
 
 ## The table of contents
 
@@ -85,12 +78,17 @@ This is also why some pages cannot be pushed back from Markdown; see
 topics once those exist. Click a title to open the page. The same table is saved as `TOC.md` and
 `toc.json` in the space's folder, so other tools can use it.
 
-**Generate AI summaries** in the same menu asks your AI to summarise each synced page, one at a time,
-and add topic tags. You can pause it and come back later. It only summarises pages that do not have a
-summary yet; to redo the summary of one page, use **Regenerate** on that page's **Details** tab. A
-page's summary is removed when a sync downloads a newer version of it, so it is never out of date.
+**Build the AI index** in the same menu asks your AI about each synced page, one at a time: what it
+is for, its topics, the questions it answers, and a line on each section. With a provider
+that offers embeddings, it embeds each section too (see [Asking an AI](/guides/asking-ai/)). It keeps
+going while you open other pages: the header shows how far it has got, and clicking it takes you
+back. Starting it again while it runs shows the same run rather than starting a second one. You can
+pause it and come back later. It only does pages that are not indexed yet; once every page is, the
+menu says so; to redo one page, use **Re-index** on its **Details** tab. A page's index entry and
+embeddings are removed when a sync downloads a newer version of it, so they are never out of date,
+and **Update the AI index** redoes just those pages.
 
-![The Details tab, with a page's AI summary and its frontmatter](../images/details.webp)
+![The Details tab, with a page's entry in the AI index and its frontmatter](../images/details.webp)
 
 ## Download a ZIP
 
@@ -118,7 +116,8 @@ spaces/PLAT/
   pages/                 one Markdown file per page, in folders that follow the tree
   pages/.../Title_attachments/   each page's attachments
   pages_cache/           each page as Confluence sent it
-  metadata/              AI summaries
+  metadata/              the AI index: summaries, topics, questions
+  vectors/               section embeddings, when the provider makes them
   TOC.md, toc.json       the table of contents
   manifest.json          when the space was last synced
   .confluenceignore      the space's exclusion rules

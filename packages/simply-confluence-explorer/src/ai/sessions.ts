@@ -39,6 +39,8 @@ const HTML_TYPES = new Set(['.html', '.htm']);
 
 type Stored = AiSessionView & {
   guardState: Array<[string, string]>;
+  /** The person named the conversation, so its first question no longer names it. */
+  named?: boolean;
 };
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -112,8 +114,8 @@ export class SessionStore {
     return s ? viewOf(s) : null;
   }
 
-  /** Newest first. A scope given narrows it to conversations about that page or space. */
-  public list(scope?: Partial<SessionScope>): AiSessionView[] {
+  /** Newest first. A scope given narrows it to conversations about that page or space, of any of `kinds`. */
+  public list(scope?: Partial<SessionScope>, kinds?: Array<SessionScope['kind']>): AiSessionView[] {
     if (!fs.existsSync(this.dir)) return [];
     return fs
       .readdirSync(this.dir)
@@ -123,6 +125,7 @@ export class SessionStore {
         (s) =>
           !scope ||
           ((!scope.kind || s.scope.kind === scope.kind) &&
+            (!kinds || kinds.includes(s.scope.kind)) &&
             (!scope.spaceKey || s.scope.spaceKey === scope.spaceKey) &&
             (!scope.pageId || s.scope.pageId === scope.pageId)),
       )
@@ -188,6 +191,29 @@ export class SessionStore {
     return viewOf(s);
   }
 
+  /** Renames a conversation, or changes what it reads. */
+  public update(id: string, patch: { title?: string; scope?: SessionScope }): AiSessionView {
+    const s = this.load(id);
+    if (!s) throw new Error('no such session');
+    if (patch.title !== undefined) {
+      s.title = patch.title;
+      s.named = true;
+    }
+    if (patch.scope) s.scope = patch.scope;
+    this.save(s);
+    return viewOf(s);
+  }
+
+  /** Records a queue of edits staged from the suggestions of one answer. */
+  public addRun(id: string, turn: number, runId: string): AiSessionView {
+    const s = this.load(id);
+    const t = s?.turns[turn];
+    if (!s || !t) throw new Error('no such turn');
+    t.runIds = [...(t.runIds ?? []), runId];
+    this.save(s);
+    return viewOf(s);
+  }
+
   public guardState(id: string): Array<[string, string]> {
     return this.load(id)?.guardState ?? [];
   }
@@ -198,7 +224,8 @@ export class SessionStore {
     if (!s) throw new Error('no such session');
     s.turns.push(...turns);
     s.guardState = guardState;
-    if (!s.draft && s.turns.length === turns.length && turns[0]?.role === 'user') s.title = turns[0].text.slice(0, 80);
+    if (!s.draft && !s.named && s.turns.length === turns.length && turns[0]?.role === 'user')
+      s.title = turns[0].text.slice(0, 80);
     this.save(s);
     return viewOf(s);
   }

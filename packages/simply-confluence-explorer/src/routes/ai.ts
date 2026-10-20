@@ -20,15 +20,46 @@ import type { AiSettingsView, AnalyzeResponse, MetadataProgress } from '../api/t
 import { listModels } from '../ai/engine.js';
 import { guardRulesPath, parseGuardRules, withWithheld } from '../ai/guard.js';
 import { API_PROVIDERS, type ApiProvider, type SettingsUpdate } from '../ai/settings.js';
+import { isValidPageId } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
-import { retrieveSpaceContext } from '../spaces/contextRetriever.js';
+import { corpusSize, retrieveContext } from '../spaces/contextRetriever.js';
+import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
+import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { generateMetadata } from '../spaces/metadata.js';
+import type { SpaceStore } from '../spaces/spaceStore.js';
+import { tagIndex } from '../spaces/tags.js';
 import { errorMessage } from '../util/errors.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
+
+/**
+ * The pages a request chooses by directory, tag and page, as a chat's chosen pages are (ADR-051), or
+ * `undefined` when it chooses none. Directories and tags are resolved from the synced copy.
+ */
+function chosenIdsOf(
+  body: unknown,
+  spaceKey: string,
+  store: SpaceStore,
+  exclusions: ExclusionManager,
+): string[] | undefined {
+  const fields = fieldsOf(body);
+  if (fields.pageIds === undefined && fields.dirs === undefined && fields.tags === undefined) return undefined;
+  const list = (value: unknown): unknown[] =>
+    (Array.isArray(value) ? (value as unknown[]) : []).map((v) => (typeof v === 'number' ? String(v) : v));
+  const [pageIds, dirs] = [list(fields.pageIds), list(fields.dirs)];
+  const tags = list(fields.tags)
+    .filter((t): t is string => typeof t === 'string')
+    .map((t) => t.trim().toLowerCase());
+  if (pageIds.length + dirs.length > MAX_CORPUS_IDS || ![...pageIds, ...dirs].every(isValidPageId))
+    throw new HttpError(400, `pageIds and dirs are lists of at most ${MAX_CORPUS_IDS} page ids`);
+  const scope = { kind: 'pages' as const, spaceKey, pageIds: pageIds as string[], dirs: dirs as string[], tags };
+  const ids = corpusPages(store, exclusions, scope).map((p) => p.id);
+  if (ids.length === 0 && pageIds.length === 0) throw new HttpError(400, 'no synced pages are chosen');
+  return [...new Set([...ids, ...(pageIds as string[])])];
+}
 
 /** A settings change from the browser, with every value checked to be the string it must be. */
 function settingsUpdate(body: unknown): SettingsUpdate {
@@ -70,7 +101,7 @@ const requiredPrompt = (body: unknown): string => {
  * @param services What the routes share.
  */
 export function addAiRoutes(router: Router, services: Services): Router {
-  const { ai, store, exclusions, metadata, dataDir } = services;
+  const { ai, store, exclusions, metadata, dataDir, index } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
   const settingsView = (): AiSettingsView => ({ ...ai.settings.publicView(), geminiCliFound: ai.cliPath() });
   const gate = async (
@@ -155,11 +186,20 @@ export function addAiRoutes(router: Router, services: Services): Router {
           engine: ai.getEngine(),
         };
       })
-      .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body }): Promise<AnalyzeResponse> => {
+      .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body, signal }): Promise<AnalyzeResponse> => {
         const prompt = requiredPrompt(body);
         const key = params.spaceKey.toUpperCase();
-        const context = retrieveSpaceContext(key, prompt, { store, exclusions, dataDir });
-        const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, { spaceKey: key });
+        const context = await retrieveContext(
+          key,
+          store.visiblePages(key),
+          { question: prompt },
+          { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
+          { budget: services.contextChars, outline: true },
+        );
+        const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, {
+          spaceKey: key,
+          signal,
+        });
         return {
           answer: answer.text,
           guard: withWithheld(answer.guard, context.withheld),
@@ -172,13 +212,30 @@ export function addAiRoutes(router: Router, services: Services): Router {
       }))
       .add('POST', '/api/space-cache/:spaceKey/pages/:pageId/metadata/generate', async ({ params }) => {
         const { page, spaceKey } = await gate(params.pageId, params.spaceKey);
-        const result = await generateMetadata(page, ai);
+        const result = await generateMetadata(
+          page,
+          ai,
+          tagIndex(store, spaceKey).map((t) => t.tag),
+        );
         if (store.readPage(spaceKey, page.id)) store.writeMetadata(spaceKey, result);
         return { metadata: result };
       })
       .add('POST', '/api/space-cache/:spaceKey/metadata/generate', ({ params, body }): MetadataProgress =>
-        metadata.start(params.spaceKey, optionalString(body, 'rootPageId')),
+        metadata.start(
+          params.spaceKey,
+          optionalString(body, 'rootPageId'),
+          chosenIdsOf(body, params.spaceKey, store, exclusions),
+        ),
       )
+      // How many of a space's, a section's or chosen pages have an AI summary, for a chat to show, and
+      // whether they fit one request, so the chat can say whether it reads them all (ADR-051).
+      .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', ({ params, body }) => {
+        const key = params.spaceKey.toUpperCase();
+        const rootPageId = optionalString(body, 'rootPageId');
+        const ids = chosenIdsOf(body, key, store, exclusions);
+        const size = corpusSize(key, metadata.allowedPages(key, rootPageId, ids), index);
+        return { ...metadata.coverage(key, rootPageId, ids), fits: size <= services.contextChars };
+      })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);
         if (!job) throw new HttpError(404, `no metadata job ${params.jobId}`);

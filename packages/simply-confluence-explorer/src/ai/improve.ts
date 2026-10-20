@@ -14,48 +14,44 @@
  * limitations under the License.
  */
 
-// The prompt that asks for an improved version of a page, and the parsing of the answer. Improving
-// one page and improving a branch use the same prompt and the same parser, so both ask for and read
-// the same thing.
+// The prompt that asks for an edit of one page applying the suggestions a person chose from a
+// review, and the parsing of the answer (ADR-046).
 
-export type FocusArea = 'polish' | 'completeness' | 'structure' | 'runbook';
+import type { BranchFix } from '../api/types.js';
 
-/** The instruction for an improvement proposal, with a focus and the person's own notes. */
-export function improvePrompt(focusArea?: string, userPrompt?: string): string {
-  const focusInstructions =
-    {
-      polish: 'Focus on clarity, prose quality, spelling, grammar, and consistent professional tone.',
-      completeness:
-        'Focus on technical depth: add missing prerequisites, architectural context, step-by-step commands, expected outputs, and troubleshooting steps.',
-      structure:
-        'Focus on document structure: organize into logical H1/H2/H3 sections, format code blocks with language identifiers, and convert callouts (notes/warnings) into formatted panels.',
-      runbook:
-        'Focus on operational hardening: ensure explicit pre-checks, rollback procedures, escalation paths, and verification criteria for every step.',
-    }[focusArea as FocusArea] ??
-    'Focus on technical clarity, completeness, code accuracy, and clean Markdown structure.';
-
-  return `You are an expert technical documentation architect and engineering peer reviewer.
-Review the following Confluence page and propose an improved, production-ready version.
-
-GOAL:
-${focusInstructions}
-${userPrompt ? `Additional User Instructions: "${userPrompt}"` : ''}
-
+/**
+ * The instruction for an edit that applies only the chosen suggestions, so nothing the person did
+ * not choose is changed.
+ *
+ * @param fixes The suggestions to apply to this page.
+ * @param userPrompt The person's own notes, if any.
+ */
+export function applyPrompt(fixes: BranchFix[], userPrompt?: string): string {
+  const list = fixes
+    .map((f, i) => {
+      const also = f.otherPages.length ? ` (also concerns: ${f.otherPages.join(', ')})` : '';
+      return `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}${also}`;
+    })
+    .join('\n');
+  return `You are an expert technical documentation editor.
+Edit the following Confluence page to apply these suggestions from a review, and nothing else:
+${list}
+${userPrompt ? `Additional User Instructions: "${userPrompt}"\n` : ''}
 CRITICAL RULES:
-1. Preserve existing YAML frontmatter at the very top (id, title, space, version, etc.).
-2. Retain all technical facts and domain logic, but significantly enhance formatting, missing prerequisites, code examples, callouts, and clarity.
-3. Output pure Markdown using the exact delimiter tags below. Do NOT output JSON!
+1. Change only what the suggestions need. Keep every other sentence, heading, list and fact exactly as it is.
+2. Preserve existing YAML frontmatter at the very top (id, title, space, version, etc.).
+3. When a suggestion concerns another page too, change only this page's part of it.
+4. Output pure Markdown using the exact delimiter tags below. Do NOT output JSON!
 
 <<<CRITIQUE>>>
-- Critique point 1 explaining a gap or issue in the original document
-- Critique point 2 explaining what was missing or confusing
+- Any suggestion you could not apply, and why; or "None"
 
 <<<CHANGELOG>>>
-- Specific change 1 made to the document
-- Specific change 2 made to the document
+- Specific change 1 made to the page
+- Specific change 2 made to the page
 
 <<<PROPOSED_MARKDOWN>>>
-[Put the full, complete improved Markdown document here with frontmatter, headings, code blocks, and panels. Do NOT wrap this section in outer backticks.]`;
+[Put the full, complete edited Markdown page here with its frontmatter. Do NOT wrap this section in outer backticks.]`;
 }
 
 export type Recommendation = {
@@ -89,7 +85,7 @@ function recoverMarkdown(text: string): string | undefined {
 }
 
 /**
- * Reads the AI's answer to `improvePrompt`. The answer is expected between the delimiter tags the
+ * Reads the AI's answer to `applyPrompt`. The answer is expected between the delimiter tags the
  * prompt asks for; a model that answers in JSON instead, or with bare Markdown, is still read, so a
  * proposal is never lost to a formatting slip.
  *

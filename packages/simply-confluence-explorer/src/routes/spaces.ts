@@ -15,7 +15,8 @@
  */
 
 import archiver from 'archiver';
-import type { PurgeResult, SpaceTocNode, SyncProgress } from '../api/types.js';
+import type { PurgeResult, SpaceTocNode, SyncProgress, TaggedPages } from '../api/types.js';
+import { tagIndex } from '../spaces/tags.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
@@ -44,10 +45,18 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
     })
     .add('GET', '/api/space-cache/sync/status/:jobId', ({ params }) => sync.get(params.jobId) ?? notFound(params.jobId))
     .add('POST', '/api/space-cache/sync/cancel/:jobId', ({ params }) => ({ cancelled: sync.cancel(params.jobId) }))
+    .add('GET', '/api/space-cache/:spaceKey/sync/active', ({ params }) => ({
+      activeJob: sync.activeFor(params.spaceKey) ?? null,
+    }))
     .add('GET', '/api/space-cache/:spaceKey/toc', ({ params }): { toc: SpaceTocNode[] } => {
       if (!store.isSynced(params.spaceKey))
         throw new HttpError(404, `${params.spaceKey} has not been synced, so it has no table of contents`);
       return { toc: store.writeToc(params.spaceKey) };
+    })
+    .add('GET', '/api/space-cache/:spaceKey/tags', ({ params }): { tags: TaggedPages[] } => {
+      if (!store.isSynced(params.spaceKey))
+        throw new HttpError(404, `${params.spaceKey} has not been synced, so its tags are not known`);
+      return { tags: tagIndex(store, params.spaceKey.toUpperCase()) };
     })
     .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', ({ params }) => {
       const descendants = store.descendants(params.spaceKey, params.pageId);

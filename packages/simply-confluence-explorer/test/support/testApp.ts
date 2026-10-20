@@ -26,12 +26,15 @@ import path from 'node:path';
 import type { GuardedPayload } from '../../src/ai/guard.js';
 import { createServer } from '../../src/server.js';
 import { FAKE_TOKEN, type FakeConfluence } from './fakeConfluence.js';
+import { standInVector } from './standInEmbedder.js';
 
 export type TestApp = {
   base: string;
   dataDir: string;
   /** Every payload the AI was sent, in order. */
   sent: GuardedPayload[];
+  /** Every payload sent to be embedded, when the app was started with embeddings. */
+  embedded: GuardedPayload[];
   /** Everything that was sent, as one string, for checking what left the machine. */
   sentText: () => string;
   call: <T = Record<string, unknown>>(
@@ -57,12 +60,14 @@ const echo = (payload: GuardedPayload, n: number): string => {
 
 export async function startTestApp(
   fake: FakeConfluence,
-  reply: (payload: GuardedPayload, n: number) => string | Promise<string> = echo,
+  reply: (payload: GuardedPayload, n: number, signal?: AbortSignal) => string | Promise<string> = echo,
   env: NodeJS.ProcessEnv = {},
+  options: { embeddings?: boolean; contextChars?: number } = {},
 ): Promise<TestApp> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-app-'));
   fake.writeIgnoreFiles(dataDir);
   const sent: GuardedPayload[] = [];
+  const embedded: GuardedPayload[] = [];
   const server: http.Server = createServer({
     webRoot: dataDir,
     dataDir,
@@ -73,10 +78,19 @@ export async function startTestApp(
       AI_PROVIDER: 'anthropic',
       ...env,
     },
-    aiTransport: (payload) => {
+    aiTransport: (payload, signal) => {
       sent.push(payload);
-      return Promise.resolve(reply(payload, sent.length));
+      return Promise.resolve(reply(payload, sent.length, signal));
     },
+    contextChars: options.contextChars,
+    ...(options.embeddings
+      ? {
+          embedTransport: (payload: GuardedPayload): Promise<number[][]> => {
+            embedded.push(payload);
+            return Promise.resolve(payload.messages.map((m) => standInVector(m.content)));
+          },
+        }
+      : {}),
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
@@ -84,6 +98,7 @@ export async function startTestApp(
     base,
     dataDir,
     sent,
+    embedded,
     sentText: () => sent.map((p) => [p.system, ...p.messages.map((m) => m.content)].join('\n')).join('\n'),
     call: async <T>(method: string, route: string, body?: unknown) => {
       const res = await fetch(`${base}${route}`, {

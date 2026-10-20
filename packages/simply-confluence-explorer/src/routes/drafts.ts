@@ -19,6 +19,7 @@ import {
   checkRedundancy,
   coWrite,
   createFromDraft,
+  addRepository,
   decide,
   draftOf,
   saveDraft,
@@ -29,6 +30,18 @@ import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
+
+/** A series' child pages from a request: each a title and its Markdown. */
+function childrenOf(value: unknown): Array<{ title: string; markdown: string }> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new HttpError(400, 'children must be a list of pages');
+  return value.map((v: unknown) => {
+    const page = fieldsOf(v);
+    if (typeof page.title !== 'string' || typeof page.markdown !== 'string')
+      throw new HttpError(400, 'each page of a series has a title and its Markdown');
+    return { title: page.title, markdown: page.markdown.slice(0, 200_000) };
+  });
+}
 
 /**
  * Adds the routes for writing a new page with a co-writer, after a check for pages that already say
@@ -47,6 +60,7 @@ export function addDraftRoutes(router: Router, services: Services): Router {
     client: services.client,
     dataDir: services.dataDir,
     log: services.log,
+    gitlab: services.gitlab,
   };
   return (
     router
@@ -82,21 +96,33 @@ export function addDraftRoutes(router: Router, services: Services): Router {
           : [];
         return decide(params.sessionId, optionalString(body, 'decision') ?? '', ids, deps);
       })
-      .add('PUT', '/api/drafts/:sessionId', ({ params, body }) =>
-        saveDraft(
+      .add('PUT', '/api/drafts/:sessionId', ({ params, body }) => {
+        const example = fieldsOf(body).examplePageId;
+        const examplePageId = typeof example === 'number' ? String(example) : example;
+        if (examplePageId !== undefined && examplePageId !== '' && !isValidPageId(examplePageId))
+          throw new HttpError(400, 'invalid examplePageId');
+        return saveDraft(
           params.sessionId,
           {
             title: optionalString(body, 'title'),
             markdown: optionalString(body, 'markdown'),
             notes: optionalString(body, 'notes'),
+            examplePageId,
+            template: optionalString(body, 'template'),
+            children: childrenOf(fieldsOf(body).children),
           },
           deps,
-        ),
-      )
-      .add('POST', '/api/drafts/:sessionId/messages', ({ params, body }) => {
+        );
+      })
+      .add('POST', '/api/drafts/:sessionId/repositories', ({ params, body }) => {
+        const link = optionalString(body, 'link')?.trim();
+        if (!link) throw new HttpError(400, 'a link to a GitLab repository is required');
+        return addRepository(params.sessionId, link, deps);
+      })
+      .add('POST', '/api/drafts/:sessionId/messages', ({ params, body, signal }) => {
         const prompt = optionalString(body, 'prompt')?.trim();
         if (!prompt) throw new HttpError(400, 'prompt is required');
-        return coWrite(params.sessionId, prompt, deps);
+        return coWrite(params.sessionId, prompt, deps, signal);
       })
       .add('POST', '/api/drafts/:sessionId/check', ({ params }) => checkDraft(params.sessionId, deps))
       .add('POST', '/api/drafts/:sessionId/create', ({ params }) => createFromDraft(params.sessionId, deps))

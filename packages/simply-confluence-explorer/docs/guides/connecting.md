@@ -81,6 +81,14 @@ can be read only by your user account; on Windows it is protected by your Window
 permissions, and the doctor says so. The token is never sent back to the browser: the app tells the
 page only whether a token is saved.
 
+## GitLab, for writing pages from a repository
+
+To let the co-writer of a new page read a repository (see [Writing a new page](/guides/new-pages/)),
+open **Settings → GitLab**, enter your GitLab's address and a personal access token with
+`read_api` or `read_repository`, click **Test**, then **Save GitLab**. The token is saved in
+`config/gitlab.json` like the Confluence token and never sent back to the browser. Only
+repositories on that GitLab can be read, and a new address drops the saved token.
+
 ## Atlassian Cloud
 
 Confluence Explorer works with Confluence Server and Data Center only. Atlassian Cloud signs in
@@ -91,5 +99,6 @@ a Cloud address (one ending in `.atlassian.net`) as unsupported.
 
 `test/connection.test.ts` and `test/security.test.ts` check that the token is saved owner-only and
 never returned, and that a token is not reused for a new address. `test/doctor.test.ts` checks the
-certificate hint, the Cloud refusal and the Windows note. `test/e2e/browse.e2e.ts` connects to a real
+certificate hint, the Cloud refusal and the Windows note. `test/gitlab.test.ts` checks the GitLab
+token is never returned and only the configured GitLab is read. `test/e2e/browse.e2e.ts` connects to a real
 Confluence Data Center with a personal access token.

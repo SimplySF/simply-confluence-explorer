@@ -10,9 +10,11 @@
     Search,
     Send,
     ShieldCheck,
+    Square,
     Upload,
   } from '@lucide/svelte';
-  import type { AiSessionView, RedundancyDecision } from '../../../src/api/types.js';
+  import { untrack } from 'svelte';
+  import type { AiSessionView, RedundancyDecision, SeriesPage } from '../../../src/api/types.js';
   import { drafts, sessions, type DraftSummary } from '../support/api.js';
   import { messageOf } from '../support/toast.svelte.js';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
@@ -26,20 +28,39 @@
     spaceKey: string;
     parentId: string;
     parentTitle: string;
+    /** What the page should cover, when a review suggested it. */
+    notes?: string;
+    /** The space's pages, to choose one whose structure to follow; excluded pages are never among them. */
+    pages: Array<{ id: string; title: string }>;
     onClose: () => void;
     /** The author chose to work on an existing page instead, or opens the new one. */
     onOpenPage: (pageId: string) => void;
     onCreated: () => void;
   };
 
-  let { spaceKey, parentId, parentTitle, onClose, onOpenPage, onCreated }: Props = $props();
+  let {
+    spaceKey,
+    parentId,
+    parentTitle,
+    notes: suggested = '',
+    pages,
+    onClose,
+    onOpenPage,
+    onCreated,
+  }: Props = $props();
+  // A series: the overview is the draft itself (tab 0), and its child pages follow.
+  let children = $state<SeriesPage[]>([]);
+  let tab = $state(0);
+  let exampleTitle = $state('');
+  let template = $state('');
+  let repoLink = $state('');
   const OVERLAP_LABEL = { high: 'Already covers this', some: 'Covers part of it', low: 'Little overlap' } as const;
   const UPLOAD_TYPES = '.pdf,.md,.markdown,.txt,.csv,.tsv,.json,.yaml,.yml,.log,.xml,.html,.htm';
 
   let session = $state<AiSessionView | null>(null);
   let unfinished = $state<DraftSummary[]>([]);
   let title = $state('');
-  let notes = $state('');
+  let notes = $state(untrack(() => suggested));
   let linked = $state<string[]>([]);
   let markdown = $state('');
   let preview = $state(false);
@@ -60,15 +81,29 @@
 
   const d = $derived(session?.draft);
   const stage = $derived(
-    !session ? 'describe' : !d?.redundancy?.decision ? 'check' : d.createdPageId ? 'done' : 'write',
+    !session
+      ? 'describe'
+      : !d?.redundancy?.decision
+        ? 'check'
+        : d.createdPageId && (d.children ?? []).every((c) => c.createdPageId)
+          ? 'done'
+          : 'write',
   );
+  const pageCount = $derived(1 + children.length);
 
   function load(s: AiSessionView): void {
     session = s;
     markdown = s.draft?.markdown ?? '';
     title = s.draft?.title ?? '';
+    template = s.draft?.template ?? '';
+    children = (s.draft?.children ?? []).map((c) => ({ ...c }));
+    if (tab > children.length) tab = 0;
+    exampleTitle = pages.find((p) => p.id === s.draft?.examplePageId)?.title ?? '';
     checkOk = null;
   }
+
+  // The question being answered, so Stop can end it and put it back in the box (ADR-047).
+  let asking = $state<{ prompt: string; stopper: AbortController } | null>(null);
 
   async function act(label: string, fn: () => Promise<AiSessionView | void>): Promise<void> {
     busy = label;
@@ -77,17 +112,25 @@
       const s = await fn();
       if (s) load(s);
     } catch (e) {
-      error = messageOf(e);
+      // A stopped question is not an error: the author is about to ask it again.
+      if (label !== 'send' || !asking?.stopper.signal.aborted) error = messageOf(e);
     } finally {
       busy = null;
+      if (label === 'send') asking = null;
     }
   }
 
-  // The editor saves itself shortly after typing stops.
+  function stopAsking(): void {
+    if (!asking) return;
+    asking.stopper.abort();
+    prompt = asking.prompt;
+  }
+
+  // The editor saves itself shortly after typing stops; the overview cannot change once it is created.
   $effect(() => {
     const text = markdown;
     const id = session?.id;
-    if (stage !== 'write' || !id || text === d?.markdown) return;
+    if (stage !== 'write' || !id || text === d?.markdown || d?.createdPageId) return;
     const t = setTimeout(() => {
       drafts.save(id, { markdown: text }).then(
         (s) => (session = s),
@@ -97,14 +140,45 @@
     return () => clearTimeout(t);
   });
 
+  // A series' pages save themselves the same way.
+  $effect(() => {
+    const pages = JSON.stringify(children.map((c) => ({ title: c.title, markdown: c.markdown })));
+    const id = session?.id;
+    const saved = JSON.stringify((d?.children ?? []).map((c) => ({ title: c.title, markdown: c.markdown })));
+    if (stage !== 'write' || !id || pages === saved) return;
+    const timer = setTimeout(() => {
+      drafts.save(id, { children: JSON.parse(pages) as SeriesPage[] }).then(
+        (s) => (session = s),
+        (e: unknown) => (error = messageOf(e)),
+      );
+    }, 800);
+    return () => clearTimeout(timer);
+  });
+
   const proposal = $derived.by(() => {
     const turns = session?.turns ?? [];
     for (let i = turns.length - 1; i >= 0; i--) {
       const text = turns[i].proposedDraft;
-      if (text && !dismissed.has(i)) return { index: i, text };
+      const series = turns[i].proposedSeries;
+      if ((text || series?.length) && !dismissed.has(i)) return { index: i, text, series };
     }
     return null;
   });
+
+  function acceptSeries(series: SeriesPage[], index: number): void {
+    if (!session) return;
+    const { id } = session;
+    const [overview, ...rest] = series;
+    dismiss(index);
+    tab = 0;
+    void act('series', () =>
+      drafts.save(id, {
+        title: overview.title,
+        markdown: overview.markdown,
+        children: rest.map((p) => ({ title: p.title, markdown: p.markdown })),
+      }),
+    );
+  }
 
   const decide = (decision: RedundancyDecision): Promise<void> =>
     act(decision, () => drafts.decide(session!.id, decision, decision === 'link' ? linked : []));
@@ -119,7 +193,32 @@
     if (!p || !session) return;
     const { id } = session;
     prompt = '';
-    void act('send', () => drafts.save(id, { markdown }).then(() => drafts.send(id, p)));
+    const stopper = new AbortController();
+    asking = { prompt: p, stopper };
+    void act('send', () => drafts.save(id, { markdown }).then(() => drafts.send(id, p, stopper.signal)));
+  }
+
+  /** Saves the example page and structure the co-writer follows. */
+  function saveGuides(): void {
+    if (!session) return;
+    const { id } = session;
+    const example = pages.find((p) => p.title.toLowerCase() === exampleTitle.trim().toLowerCase());
+    if (exampleTitle.trim() && !example) {
+      error = `No page called “${exampleTitle.trim()}” in ${spaceKey}.`;
+      return;
+    }
+    void act('guides', () => drafts.save(id, { examplePageId: example?.id ?? '', template }));
+  }
+
+  function addRepository(): void {
+    if (!session || !repoLink.trim()) return;
+    const { id } = session;
+    const link = repoLink.trim();
+    void act('repo', async () => {
+      const s = await drafts.addRepository(id, link);
+      repoLink = '';
+      return s;
+    });
   }
 
   function addFiles(files: File[]): void {
@@ -153,15 +252,20 @@
     onclick={() =>
       session &&
       act('check', async () => {
-        await drafts.save(session!.id, { markdown });
+        await drafts.save(session!.id, {
+          ...(d?.createdPageId ? {} : { markdown }),
+          children: children.map((c) => ({ title: c.title, markdown: c.markdown })),
+        });
         await drafts.check(session!.id);
-        checkOk = 'Dry run passed: Confluence will accept this page.';
+        checkOk = `Dry run passed: Confluence will accept ${pageCount === 1 ? 'this page' : `all ${pageCount} pages`}.`;
       })}
   >
     {#if busy === 'check'}<RefreshCw size={14} class="spin" />{:else}<Check size={14} />{/if} Dry run
   </button>
   <button class="btn btn-primary" disabled={!!busy} onclick={() => (confirmCreate = true)}>
-    {#if busy === 'create'}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if} Create page
+    {#if busy === 'create'}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if} Create {pageCount === 1
+      ? 'page'
+      : `${pageCount} pages`}
   </button>
 {/snippet}
 
@@ -257,27 +361,123 @@
   {:else if stage === 'write' && session && d}
     <div class="new-page-write">
       <div class="new-page-editor">
+        {#if children.length > 0}
+          <div class="new-page-series" role="tablist" aria-label="Pages of the series">
+            {#each [{ title, createdPageId: d.createdPageId }, ...children] as p, i (i)}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === i}
+                class={['new-page-series-tab', tab === i && 'active']}
+                onclick={() => (tab = i)}
+              >
+                {i === 0 ? 'Overview: ' : ''}{p.title}{p.createdPageId ? ' (created)' : ''}
+              </button>
+            {/each}
+          </div>
+        {/if}
         <div class="branch-runbar">
-          <input
-            class="form-input"
-            aria-label="Title"
-            bind:value={title}
-            onblur={() => title.trim() && title !== d.title && act('title', () => drafts.save(session!.id, { title }))}
-          />
+          {#if tab === 0}
+            <input
+              class="form-input"
+              aria-label="Title"
+              bind:value={title}
+              disabled={!!d.createdPageId}
+              onblur={() =>
+                title.trim() && title !== d.title && act('title', () => drafts.save(session!.id, { title }))}
+            />
+          {:else}
+            <input
+              class="form-input"
+              aria-label="Title of this page"
+              bind:value={children[tab - 1].title}
+              disabled={!!children[tab - 1].createdPageId}
+            />
+          {/if}
           <button class="btn btn-secondary btn-sm" onclick={() => (preview = !preview)}>
             {#if preview}<Pencil size={13} />{:else}<Eye size={13} />{/if}
             {preview ? 'Edit' : 'Preview'}
           </button>
         </div>
+        {#if tab > 0 && children[tab - 1].similar?.length}
+          <div class="branch-note">
+            Similar pages already in the space: {children[tab - 1].similar?.map((s) => s.title).join(', ')}.
+          </div>
+        {/if}
         {#if preview}
-          <Markdown source={markdown} extraClass="markdown-preview new-page-preview" />
+          <Markdown
+            source={tab === 0 ? markdown : children[tab - 1].markdown}
+            extraClass="markdown-preview new-page-preview"
+          />
+        {:else if tab === 0}
+          <textarea
+            class="form-input branch-editor"
+            aria-label="Page content"
+            bind:value={markdown}
+            disabled={!!d.createdPageId}
+          ></textarea>
         {:else}
-          <textarea class="form-input branch-editor" aria-label="Page content" bind:value={markdown}></textarea>
+          <textarea
+            class="form-input branch-editor"
+            aria-label="Content of this page"
+            bind:value={children[tab - 1].markdown}
+            disabled={!!children[tab - 1].createdPageId}
+          ></textarea>
         {/if}
         {#if checkOk}<div class="guard-note"><Check size={12} /> {checkOk}</div>{/if}
       </div>
 
       <div class="new-page-chat">
+        <details class="new-page-reads">
+          <summary
+            >What the co-writer reads: notes, files{d.examplePageId ? ', an example page' : ''}{d.template
+              ? ', a structure'
+              : ''}{session.files.some((x) => x.name.endsWith('(GitLab).md')) ? ', GitLab' : ''}</summary
+          >
+          <label class="form-label" for="np-example">Follow the structure of an existing page</label>
+          <input
+            id="np-example"
+            class="form-input input-sm"
+            list="np-pages"
+            placeholder="Start typing a page title, such as another service's page"
+            bind:value={exampleTitle}
+          />
+          <datalist id="np-pages"
+            >{#each pages as p (p.id)}<option value={p.title}></option>{/each}</datalist
+          >
+          <label class="form-label" for="np-template">Or paste a structure to follow</label>
+          <textarea
+            id="np-template"
+            class="form-input"
+            rows="3"
+            placeholder="## Overview&#10;## Architecture&#10;## Runbook"
+            bind:value={template}
+          ></textarea>
+          <button class="btn btn-secondary btn-sm" disabled={busy === 'guides'} onclick={saveGuides}>
+            <Check size={13} /> Use these
+          </button>
+          <label class="form-label" for="np-repo">Read a GitLab repository</label>
+          <form
+            class="row"
+            onsubmit={(e) => {
+              e.preventDefault();
+              addRepository();
+            }}
+          >
+            <input
+              id="np-repo"
+              class="form-input input-sm"
+              placeholder="https://gitlab.yourcompany.com/group/service"
+              bind:value={repoLink}
+            />
+            <button class="btn btn-secondary btn-sm" disabled={!repoLink.trim() || busy === 'repo'}>
+              {busy === 'repo' ? 'Reading…' : 'Add'}
+            </button>
+          </form>
+          <span class="branch-note"
+            >Its README, docs, API files and manifest are added as a file. Set GitLab up in Settings.</span
+          >
+        </details>
         <div class="new-page-turns">
           {#if session.turns.length === 0}
             <p class="branch-note">
@@ -292,7 +492,23 @@
             </div>
           {/each}
         </div>
-        {#if proposal}
+        {#if proposal?.series?.length}
+          <div class="new-page-proposal">
+            <strong>Proposed series of {proposal.series.length} pages</strong>
+            <ol class="plain-list">
+              {#each proposal.series as p, i (i)}<li>{i === 0 ? 'Overview: ' : ''}{p.title}</li>{/each}
+            </ol>
+            <p class="branch-note">
+              Accepting replaces the draft with these pages; the children go under the overview.
+            </p>
+            <div class="branch-actions">
+              <button class="btn btn-primary btn-sm" onclick={() => acceptSeries(proposal.series!, proposal.index)}>
+                <Check size={13} /> Accept the series
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick={() => dismiss(proposal.index)}>Dismiss</button>
+            </div>
+          </div>
+        {:else if proposal?.text}
           <div class="new-page-proposal">
             <strong>Proposed change</strong>
             <Diff before={markdown} after={proposal.text} />
@@ -300,7 +516,7 @@
               <button
                 class="btn btn-primary btn-sm"
                 onclick={() => {
-                  markdown = proposal.text;
+                  markdown = proposal.text!;
                   dismiss(proposal.index);
                 }}
               >
@@ -344,15 +560,30 @@
             placeholder="e.g. Draft an outline from my notes"
             disabled={busy === 'send'}
           />
-          <button class="btn btn-primary" disabled={!prompt.trim() || busy === 'send'} aria-label="Send">
-            {#if busy === 'send'}<RefreshCw size={14} class="spin" />{:else}<Send size={14} />{/if}
-          </button>
+          {#if busy === 'send'}
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick={stopAsking}
+              aria-label="Stop"
+              title="Stop the answer and put the question back to edit"
+            >
+              <Square size={13} />
+            </button>
+          {:else}
+            <button class="btn btn-primary" disabled={!prompt.trim()} aria-label="Send"><Send size={14} /></button>
+          {/if}
         </form>
       </div>
     </div>
   {:else if stage === 'done' && d}
     <div class="new-page-done">
-      <p><strong>{d.title}</strong> was created in {spaceKey}.</p>
+      <p>
+        <strong>{d.title}</strong> was created in {spaceKey}{#if d.children?.length}, with {d.children.length} page{d
+            .children.length === 1
+            ? ''
+            : 's'} under it: {d.children.map((c) => c.title).join(', ')}{/if}.
+      </p>
       <div class="branch-actions">
         <button class="btn btn-primary" onclick={() => d.createdPageId && onOpenPage(d.createdPageId)}
           >Open it here</button
@@ -367,11 +598,17 @@
   {/if}
 
   {#if confirmCreate && session}
-    <ConfirmDialog title="Create this page in Confluence?" onCancel={() => (confirmCreate = false)} onConfirm={create}>
-      {#snippet confirmLabel()}<Upload size={14} /> Create page{/snippet}
+    <ConfirmDialog
+      title={pageCount === 1 ? 'Create this page in Confluence?' : `Create these ${pageCount} pages in Confluence?`}
+      onCancel={() => (confirmCreate = false)}
+      onConfirm={create}
+    >
+      {#snippet confirmLabel()}<Upload size={14} /> Create{/snippet}
       <p>
-        <strong>{title}</strong> is created under “{d?.parentTitle}” in {spaceKey}. A title already used in the space is
-        refused.
+        <strong>{title}</strong> is created under “{d?.parentTitle}” in {spaceKey}{children.length
+          ? `, then ${children.map((c) => c.title).join(', ')} under it, in that order`
+          : ''}. A title already used in the space is refused; if one is, the pages already created are named and the
+        rest stay here to create again.
       </p>
     </ConfirmDialog>
   {/if}

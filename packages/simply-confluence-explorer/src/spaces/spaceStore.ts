@@ -20,7 +20,9 @@ import type { PageDetail, PageMetadata, PageTreeNode, SpaceTocNode, SyncedSpace 
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
 import { sanitizeFilename, within } from '../util/paths.js';
+import type { PageVectors } from './vectors.js';
 import type { ExclusionManager } from './exclusionManager.js';
+import { isCurrentMetadata } from './metadata.js';
 
 // A synced space lives in `<data dir>/spaces/<KEY>/`:
 //
@@ -28,6 +30,7 @@ import type { ExclusionManager } from './exclusionManager.js';
 //   pages/.../<Title>.md    the same pages as Markdown, in folders that follow the page tree
 //   pages/.../<Title>_attachments/   each page's attachments
 //   metadata/<id>.json      AI summaries and tags, written by the metadata run
+//   vectors/<id>.json       each section's embedding, when the AI provider makes them (ADR-051)
 //   manifest.json           when the space was synced and from which page
 //   toc.json, TOC.md        the table of contents
 //
@@ -87,8 +90,9 @@ export class SpaceStore {
       for (const a of attachments) fs.writeFileSync(within(dir, sanitizeFilename(a.name)), a.data);
     }
     fs.writeFileSync(cacheFile, JSON.stringify(page, null, 2), 'utf8');
-    // A newer version makes the old summary and tags stale.
+    // A newer version makes the old summary, tags and embeddings stale.
     fs.rmSync(this.metadataFile(spaceKey, page.id), { force: true });
+    fs.rmSync(this.vectorsFile(spaceKey, page.id), { force: true });
     this.trees.delete(spaceKey.toUpperCase());
   }
 
@@ -132,8 +136,11 @@ export class SpaceStore {
         {
           ...manifest,
           pageCount: this.cachedIds(key).length,
+          // Only metadata of the current kind counts, so the Space menu offers to redo the rest.
           metadataCount: fs.existsSync(metadataDir)
-            ? fs.readdirSync(metadataDir).filter((f) => f.endsWith('.json')).length
+            ? fs
+                .readdirSync(metadataDir)
+                .filter((f) => f.endsWith('.json') && isCurrentMetadata(this.readMetadata(key, f.slice(0, -5)))).length
             : 0,
           hasTOC: fs.existsSync(path.join(dir, 'toc.json')),
         },
@@ -262,6 +269,18 @@ export class SpaceStore {
     fs.writeFileSync(file, JSON.stringify(metadata, null, 2), 'utf8');
   }
 
+  /** Saves a page's section embeddings, encoded by `src/spaces/vectors.ts`. */
+  public writeVectors(spaceKey: string, pageId: string, vectors: PageVectors): void {
+    const file = this.vectorsFile(spaceKey, pageId);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(vectors), 'utf8');
+  }
+
+  public readVectors(spaceKey: string, pageId: string): PageVectors | undefined {
+    const file = this.vectorsFile(spaceKey, pageId);
+    return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as PageVectors) : undefined;
+  }
+
   public invalidate(spaceKey: string): void {
     this.trees.delete(spaceKey.toUpperCase());
   }
@@ -328,6 +347,7 @@ export class SpaceStore {
     }
     fs.rmSync(this.cacheFile(spaceKey, pageId), { force: true });
     fs.rmSync(this.metadataFile(spaceKey, pageId), { force: true });
+    fs.rmSync(this.vectorsFile(spaceKey, pageId), { force: true });
   }
 
   private afterRemoval(spaceKey: string): void {
@@ -362,6 +382,10 @@ export class SpaceStore {
 
   private metadataFile(spaceKey: string, pageId: string): string {
     return within(this.spaceDir(spaceKey), 'metadata', `${sanitizeFilename(pageId)}.json`);
+  }
+
+  private vectorsFile(spaceKey: string, pageId: string): string {
+    return within(this.spaceDir(spaceKey), 'vectors', `${sanitizeFilename(pageId)}.json`);
   }
 
   private attachmentsDir(spaceKey: string, page: Pick<PageDetail, 'title' | 'ancestors'>): string {

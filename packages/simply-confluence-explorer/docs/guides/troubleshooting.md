@@ -61,7 +61,7 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
   anywhere inside a title.
 - **A page you deleted in Confluence is still in the tree**: a sync never deletes. Remove the copy
   with **⋯ → Remove from this machine…**.
-- **"Work on branch" and "With sub-pages" are missing**: they need the space to be synced.
+- **"With sub-pages" is missing**: it needs the space to be synced.
 
 ### The AI does not answer
 
@@ -73,7 +73,7 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
   the line it names. Remove it from the page, exclude the page, or, if it is not really a secret, add
   an `allow:` rule; see [What leaves your computer](/guides/data-safety/).
 - **"This page is excluded from AI"**: the space's rules exclude the page. Ask about the whole space
-  instead, or change the rules.
+  in Space chat instead, or change the rules.
 - **A file is refused**: files can be up to 10 MB, a PDF must contain text rather than scanned images,
   and only text-like formats are accepted.
 
@@ -81,9 +81,9 @@ the same report is at `http://127.0.0.1:4280/api/doctor`.
 
 - **"This page has parts that Markdown cannot carry"**: the page holds images, macros, page links,
   mentions or task lists, which a push would replace with text. Make the change in Confluence itself;
-  see [Improving a page](/guides/improving-pages/).
+  see [Changing pages from a chat](/guides/changing-pages/).
 - **"This page changed in Confluence after the proposal was made"**: someone edited the page since.
-  Click **Propose again**.
+  Ask the chat for suggestions again, so the edit starts from the page as it is now.
 - **"Line N: … is not supported in Markdown input"**: the text has something the converter cannot
   write, such as an image written as `![...]`, raw HTML, a footnote or a task list. Edit that line.
 - **"A page titled … already exists"**: page titles must be unique within a space. Choose another.

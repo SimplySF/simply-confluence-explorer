@@ -223,6 +223,14 @@ export type PageMetadata = {
   documentType: string;
   systemsMentioned: string[];
   generatedAt: string;
+  /** 2 for metadata with the fields below (ADR-051); absent on the first kind, which is regenerated. */
+  version?: number;
+  /** Who reads the page, such as "on-call engineers". */
+  audience?: string;
+  /** The questions the page answers, which a question about the space is matched against. */
+  questions?: string[];
+  /** One line on each section, in the order `splitSections` gives them. */
+  sections?: Array<{ heading: string; summary: string }>;
 };
 
 /** The progress of generating AI summaries for a space, polled while it runs. */
@@ -230,6 +238,11 @@ export type MetadataProgress = {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   spaceKey: string;
+  /** The page whose section is being summarised; absent for the whole space. */
+  rootPageId?: string;
+  rootTitle?: string;
+  /** The run is for a list of chosen pages, such as a chat's. */
+  chosen?: boolean;
   total: number;
   processed: number;
   errorCount: number;
@@ -239,10 +252,20 @@ export type MetadataProgress = {
 
 /** What a conversation is about: one page, a page and everything below it, or a whole space. */
 export type SessionScope = {
-  /** A draft is the conversation behind a new page, started through `/api/drafts`. */
-  kind: 'page' | 'branch' | 'space' | 'draft';
+  /**
+   * What a chat reads: one page, a page and everything under it (`branch`), pages the person chose
+   * (`pages`), or the whole space. A draft is the conversation behind a new page, started through
+   * `/api/drafts`.
+   */
+  kind: 'page' | 'branch' | 'pages' | 'space' | 'draft';
   spaceKey: string;
   pageId?: string;
+  /** For chosen pages: directories, each read with every page under it at the time of asking (ADR-051). */
+  dirs?: string[];
+  /** For chosen pages: single pages. */
+  pageIds?: string[];
+  /** For chosen pages: tags, each read as every page that carries it at the time of asking. */
+  tags?: string[];
   title?: string;
 };
 
@@ -253,9 +276,34 @@ export type SessionTurn = {
   /** On an answer: what the outbound guard removed, and which pages were left out of the context. */
   guardSummary?: string;
   engine?: string;
-  matchedPages?: Array<{ id: string; title: string; score: number }>;
+  /**
+   * The pages an answer read, each with why it was chosen when the AI chose it, and the sections read
+   * when only some of the page was (ADR-048, ADR-051).
+   */
+  matchedPages?: Array<{
+    id: string;
+    title: string;
+    score: number;
+    why?: string;
+    sections?: Array<{ index: number; heading: string }>;
+  }>;
+  /** For a retrieved answer: how many candidate sections were looked at. */
+  considered?: number;
+  /**
+   * How many pages the chat reads from, and whether they were read in full, retrieved from, or read
+   * in full over several requests (`batched`, with how many).
+   */
+  corpus?: { pages: number; mode: 'full' | 'retrieved' | 'batched'; batches?: number };
+  /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
+  findings?: BranchFinding[];
+  /** The pages the answer read, by title, so a suggestion's pages can be found. */
+  pageIds?: Record<string, string>;
+  /** The queues of edits staged from this answer's suggestions. */
+  runIds?: string[];
   /** On a co-writer's answer: the complete revised draft it proposed, for the author to accept or dismiss. */
   proposedDraft?: string;
+  /** On a co-writer's answer: a proposed series, an overview page then its child pages. */
+  proposedSeries?: SeriesPage[];
 };
 
 export type SessionFileInfo = {
@@ -302,6 +350,12 @@ export type DraftState = {
   parentId: string;
   parentTitle?: string;
   notes: string;
+  /** An existing page whose structure the new page follows, such as another service's docs. */
+  examplePageId?: string;
+  /** A structure for the new page, pasted by the author. */
+  template?: string;
+  /** Pages created under the new page with it, in order, when the draft is a series. */
+  children?: SeriesPage[];
   markdown: string;
   redundancy?: {
     checkedAt: string;
@@ -315,16 +369,6 @@ export type DraftState = {
   };
   createdPageId?: string;
   createdUrl?: string;
-};
-
-/** A proposed improvement to a page, and the version of the page it was made from. */
-export type RecommendationResponse = {
-  critique: string[];
-  changelog: string[];
-  improvedMarkdown: string;
-  guard: GuardReport;
-  /** The version the proposal was made from. A push must name it, and is refused if the page moved on. */
-  baseVersion: number;
 };
 
 /** What a push or a dry run did. */
@@ -348,7 +392,15 @@ export type BranchItemStatus =
   | 'pushed'
   | 'push-failed';
 
-/** One page in a branch improvement run: its proposal, and the person's decision on it. */
+/** A suggestion an edit is asked to apply, with the other pages it names. */
+export type BranchFix = {
+  kind: BranchFinding['kind'];
+  detail: string;
+  suggestion?: string;
+  otherPages: string[];
+};
+
+/** One page in a run of staged edits: its proposed edit, and the person's decision on it. */
 export type BranchItem = {
   pageId: string;
   title: string;
@@ -363,23 +415,71 @@ export type BranchItem = {
   message?: string;
   guardSummary?: string;
   pushedVersion?: number;
+  /** The suggestions this page's edit applies. */
+  fixes?: BranchFix[];
 };
 
-/** Something a review of a branch found that a maintainer should fix. */
+/** Something a review found that a maintainer should fix. */
 export type BranchFinding = {
-  kind: 'incorrect' | 'redundant' | 'stale' | 'structure' | 'gap';
+  kind:
+    | 'incorrect'
+    | 'redundant'
+    | 'stale'
+    | 'clarity'
+    | 'depth'
+    | 'structure'
+    | 'operations'
+    /** A page in the wrong place, or one to split or merge: no edit of one page does it. */
+    | 'placement'
+    /** A page that should exist and does not: no edit of an existing page does it. */
+    | 'gap';
   pages: string[];
   detail: string;
   suggestion?: string;
 };
 
-/** A review, or a set of improvement proposals, for a page and everything under it (ADR-024). */
+/** One page of a series written with the co-writer: its title, its Markdown, and once created, its id. */
+export type SeriesPage = {
+  title: string;
+  markdown: string;
+  /** Existing pages with a similar title, found when the page was added to the series. */
+  similar?: Array<{ pageId: string; title: string }>;
+  createdPageId?: string;
+};
+
+/** The GitLab connection, as a browser may see it: never the token (ADR-050). */
+export type GitLabView = { baseUrl: string; tokenSet: boolean };
+
+/** A tag and the pages that carry it, each with where it sits in the space. */
+export type TaggedPages = {
+  tag: string;
+  pages: Array<{ id: string; title: string; path: string; summary?: string }>;
+};
+
+/** What a review looks for, each ticked by the person. */
+export type ReviewAspect = 'accuracy' | 'repetition' | 'staleness' | 'clarity' | 'depth' | 'structure' | 'operations';
+
+/** How a review's pages were chosen: one page, a page and everything under it, or a tag (ADR-046). */
+export type ReviewSource = { kind: 'page' | 'section'; rootPageId: string } | { kind: 'tag'; tag: string };
+
+/**
+ * A review of a set of pages, or the edits staged from its suggestions (ADR-024, ADR-046). A run
+ * saved before reviews had a source has none, and is a review of a whole section.
+ */
 export type BranchRun = {
   id: string;
   kind: 'review' | 'improve';
   spaceKey: string;
+  /** The page the review started from; empty for a tag. */
   rootPageId: string;
+  /** What the run is about, for its heading: a page's title, or a tag as `#tag`. */
   rootTitle: string;
+  source?: ReviewSource;
+  aspects?: ReviewAspect[];
+  /** For staged edits, the review whose suggestions they apply. */
+  fromRunId?: string;
+  /** For staged edits, the chat whose suggestions they apply. */
+  fromSessionId?: string;
   focus?: string;
   instructions?: string;
   status: 'running' | 'ready' | 'failed' | 'cancelled';
@@ -395,5 +495,22 @@ export type BranchRun = {
   pageIds?: Record<string, string>;
   /** Pages left out of the run, and why (a secret, the size limit). Excluded pages are never named. */
   leftOut: string[];
+  error?: string;
+};
+
+/** A review, or a request for changes, over more pages than one request carries, read in batches (ADR-051). */
+export type BatchProgress = {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  completedAt?: string;
+  sessionId: string;
+  spaceKey: string;
+  kind: 'review' | 'changes';
+  /** How many pages are read, and in how many batches. */
+  pages: number;
+  total: number;
+  processed: number;
+  /** The first page of the batch being read. */
+  currentTitle?: string;
   error?: string;
 };

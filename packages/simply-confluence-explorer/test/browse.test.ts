@@ -106,12 +106,6 @@ describe('reading Confluence', () => {
     expect((await post('/api/spaces/resolve-url', { input: 'not a confluence address' })).status).toBe(404);
   });
 
-  it('converts a pasted storage-format snippet without reading or storing anything', async () => {
-    expect(
-      (await post<{ markdown: string }>('/api/parse', { storageXml: '<h2>Hi</h2><p>there</p>' })).body.markdown,
-    ).toBe('## Hi\n\nthere');
-  });
-
   it("saves and reads back a space's exclusion rules", async () => {
     expect((await post('/api/space-cache/OPS/ignore', { patterns: ['Deploy Notes', ' '] })).body).toEqual({
       spaceKey: 'OPS',

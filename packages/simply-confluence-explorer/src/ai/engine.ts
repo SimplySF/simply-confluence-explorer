@@ -19,7 +19,7 @@ import path from 'node:path';
 import { errorMessage } from '../util/errors.js';
 import { resolveGeminiCli, runGeminiCli, systemCliLookup } from './geminiService.js';
 import { loadGuardRules, OutboundGuard, type ChatTurn, type GuardedPayload, type GuardReport } from './guard.js';
-import { complete, listModels } from './providers.js';
+import { complete, embed, EMBEDDING_MODELS, listModels } from './providers.js';
 import type { AiSettingsStore, ApiProvider } from './settings.js';
 
 // The engine is the only code that sends anything to an AI (ADR-022). Every request passes the
@@ -41,13 +41,29 @@ export type AiContext = {
   spaceKey?: string;
   /** A conversation's guard, so a value keeps its placeholder from one turn to the next. */
   guard?: OutboundGuard;
+  /** Aborts the request when the person stops it (ADR-047). */
+  signal?: AbortSignal;
 };
+
+/** A request the person stopped. Nothing may act on its answer, even one that arrives afterwards. */
+export class AiStopped extends Error {
+  // 499 is the status for a request the client gave up on; the browser that stopped it is not waiting.
+  public readonly status = 499;
+
+  public constructor() {
+    super('The request to the AI was stopped.');
+  }
+}
 
 /** What the routes need from an AI engine. Tests pass their own. */
 export type AiEngine = {
   isAvailable: () => boolean;
   getEngine: () => string;
   analyzeDocument: (markdown: string, prompt: string, pageTitle?: string, ctx?: AiContext) => Promise<AiAnswer>;
+  /** The model texts are embedded with, or null when this engine has none (ADR-051). */
+  embeddingModel?: () => string | null;
+  /** One vector per text, or null for a text the guard left out because it holds a secret. */
+  embed?: (texts: string[], ctx: AiContext) => Promise<Array<number[] | null>>;
   /** One turn of a conversation, with its context and earlier turns. */
   chat: (
     parts: { context: string; history: ChatTurn[]; prompt: string; system?: string },
@@ -56,7 +72,12 @@ export type AiEngine = {
 };
 
 /** Sends a guarded payload and returns the reply. The real one calls a provider or the CLI. */
-export type Transport = (payload: GuardedPayload) => Promise<string>;
+export type Transport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<string>;
+/** Embeds each message of a guarded payload. The real one calls a provider. */
+export type EmbedTransport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<number[][]>;
+
+/** How many texts one embedding request carries, below every provider's limit. */
+const EMBED_BATCH = 50;
 
 const CHAT_SYSTEM =
   'You are an expert technical assistant helping a person work with their Confluence documentation. ' +
@@ -77,6 +98,8 @@ export type EngineOptions = {
   findCli?: (configured: string) => string | null;
   /** Sends the payload. Tests pass their own, so nothing leaves the machine. */
   transport?: Transport;
+  /** Embeds texts. Tests that pass a `transport` have embeddings only when they pass this too. */
+  embedTransport?: EmbedTransport;
 };
 
 /**
@@ -125,7 +148,7 @@ export class ConfiguredAi implements AiEngine {
       prompt,
       document: `# Document Title: ${pageTitle ?? 'Confluence Document'}\n\n${markdown}\n`,
     });
-    return this.deliver(payload, report, guard, ctx.spaceKey);
+    return this.deliver(payload, report, guard, ctx);
   }
 
   public async chat(
@@ -133,11 +156,65 @@ export class ConfiguredAi implements AiEngine {
     ctx: AiContext & { guard: OutboundGuard },
   ): Promise<AiAnswer> {
     const { payload, report } = ctx.guard.inspectChat({ ...parts, system: parts.system ?? CHAT_SYSTEM });
-    return this.deliver(payload, report, ctx.guard, ctx.spaceKey);
+    return this.deliver(payload, report, ctx.guard, ctx);
   }
 
-  private send(payload: GuardedPayload): Promise<string> {
-    if (this.options.transport) return this.options.transport(payload);
+  public embeddingModel(): string | null {
+    if (this.options.transport) return this.options.embedTransport ? 'stand-in' : null;
+    const s = this.settings.resolve();
+    if (s.provider === 'gemini-cli' || !s.api[s.provider].apiKey) return null;
+    return EMBEDDING_MODELS[s.provider] ?? null;
+  }
+
+  /**
+   * Embeds texts in batches, each through the outbound guard and recorded in the audit log like any
+   * request. A text holding a secret is not sent and gets no vector.
+   */
+  public async embed(texts: string[], ctx: AiContext = {}): Promise<Array<number[] | null>> {
+    const model = this.embeddingModel();
+    const vectors: Array<number[] | null> = texts.map(() => null);
+    if (!model) return vectors;
+    const guard = new OutboundGuard(loadGuardRules(this.options.dataDir, ctx.spaceKey));
+    for (let start = 0; start < texts.length; start += EMBED_BATCH) {
+      const { payload, report, skipped } = guard.inspectTexts(texts.slice(start, start + EMBED_BATCH));
+      const sent = texts
+        .slice(start, start + EMBED_BATCH)
+        .map((_, i) => i)
+        .filter((i) => !skipped.includes(i));
+      if (ctx.signal?.aborted) throw new AiStopped();
+      const entry = {
+        engine: `${this.getEngine()} embeddings (${model})`,
+        spaceKey: ctx.spaceKey ?? null,
+        chars: payload.messages.reduce((n, m) => n + m.content.length, 0),
+        texts: sent.length,
+        withheld: skipped.length,
+        redacted: report.redacted,
+      };
+      if (sent.length === 0) continue;
+      let batch: number[][];
+      try {
+        // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
+        batch = await this.sendEmbed(payload, ctx.signal);
+      } catch (error) {
+        this.audit({ ...entry, outcome: ctx.signal?.aborted ? 'stopped' : `failed: ${errorMessage(error)}` });
+        throw ctx.signal?.aborted ? new AiStopped() : error;
+      }
+      this.audit({ ...entry, outcome: 'sent' });
+      if (batch.length !== sent.length) throw new Error('the provider returned a different number of embeddings');
+      sent.forEach((i, k) => (vectors[start + i] = batch[k]));
+    }
+    return vectors;
+  }
+
+  private sendEmbed(payload: GuardedPayload, signal?: AbortSignal): Promise<number[][]> {
+    if (this.options.embedTransport) return this.options.embedTransport(payload, signal);
+    const s = this.settings.resolve();
+    if (s.provider === 'gemini-cli') throw new Error('the Gemini CLI offers no embeddings');
+    return embed(s.provider, s.api[s.provider], payload, signal);
+  }
+
+  private send(payload: GuardedPayload, signal?: AbortSignal): Promise<string> {
+    if (this.options.transport) return this.options.transport(payload, signal);
     const s = this.settings.resolve();
     if (s.provider === 'gemini-cli') {
       const cli = this.cliPath();
@@ -145,17 +222,18 @@ export class ConfiguredAi implements AiEngine {
         throw new Error(
           'The Gemini CLI was not found. Install it, set its path in Settings, or choose an API provider.',
         );
-      return runGeminiCli(cli, payload, this.options.env);
+      return runGeminiCli(cli, payload, this.options.env, signal);
     }
-    return complete(s.provider, s.api[s.provider], payload);
+    return complete(s.provider, s.api[s.provider], payload, signal);
   }
 
   private async deliver(
     payload: GuardedPayload,
     report: GuardReport,
     guard: OutboundGuard,
-    spaceKey?: string,
+    { spaceKey, signal }: AiContext,
   ): Promise<AiAnswer> {
+    if (signal?.aborted) throw new AiStopped();
     const chars = payload.system.length + payload.messages.reduce((n, m) => n + m.content.length, 0);
     const entry = {
       engine: this.getEngine(),
@@ -166,11 +244,16 @@ export class ConfiguredAi implements AiEngine {
     };
     let reply: string;
     try {
-      reply = await this.send(payload);
+      reply = await this.send(payload, signal);
     } catch (error) {
-      // Recorded either way: a request that failed part of the way through may still have been sent.
-      this.audit({ ...entry, outcome: `failed: ${errorMessage(error)}` });
-      throw error;
+      // Recorded either way: a request that failed or was stopped part of the way through may still
+      // have been sent.
+      this.audit({ ...entry, outcome: signal?.aborted ? 'stopped' : `failed: ${errorMessage(error)}` });
+      throw signal?.aborted ? new AiStopped() : error;
+    }
+    if (signal?.aborted) {
+      this.audit({ ...entry, outcome: 'stopped' });
+      throw new AiStopped();
     }
     this.audit({ ...entry, outcome: 'sent' });
     return { text: guard.restore(reply), guard: report };

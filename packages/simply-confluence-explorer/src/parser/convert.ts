@@ -26,6 +26,17 @@ import type { PageDetail, ParsedPage } from '../api/types.js';
  * @param page The page as read from Confluence.
  */
 export function parsePage(page: PageDetail): ParsedPage {
+  const body = storageToBody(page.storageXml);
+  return {
+    pageId: page.id,
+    title: page.title,
+    spaceKey: page.spaceKey,
+    frontmatter: frontmatterFields(page),
+    markdown: `${frontmatterOf(page)}\n${body}\n`,
+  };
+}
+
+function frontmatterFields(page: PageDetail): Record<string, unknown> {
   const frontmatter: Record<string, unknown> = {
     id: page.id,
     title: page.title,
@@ -37,15 +48,17 @@ export function parsePage(page: PageDetail): ParsedPage {
   if (page.labels.length > 0) frontmatter.labels = page.labels;
   if (page.webUrl) frontmatter.confluenceUrl = page.webUrl;
   if (page.ancestors.length > 0) frontmatter.breadcrumbs = page.ancestors.map((a) => a.title);
+  return frontmatter;
+}
 
-  const body = storageToBody(page.storageXml);
-  return {
-    pageId: page.id,
-    title: page.title,
-    spaceKey: page.spaceKey,
-    frontmatter,
-    markdown: `---\n${yaml.stringify(frontmatter).trim()}\n---\n\n${body}\n`,
-  };
+/**
+ * The frontmatter block `parsePage` writes at the top of a page's Markdown, followed by a blank line.
+ * It is built from the page's details alone, so its size is known without converting the page.
+ *
+ * @param page The page as read from Confluence.
+ */
+export function frontmatterOf(page: PageDetail): string {
+  return `---\n${yaml.stringify(frontmatterFields(page)).trim()}\n---\n`;
 }
 
 /**

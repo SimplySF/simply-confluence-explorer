@@ -6,7 +6,6 @@
     Copy,
     Download,
     ExternalLink,
-    GitBranch,
     Info,
     MoreHorizontal,
     Paperclip,
@@ -15,24 +14,22 @@
     Tag,
     Trash2,
     User,
-    Wand2,
   } from '@lucide/svelte';
-  import type { PageMetadata, PageResponse } from '../../../src/api/types.js';
+  import type { BranchFinding, PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
+  import { jobs } from '../support/jobs.svelte.js';
+  import { forPage } from '../support/pageResult.js';
   import { toast } from '../support/toast.svelte.js';
   import AskAiPanel, { type AiScope } from './AskAiPanel.svelte';
-  import BranchWorkspace from './BranchWorkspace.svelte';
   import DetailsPanel from './DetailsPanel.svelte';
-  import ImprovePanel from './ImprovePanel.svelte';
   import PurgePageDialog from './PurgePageDialog.svelte';
   import ReadPanel from './ReadPanel.svelte';
   import Menu from './ui/Menu.svelte';
 
-  type Tab = 'read' | 'ai' | 'improve' | 'details';
+  type Tab = 'read' | 'ai' | 'details';
   const TABS = [
     { id: 'read', label: 'Read', icon: BookOpen },
-    { id: 'ai', label: 'Ask AI', icon: Sparkles },
-    { id: 'improve', label: 'Improve', icon: Wand2 },
+    { id: 'ai', label: 'Chat', icon: Sparkles },
     { id: 'details', label: 'Details', icon: Info },
   ] as const;
 
@@ -45,13 +42,16 @@
     onPagePurged: () => void;
     /** Pages were written to Confluence: reload the tree and this page. */
     onPagesChanged: () => void;
+    /** A review found a page that should exist: start writing it under this one. */
+    onWriteNewPage: (finding: BranchFinding) => void;
   };
 
-  let { activeSpace, page, loading, error, onSelectPage, onPagePurged, onPagesChanged }: Props = $props();
+  let { activeSpace, page, loading, error, onSelectPage, onPagePurged, onPagesChanged, onWriteNewPage }: Props =
+    $props();
   let tab = $state<Tab>('read');
-  let scope = $state<AiScope>('page');
+  // A page with sub-pages is asked about together with them unless the person chooses the page alone.
+  let scope = $state<AiScope>('branch');
   let purging = $state(false);
-  let branchOpen = $state(false);
 
   // What the view needs beyond the page itself: whether it is excluded from AI, its AI summary, and how
   // many pages sit under it. Cleared at once on a new page, so one page's facts never show on another.
@@ -94,11 +94,24 @@
     };
   });
 
+  const current = (): string | undefined => detail?.id;
+
+  // The header opened edits staged from this page's chat: show the chat.
+  $effect(() => {
+    const wanted = jobs.requested;
+    if (!wanted?.sessionId || wanted.rootPageId !== detail?.id) return;
+    jobs.requested = null;
+    tab = 'ai';
+  });
+  const setMetadata = (pageId: string, m: PageMetadata | null): void =>
+    forPage(pageId, current, (v: PageMetadata | null) => (metadata = v))(m);
+
   function reloadMetadata(): void {
     if (detail) {
-      api.metadata(spaceKey, detail.id).then(
-        (m) => (metadata = m),
-        () => (metadata = null),
+      const pageId = detail.id;
+      api.metadata(spaceKey, pageId).then(
+        (m) => setMetadata(pageId, m),
+        () => setMetadata(pageId, null),
       );
     }
   }
@@ -149,15 +162,6 @@
         </nav>
       </div>
       <div class="toolbar-buttons">
-        {#if descendantCount > 0 && !excluded}
-          <button
-            class="btn btn-secondary btn-sm"
-            onclick={() => (branchOpen = true)}
-            title="Review or improve this page and everything under it"
-          >
-            <GitBranch size={13} /> Work on branch ({descendantCount + 1})
-          </button>
-        {/if}
         {#if detail.webUrl}
           <a
             href={detail.webUrl}
@@ -230,12 +234,9 @@
         onScopeChange={(s) => (scope = s)}
         active={tab === 'ai'}
         {onSelectPage}
+        onPushed={onPagesChanged}
+        {onWriteNewPage}
       />
-    </div>
-    <div class="tab-pane" hidden={tab !== 'improve'}>
-      {#key detail.id}
-        <ImprovePanel {page} {spaceKey} {excluded} onPushed={onPagesChanged} />
-      {/key}
     </div>
     <div class="tab-pane" hidden={tab !== 'details'}>
       <DetailsPanel
@@ -244,8 +245,8 @@
         {descendantCount}
         {metadata}
         {metadataLoading}
-        onMetadata={(m) => (metadata = m)}
-        onMetadataLoading={(b) => (metadataLoading = b)}
+        onMetadata={setMetadata}
+        onMetadataLoading={(pageId, b) => forPage(pageId, current, (v: boolean) => (metadataLoading = v))(b)}
         {reloadMetadata}
       />
     </div>
@@ -259,20 +260,6 @@
         onPurged={() => {
           purging = false;
           onPagePurged();
-        }}
-      />
-    {/if}
-    {#if branchOpen}
-      <BranchWorkspace
-        {spaceKey}
-        pageId={detail.id}
-        title={detail.title}
-        {descendantCount}
-        onClose={() => (branchOpen = false)}
-        onPushed={onPagesChanged}
-        onOpenPage={(id) => {
-          branchOpen = false;
-          onSelectPage(id);
         }}
       />
     {/if}
