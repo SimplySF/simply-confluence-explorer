@@ -185,18 +185,11 @@ export class SearchIndex {
     return { docs, df, avgLength: docs.reduce((a, d) => a + d.length, 0) / Math.max(1, docs.length) };
   }
 
-  // The newest file time in each directory, not the directory's own: rewriting a synced page in place,
-  // as a push does, does not change the directory, and must still refresh the index.
+  // The store counts every change it makes to a space, so checking for changes costs nothing however
+  // many pages a space has. The exclusion rules file is checked too, as it can be edited by hand.
   private stamp(spaceKey: string): string {
-    const dir = this.store.spaceDir(spaceKey);
-    const parts = ['pages_cache', 'metadata'].map((sub) => {
-      const d = path.join(dir, sub);
-      if (!fs.existsSync(d)) return '-';
-      const files = fs.readdirSync(d);
-      return `${files.length}:${Math.max(0, ...files.map((f) => fs.statSync(path.join(d, f)).mtimeMs))}`;
-    });
-    const rules = path.join(dir, '.confluenceignore');
-    return [...parts, fs.existsSync(rules) ? fs.statSync(rules).mtimeMs : '-'].join('|');
+    const rules = path.join(this.store.spaceDir(spaceKey), '.confluenceignore');
+    return `${this.store.revision(spaceKey)}|${fs.existsSync(rules) ? fs.statSync(rules).mtimeMs : '-'}`;
   }
 }
 

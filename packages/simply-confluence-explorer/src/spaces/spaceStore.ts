@@ -43,6 +43,9 @@ export class SpaceStore {
   private readonly spacesDir: string;
   // Built from pages_cache once per change, because a large space has thousands of files.
   private readonly trees = new Map<string, { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> }>();
+  // A count of the changes made to each space through this store, so the search index can tell it is
+  // out of date without looking at every file in a space of thousands of pages.
+  private readonly revisions = new Map<string, number>();
 
   public constructor(
     dataDir: string,
@@ -93,7 +96,7 @@ export class SpaceStore {
     // A newer version makes the old summary, tags and embeddings stale.
     fs.rmSync(this.metadataFile(spaceKey, page.id), { force: true });
     fs.rmSync(this.vectorsFile(spaceKey, page.id), { force: true });
-    this.trees.delete(spaceKey.toUpperCase());
+    this.invalidate(spaceKey);
   }
 
   /** Replaces a synced page's copy with the page as Confluence now holds it, keeping its attachments. */
@@ -267,6 +270,7 @@ export class SpaceStore {
     const file = this.metadataFile(spaceKey, metadata.pageId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(metadata, null, 2), 'utf8');
+    this.invalidate(spaceKey);
   }
 
   /** Saves a page's section embeddings, encoded by `src/spaces/vectors.ts`. */
@@ -281,8 +285,16 @@ export class SpaceStore {
     return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as PageVectors) : undefined;
   }
 
+  /** Marks a space as changed, as after a write or a change to its exclusion rules. */
   public invalidate(spaceKey: string): void {
-    this.trees.delete(spaceKey.toUpperCase());
+    const key = spaceKey.toUpperCase();
+    this.trees.delete(key);
+    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+  }
+
+  /** How many changes this store has made to a space; it grows with every write. */
+  public revision(spaceKey: string): number {
+    return this.revisions.get(spaceKey.toUpperCase()) ?? 0;
   }
 
   public readMetadata(spaceKey: string, pageId: string): PageMetadata | undefined {
@@ -348,6 +360,7 @@ export class SpaceStore {
     fs.rmSync(this.cacheFile(spaceKey, pageId), { force: true });
     fs.rmSync(this.metadataFile(spaceKey, pageId), { force: true });
     fs.rmSync(this.vectorsFile(spaceKey, pageId), { force: true });
+    this.invalidate(spaceKey);
   }
 
   private afterRemoval(spaceKey: string): void {
