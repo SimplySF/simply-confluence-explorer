@@ -59,6 +59,7 @@ export class Telemetry implements Tracer {
   private readonly lag = monitorEventLoopDelay({ resolution: 20 });
   private lagNow = { p50: 0, max: 0 };
   private lagMinuteMax = 0;
+  private lastSample = performance.now();
   private readonly timers: NodeJS.Timeout[] = [];
   private readonly print: (line: string) => void;
 
@@ -249,9 +250,14 @@ export class Telemetry implements Tracer {
   }
 
   private sampleLag(): void {
+    // How late this check itself ran is measured too, so a freeze it waited behind is seen even when
+    // Node's delay monitor has not recorded it by the time the check runs.
+    const now = performance.now();
+    const late = Math.round(now - this.lastSample - (this.options.sampleMs ?? 5000));
+    this.lastSample = now;
     this.lagNow = {
       p50: Math.round(this.lag.percentile(50) / 1e6),
-      max: Math.round(this.lag.max / 1e6),
+      max: Math.max(Math.round(this.lag.max / 1e6), late),
     };
     this.lag.reset();
     this.lagMinuteMax = Math.max(this.lagMinuteMax, this.lagNow.max);
