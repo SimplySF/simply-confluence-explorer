@@ -149,11 +149,11 @@ describe('the index job', () => {
     };
     await run();
     expect(embedded).toEqual([['Runbook › Deploy\n\nShip it.', 'Runbook › Rollback\n\nUndo it.']]);
-    expect(pipeline.coverage('PLAT')).toEqual({ pages: 1, missing: 0 });
+    expect(await pipeline.coverage('PLAT')).toEqual({ pages: 1, missing: 0, requests: 0 });
     await run();
     expect(embedded).toHaveLength(1);
     model = 'model-b';
-    expect(pipeline.coverage('PLAT').missing).toBe(1);
+    expect((await pipeline.coverage('PLAT')).missing).toBe(1);
     await run();
     expect(embedded).toHaveLength(2);
     store.refreshPage('PLAT', page(2));

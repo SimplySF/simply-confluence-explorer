@@ -24,8 +24,9 @@ import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
-import { corpusSize, pause, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
+import { corpusSize, retrieveContext, type SectionRef } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
+import { pause } from '../util/pause.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 

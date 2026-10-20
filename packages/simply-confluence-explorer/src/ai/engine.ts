@@ -67,6 +67,8 @@ export type AiEngine = {
   analyzeDocument: (markdown: string, prompt: string, pageTitle?: string, ctx?: AiContext) => Promise<AiAnswer>;
   /** The model texts are embedded with, or null when this engine has none (ADR-051). */
   embeddingModel?: () => string | null;
+  /** How many requests long-running work, such as the AI index, may send at once. */
+  parallel?: () => number;
   /** One vector per text, or null for a text the guard left out because it holds a secret. */
   embed?: (texts: string[], ctx: AiContext) => Promise<Array<number[] | null>>;
   /** One turn of a conversation, with its context and earlier turns. */
@@ -184,6 +186,10 @@ export class ConfiguredAi implements AiEngine {
       contextChars: sent.chars,
       leftOut: sent.leftOut.map((l) => `${l.kind}${l.label ? ` "${l.label}"` : ''}: ${l.reason}`),
     });
+  }
+
+  public parallel(): number {
+    return this.settings.resolve().parallel;
   }
 
   public embeddingModel(): string | null {

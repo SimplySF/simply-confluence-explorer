@@ -200,6 +200,8 @@ export type AiSettingsView = {
   defaults: Record<Exclude<AiProvider, 'gemini-cli'>, string>;
   /** Where the Gemini CLI was found, or `null` when it was not. */
   geminiCliFound: string | null;
+  /** How many requests the AI index sends at once. */
+  parallel: number;
 };
 
 /** What the outbound guard did to a request: what it blocked and how much personal data it replaced. */
@@ -250,6 +252,9 @@ export type MetadataProgress = {
   total: number;
   processed: number;
   errorCount: number;
+  /** How many requests the run needs, with several small pages to a request, and how many are done. */
+  requests?: number;
+  requestsDone?: number;
   /** The pages left out, each with why; the latest 200. */
   failures?: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;

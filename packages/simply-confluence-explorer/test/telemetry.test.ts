@@ -279,7 +279,9 @@ describe('the Observability routes', () => {
       expect(logs.groups).toHaveLength(1);
       const trace = (await app.call<{ spans: SpanRecord[] }>('GET', `/observe/traces/${run.traceId}`)).body;
       expect(trace.spans[0]).toMatchObject({ kind: 'job', name: 'meta' });
-      expect(trace.spans.filter((s) => s.kind === 'index' && s.outcome === 'error')).toHaveLength(run.errorCount);
+      // Each pack records how many of its pages failed, and together they account for every failure.
+      const packs = trace.spans.filter((s) => s.kind === 'index' && s.name === 'pack');
+      expect(packs.reduce((n, s) => n + Number(s.attrs.failed), 0)).toBe(run.errorCount);
       const now = (await app.call<{ problems: Array<{ problem: string }>; jobs: unknown[] }>('GET', '/observe/now'))
         .body;
       expect(now.problems.map((p) => p.problem)).toContain('index-failures');

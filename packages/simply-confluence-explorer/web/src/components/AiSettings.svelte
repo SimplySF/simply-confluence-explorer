@@ -22,6 +22,7 @@
   let baseUrl = $state('');
   let apiKey = $state('');
   let cliPath = $state('');
+  let parallel = $state(2);
   let models = $state<string[]>([]);
   let message = $state('');
 
@@ -35,6 +36,7 @@
     model = settings?.model ?? '';
     baseUrl = settings?.baseUrl ?? '';
     cliPath = v.geminiCli.path;
+    parallel = v.parallel;
     apiKey = '';
     models = [];
   }
@@ -50,7 +52,7 @@
   async function save(): Promise<void> {
     message = '';
     try {
-      const update: Record<string, unknown> = { provider };
+      const update: Record<string, unknown> = { provider, parallel: Number(parallel) };
       if (isApi) update[provider] = { model, baseUrl, ...(apiKey ? { apiKey } : {}) };
       else update.geminiCli = { path: cliPath };
       load(await api.saveAiSettings(update), provider);
@@ -124,6 +126,15 @@
           {#if view.geminiCliFound}<div class="muted field-note">Using {view.geminiCliFound}</div>{/if}
         </div>
       {/if}
+
+      <div class="form-group">
+        <label class="form-label" for="ai-parallel">Requests at once for the AI index</label>
+        <input id="ai-parallel" class="form-input input-sm" type="number" min="1" max="8" bind:value={parallel} />
+        <div class="muted field-note">
+          How many requests indexing a space sends at a time. More finishes sooner but meets a provider's rate limits
+          sooner; the Gemini CLI starts a program for each, so it does best with 2.
+        </div>
+      </div>
 
       {#if status}
         <div class="form-group">

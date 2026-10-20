@@ -369,3 +369,15 @@ test('a stopped Gemini CLI run ends the process', async () => {
   await assert.rejects(runGeminiCli(script, guarded('S', 'D'), {}, stop.signal), /stopped/);
   assert.ok(Date.now() - started < 5000);
 });
+
+test('requests at once for the AI index default by provider, and stay between 1 and 8', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-parallel-'));
+  const s = new AiSettingsStore(dir, {});
+  assert.equal(s.resolve().parallel, 2, 'the Gemini CLI starts a program per request, so it runs fewer');
+  s.update({ provider: 'anthropic' });
+  assert.equal(s.resolve().parallel, 4);
+  s.update({ parallel: 6 });
+  assert.equal(s.resolve().parallel, 6);
+  assert.equal(s.publicView().parallel, 6);
+  for (const bad of [0, 9, 2.5]) assert.throws(() => s.update({ parallel: bad }), /from 1 to 8/);
+});

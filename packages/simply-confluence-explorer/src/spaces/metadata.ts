@@ -20,11 +20,13 @@ import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
+import { pause } from '../util/pause.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
+import { generateMetadataPack, packPages, withRetry } from './indexPacks.js';
 import { tagIndex } from './tags.js';
 import type { VectorIndex } from './vectors.js';
 
@@ -85,7 +87,14 @@ export async function generateMetadata(
   ).text;
   const json = /\{[\s\S]*\}/.exec(reply);
   if (!json) throw new Error('the AI reply contained no JSON metadata');
-  const m = JSON.parse(json[0]) as Record<string, unknown>;
+  return toMetadata(page, JSON.parse(json[0]) as Record<string, unknown>, headings);
+}
+
+/**
+ * A page's metadata from one entry of an AI reply. Each section line is matched to its section by
+ * position; a section the reply skipped has no line rather than another's.
+ */
+export function toMetadata(page: PageDetail, m: Record<string, unknown>, headings: string[]): PageMetadata {
   const lines = strings(m.sections);
   return {
     pageId: page.id,
@@ -102,7 +111,6 @@ export async function generateMetadata(
     questions: strings(m.questions)
       .slice(0, 6)
       .map((q) => q.slice(0, 300)),
-    // Matched to the sections by position; a section the reply skipped has no line rather than another's.
     sections: headings.map((heading, i) => ({ heading, summary: (lines[i] ?? '').slice(0, 300) })),
   };
 }
@@ -125,6 +133,7 @@ export class MetadataPipeline {
     log: (message: string) => void,
     private readonly vectors?: VectorIndex,
     private readonly tracer: Tracer = noTracer,
+    private readonly options: { retryDelayMs?: number } = {},
   ) {
     this.jobs = new JobRunner<MetadataProgress>(
       'meta',
@@ -185,14 +194,20 @@ export class MetadataPipeline {
   }
 
   /**
-   * The synced pages of a space, a section or a list that have no summary yet, leaving out excluded
-   * pages, and how many pages were looked at.
+   * How many synced pages of a space, a section or a list there are, how many are not indexed yet,
+   * and about how many requests indexing them would take, leaving out excluded pages.
    */
-  public coverage(spaceKey: string, rootPageId?: string, pageIds?: string[]): { pages: number; missing: number } {
+  public async coverage(
+    spaceKey: string,
+    rootPageId?: string,
+    pageIds?: string[],
+  ): Promise<{ pages: number; missing: number; requests: number }> {
     const key = spaceKey.toUpperCase();
+    const missing = await this.missing(key, rootPageId, pageIds);
     return {
       pages: this.allowedPages(key, rootPageId, pageIds).length,
-      missing: this.missing(key, rootPageId, pageIds).length,
+      missing: missing.length,
+      requests: packPages(missing).length,
     };
   }
 
@@ -217,73 +232,143 @@ export class MetadataPipeline {
     return this.vectors ? (this.ai().embeddingModel?.() ?? null) : null;
   }
 
-  /** Pages with no current metadata, or, when the engine embeds, no vectors for their version. */
-  private missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): PageDetail[] {
+  /**
+   * Pages with no current metadata, or, when the engine embeds, no vectors for their version. It reads
+   * each page's metadata, so for a large space it pauses every few hundred pages to let other requests
+   * through.
+   */
+  private async missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
     const model = this.embeddingModel();
-    return this.pagesOf(spaceKey, rootPageId, pageIds).filter(
-      (p) =>
+    const pages = this.pagesOf(spaceKey, rootPageId, pageIds);
+    const out: PageDetail[] = [];
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+      if (
         !this.exclusions.isPageExcluded(p, spaceKey) &&
-        (!isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)) || (!!model && !this.vectors?.has(p, model))),
-    );
+        (!isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)) || (!!model && !this.vectors?.has(p, model)))
+      )
+        out.push(p);
+      // eslint-disable-next-line no-await-in-loop -- the pause is the point: other requests run in it
+      if (i % 200 === 199) await pause();
+    }
+    return out;
   }
 
   /**
-   * Gives one page current metadata if it has none, then section vectors if the engine makes them.
-   * Returns the topics it gave the page, for the run's shared list.
+   * Indexes one pack of pages: their metadata in one request where they lack it, each page the reply
+   * leaves out asked for again on its own, then their section vectors when the engine makes them.
+   * Returns the topics given and the pages that failed, each with why.
    */
-  private async index(page: PageDetail, spaceKey: string, ai: AiEngine, vocabulary: string[]): Promise<string[]> {
-    let tags: string[] = [];
-    if (!isCurrentMetadata(this.store.readMetadata(spaceKey, page.id))) {
-      const metadata = await generateMetadata(page, ai, vocabulary);
-      this.store.writeMetadata(spaceKey, metadata);
-      tags = metadata.tags;
+  private async indexPack(
+    pack: PageDetail[],
+    spaceKey: string,
+    ai: AiEngine,
+    vocabulary: string[],
+    stopped: () => boolean,
+  ): Promise<{ tags: string[]; failed: Array<{ page: PageDetail; error: string }> }> {
+    const tags: string[] = [];
+    const failed: Array<{ page: PageDetail; error: string }> = [];
+    const needed = pack.filter((p) => !isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)));
+    const retry = <T>(fn: () => Promise<T>): Promise<T> => withRetry(fn, this.options.retryDelayMs ?? 2000, stopped);
+    const results =
+      needed.length > 1
+        ? await retry(() => generateMetadataPack(needed, ai, vocabulary)).catch(
+            // The pack request itself failed: each page is asked for on its own instead.
+            (error: unknown) => new Map(needed.map((p) => [p.id, new Error(errorMessage(error))])),
+          )
+        : new Map<string, PageMetadata | Error>(needed.map((p) => [p.id, new Error('asked alone')]));
+    for (const page of needed) {
+      let result = results.get(page.id);
+      if (!(result instanceof Error) || stopped()) {
+        if (result && !(result instanceof Error)) this.store.writeMetadata(spaceKey, result);
+      } else {
+        // eslint-disable-next-line no-await-in-loop -- a page left out of its pack is asked for alone, in turn
+        result = await retry(() => generateMetadata(page, ai, vocabulary)).catch(
+          (error: unknown) => new Error(errorMessage(error)),
+        );
+        if (result instanceof Error) failed.push({ page, error: result.message });
+        else this.store.writeMetadata(spaceKey, result);
+      }
+      if (result && !(result instanceof Error)) tags.push(...result.tags);
     }
+    await this.embedPack(
+      pack.filter((p) => !failed.some((f) => f.page === p)),
+      spaceKey,
+      ai,
+      failed,
+    );
+    return { tags, failed };
+  }
+
+  /** Embeds the sections of a pack's pages in as few requests as the engine allows. */
+  private async embedPack(
+    pages: PageDetail[],
+    spaceKey: string,
+    ai: AiEngine,
+    failed: Array<{ page: PageDetail; error: string }>,
+  ): Promise<void> {
     const model = this.embeddingModel();
-    if (model && ai.embed && this.vectors && !this.vectors.has(page, model)) {
-      const texts = splitSections(page.id, parsePage(page).markdown).map(
-        (section) => `${sectionName(page.title, section)}\n\n${section.text}`,
-      );
-      this.vectors.write(page, model, await ai.embed(texts, { spaceKey }));
+    if (!model || !ai.embed || !this.vectors) return;
+    const todo = pages.filter((p) => !this.vectors!.has(p, model));
+    if (todo.length === 0) return;
+    const texts = todo.map((page) =>
+      splitSections(page.id, parsePage(page).markdown).map((s) => `${sectionName(page.title, s)}\n\n${s.text}`),
+    );
+    try {
+      const vectors = await ai.embed(texts.flat(), { spaceKey });
+      let at = 0;
+      todo.forEach((page, i) => {
+        this.vectors!.write(page, model, vectors.slice(at, at + texts[i].length));
+        at += texts[i].length;
+      });
+    } catch (error) {
+      for (const page of todo) failed.push({ page, error: `its sections were not embedded: ${errorMessage(error)}` });
     }
-    return tags;
   }
 
   private async run(job: MetadataProgress, spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<void> {
     job.status = 'running';
     const ai = this.ai();
-    const targets = this.missing(spaceKey, rootPageId, pageIds);
+    // The request that started the run is answered before the pages are looked at.
+    await pause();
+    const targets = await this.missing(spaceKey, rootPageId, pageIds);
+    const packs = packPages(targets);
     job.total = targets.length;
+    job.requests = packs.length;
+    job.requestsDone = 0;
     // The topics already in use, counted as the run tags pages, so later pages reuse earlier pages' topics.
     const uses = new Map(tagIndex(this.store, spaceKey).map((t) => [t.tag, t.pages.length]));
-    // One page at a time: a space can have thousands of pages, and providers limit request rates.
-    for (const page of targets) {
-      if (this.jobs.isCancelled(job.jobId)) return;
-      job.currentPageTitle = page.title;
-      const vocabulary = [...uses].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
-      try {
-        // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
-        const tags = await this.tracer.span('index', 'page', { pageId: page.id, title: page.title }, () =>
-          this.index(page, spaceKey, ai, vocabulary),
+    const stopped = (): boolean => this.jobs.isCancelled(job.jobId);
+    const inFlight = new Set<string>();
+    let next = 0;
+    // A few packs at a time: a space has thousands of pages, and providers limit request rates.
+    const worker = async (): Promise<void> => {
+      while (next < packs.length && !stopped()) {
+        const pack = packs[next++];
+        const vocabulary = [...uses].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
+        inFlight.add(pack[0].title);
+        job.currentPageTitle = [...inFlight].join(', ');
+        // eslint-disable-next-line no-await-in-loop -- each worker takes the next pack when its last is done
+        const { tags, failed } = await this.tracer.span(
+          'index',
+          'pack',
+          { pages: pack.length, first: pack[0].title, spaceKey },
+          async (span) => {
+            const outcome = await this.indexPack(pack, spaceKey, ai, vocabulary, stopped);
+            span.set({ failed: outcome.failed.length });
+            return outcome;
+          },
         );
+        inFlight.delete(pack[0].title);
         for (const tag of tags) uses.set(tag, (uses.get(tag) ?? 0) + 1);
-        this.tracer.count('index.pages');
-      } catch (error) {
-        // Recorded with its reason and skipped; running the job again retries every page still missing.
-        job.errorCount++;
-        job.failures = [
-          ...(job.failures ?? []),
-          { pageId: page.id, title: page.title, error: errorMessage(error) },
-        ].slice(-200);
-        this.tracer.count('index.failures');
-        // The reason alone is the message, so copies of one failure group together; the page is an attribute.
-        this.tracer.log('warn', 'index', `A page was not indexed: ${errorMessage(error)}`, {
-          pageId: page.id,
-          title: page.title,
-          spaceKey,
-        });
+        for (const f of failed) this.recordFailure(job, f.page, f.error, spaceKey);
+        this.tracer.count('index.pages', pack.length - failed.length);
+        job.processed += pack.length;
+        job.requestsDone = (job.requestsDone ?? 0) + 1;
       }
-      job.processed++;
-    }
+    };
+    const parallel = Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length));
+    await Promise.all(Array.from({ length: parallel }, worker));
     job.currentPageTitle = undefined;
     this.store.writeToc(spaceKey);
     if (job.errorCount > 0)
@@ -291,5 +376,18 @@ export class MetadataPipeline {
         'index-failures',
         `The AI index of ${job.rootTitle ?? spaceKey} left out ${job.errorCount} page${job.errorCount === 1 ? '' : 's'}.`,
       );
+  }
+
+  /** Records a page left out with its reason; running the job again retries every page still missing. */
+  private recordFailure(job: MetadataProgress, page: PageDetail, error: string, spaceKey: string): void {
+    job.errorCount++;
+    job.failures = [...(job.failures ?? []), { pageId: page.id, title: page.title, error }].slice(-200);
+    this.tracer.count('index.failures');
+    // The reason alone is the message, so copies of one failure group together; the page is an attribute.
+    this.tracer.log('warn', 'index', `A page was not indexed: ${error}`, {
+      pageId: page.id,
+      title: page.title,
+      spaceKey,
+    });
   }
 }

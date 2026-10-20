@@ -52,7 +52,17 @@ type Stored = {
   openai?: ApiConfig;
   gemini?: ApiConfig;
   geminiCli?: { path?: string };
+  /** How many requests the AI index sends at once. */
+  parallel?: number;
 };
+
+/**
+ * How many indexing requests run at once when none is set. The Gemini CLI starts a process for each
+ * request, so it runs fewer; an API provider's rate limits allow a few more.
+ */
+export const DEFAULT_PARALLEL = { cli: 2, api: 4 };
+/** The most requests at once a person may choose, so a slip cannot flood a provider. */
+export const MAX_PARALLEL = 8;
 
 export type ResolvedApi = {
   apiKey: string;
@@ -65,6 +75,7 @@ export type Resolved = {
   provider: Provider;
   api: Record<ApiProvider, ResolvedApi>;
   geminiCliPath: string;
+  parallel: number;
 };
 
 /** An update from the Settings dialog. `apiKey`: omitted keeps it, '' removes it. */
@@ -74,6 +85,7 @@ export type SettingsUpdate = {
   openai?: ApiConfig;
   gemini?: ApiConfig;
   geminiCli?: { path?: string };
+  parallel?: number;
 };
 
 export class AiSettingsStore {
@@ -105,7 +117,8 @@ export class AiSettingsStore {
     }
     const envProvider = this.env.AI_PROVIDER as Provider | undefined;
     const provider = stored.provider ?? (envProvider && PROVIDERS.includes(envProvider) ? envProvider : 'gemini-cli');
-    return { provider, api, geminiCliPath: stored.geminiCli?.path ?? this.env.GEMINI_CLI_PATH ?? '' };
+    const parallel = stored.parallel ?? (provider === 'gemini-cli' ? DEFAULT_PARALLEL.cli : DEFAULT_PARALLEL.api);
+    return { provider, api, geminiCliPath: stored.geminiCli?.path ?? this.env.GEMINI_CLI_PATH ?? '', parallel };
   }
 
   /** What a browser may see: everything except the keys. */
@@ -122,6 +135,7 @@ export class AiSettingsStore {
       providers: providers as AiSettingsView['providers'],
       geminiCli: { path: r.geminiCliPath },
       defaults: DEFAULT_MODELS,
+      parallel: r.parallel,
     };
   }
 
@@ -143,6 +157,11 @@ export class AiSettingsStore {
       next[p] = cur;
     }
     if (change.geminiCli?.path !== undefined) next.geminiCli = { path: change.geminiCli.path.trim() };
+    if (change.parallel !== undefined) {
+      if (!Number.isInteger(change.parallel) || change.parallel < 1 || change.parallel > MAX_PARALLEL)
+        throw new Error(`requests at once must be a whole number from 1 to ${MAX_PARALLEL}`);
+      next.parallel = change.parallel;
+    }
     writePrivateJson(this.file, next);
   }
 

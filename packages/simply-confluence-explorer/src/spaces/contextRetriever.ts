@@ -18,6 +18,7 @@ import type { PageDetail, SpaceTocNode } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
 import { ManifestBuilder } from '../ai/manifest.js';
+import { pause } from '../util/pause.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SearchIndex } from './searchIndex.js';
@@ -69,9 +70,6 @@ export type RetrieverDeps = {
   ai?: Pick<AiEngine, 'analyzeDocument' | 'embed' | 'embeddingModel'>;
   signal?: AbortSignal;
 };
-
-/** Lets other requests run between the steps of answering one, so a large space never holds the server long. */
-export const pause = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /** How many candidate sections the search offers the AI to choose from. */
 const CANDIDATES = 40;

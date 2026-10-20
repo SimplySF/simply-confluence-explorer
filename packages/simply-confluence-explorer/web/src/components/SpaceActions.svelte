@@ -63,7 +63,18 @@
 
   const synced = $derived(!!manifest);
   const needSync = $derived(synced ? undefined : 'Sync the space first');
-  const summaries = $derived(summaryAction(manifest));
+  // What a run would cost, read again whenever the synced copy or its index changes.
+  let estimate = $state<{ missing: number; requests?: number } | undefined>(undefined);
+  $effect(() => {
+    void manifest?.metadataCount;
+    void manifest?.lastSynced;
+    if (!manifest) return;
+    api.summaryCoverage(spaceKey, {}).then(
+      (c) => (estimate = c),
+      () => (estimate = undefined), // The menu still offers the run, without the estimate.
+    );
+  });
+  const summaries = $derived(summaryAction(manifest, estimate));
 </script>
 
 <div class="space-actions">

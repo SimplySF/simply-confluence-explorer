@@ -114,16 +114,18 @@ describe('metadata of the second kind', () => {
       () => ai,
       () => undefined,
     );
-    expect(pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 1 });
+    expect(await pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 1, requests: 1 });
     await finish(pipeline, pipeline.start('PLAT').jobId);
     expect(prompts).toHaveLength(1);
     expect(store.readMetadata('PLAT', '1')?.summary).toBe('New.');
-    expect(pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 0 });
+    expect(await pipeline.coverage('PLAT')).toEqual({ pages: 2, missing: 0, requests: 0 });
   });
 
   it("offers the space's topics, including those given earlier in the same run", async () => {
     const { store, exclusions } = setup();
-    for (const id of ['1', '2', '3']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);
+    // Each page is large enough to need a request of its own, so the second request follows the first.
+    const long = `<p>${'Text. '.repeat(7000)}</p>`;
+    for (const id of ['1', '2', '3']) store.writePage('PLAT', page(id, `Page ${id}`, long), '', []);
     store.writeMetadata('PLAT', meta('1', { version: 2, tags: ['source-control'] }));
     const { ai, prompts } = fakeAi(() => '{"summary":"New.","tags":["Pipelines"]}');
     const pipeline = new MetadataPipeline(
@@ -155,6 +157,7 @@ describe('an index run with failures', () => {
       () => undefined,
       undefined,
       tracer,
+      { retryDelayMs: 0 },
     );
     const { jobId } = pipeline.start('PLAT');
     await finish(pipeline, jobId);

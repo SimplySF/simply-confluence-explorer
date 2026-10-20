@@ -84,6 +84,8 @@ export type ServerOptions = {
   contextChars?: number;
   /** Whether telemetry samples health and writes in batches; tests that read it back at once turn it off. */
   telemetryTimers?: boolean;
+  /** How long the AI index waits before trying a failed request again; tests set it to 0. */
+  indexRetryMs?: number;
 };
 
 // Sent with every response. They stop the app being framed by another site, stop a browser
@@ -134,7 +136,9 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const sessions = new SessionStore(dataDir);
   const contextChars = options.contextChars ?? CONTEXT_CHAR_LIMIT;
   const sync = new SpaceSync(store, exclusions, client, telemetry.sink('sync'), telemetry);
-  const metadata = new MetadataPipeline(store, exclusions, () => ai, telemetry.sink('index'), vectors, telemetry);
+  const metadata = new MetadataPipeline(store, exclusions, () => ai, telemetry.sink('index'), vectors, telemetry, {
+    retryDelayMs: options.indexRetryMs,
+  });
   const reviews = new CorpusReviews({
     ai,
     sessions,

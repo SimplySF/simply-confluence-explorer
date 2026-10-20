@@ -86,6 +86,10 @@ function settingsUpdate(body: unknown): SettingsUpdate {
   }
   const cli = text(fieldsOf(fields.geminiCli).path, 'geminiCli.path');
   if (cli !== undefined) update.geminiCli = { path: cli };
+  if (fields.parallel !== undefined) {
+    if (typeof fields.parallel !== 'number') throw new Error('parallel must be a number');
+    update.parallel = fields.parallel;
+  }
   return update;
 }
 
@@ -246,12 +250,12 @@ export function addAiRoutes(router: Router, services: Services): Router {
         if (!built) {
           const progress = index.building().find((b) => b.spaceKey === key);
           return {
-            ...metadata.coverage(key, rootPageId, ids),
+            ...(await metadata.coverage(key, rootPageId, ids)),
             indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 },
           };
         }
         const size = corpusSize(key, metadata.allowedPages(key, rootPageId, ids), index);
-        return { ...metadata.coverage(key, rootPageId, ids), fits: size <= services.contextChars };
+        return { ...(await metadata.coverage(key, rootPageId, ids)), fits: size <= services.contextChars };
       })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);

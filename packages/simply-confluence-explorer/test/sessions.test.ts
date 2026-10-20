@@ -415,9 +415,21 @@ test('a whole-space question lets the AI choose its sections from their summarie
     fake,
     (payload) => {
       if (payload.system.includes('return a JSON object')) {
+        const about = (title: string): string =>
+          title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
+        const pages = [...payload.messages[0].content.matchAll(/^=== PAGE (\S+): (.+) ===$/gm)];
+        if (pages.length)
+          return JSON.stringify({
+            pages: pages.map((m) => ({
+              id: m[1],
+              summary: about(m[2]),
+              tags: [],
+              documentType: 'policy',
+              systemsMentioned: [],
+            })),
+          });
         const title = /# Document Title: (.+)/.exec(payload.messages[0].content)?.[1] ?? '';
-        const summary = title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
-        return JSON.stringify({ summary, tags: [], documentType: 'policy', systemsMentioned: [] });
+        return JSON.stringify({ summary: about(title), tags: [], documentType: 'policy', systemsMentioned: [] });
       }
       if (choosing(payload)) return choice;
       return 'an answer';
