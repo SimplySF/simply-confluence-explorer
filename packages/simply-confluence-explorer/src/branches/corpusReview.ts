@@ -27,6 +27,7 @@ import { JobRunner } from '../jobs/jobRunner.js';
 import { contextCollector, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import type { ReadPage, RetrievedContext } from '../spaces/contextRetriever.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
+import type { SpaceStore } from '../spaces/spaceStore.js';
 import { errorMessage } from '../util/errors.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
@@ -98,6 +99,8 @@ export type CorpusReviewDeps = {
   ai: AiEngine;
   sessions: SessionStore;
   exclusions: ExclusionManager;
+  /** The synced copy, which reads each page with its attachments (ADR-066). */
+  store: Pick<SpaceStore, 'readableMarkdown'>;
   readMetadataTopics: (spaceKey: string, page: PageDetail) => string[];
   pageSize: (spaceKey: string, page: PageDetail) => number;
   dataDir: string;

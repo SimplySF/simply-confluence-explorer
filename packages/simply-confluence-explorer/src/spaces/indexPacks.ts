@@ -57,8 +57,8 @@ export function packPages(pages: PageDetail[], limit = PACK_CHARS): PageDetail[]
 }
 
 /** A page as an indexing request carries it: its sections listed, then its text, shortened if very long. */
-function described(page: PageDetail): { text: string; headings: string[] } {
-  const markdown = stripFrontmatter(parsePage(page).markdown);
+function described(page: PageDetail, markdownOf: (page: PageDetail) => string): { text: string; headings: string[] } {
+  const markdown = stripFrontmatter(markdownOf(page));
   const sections = splitSections(page.id, markdown);
   const headings = sections.slice(0, SUMMARISED_SECTIONS).map((s) => sectionName(page.title, s));
   const body =
@@ -92,8 +92,9 @@ export async function generateMetadataPack(
   pages: PageDetail[],
   ai: AiEngine,
   vocabulary: string[],
+  markdownOf: (page: PageDetail) => string = (p) => parsePage(p).markdown,
 ): Promise<Map<string, PageMetadata | Error>> {
-  const parts = pages.map((p) => ({ page: p, ...described(p) }));
+  const parts = pages.map((p) => ({ page: p, ...described(p, markdownOf) }));
   const reply = (
     await ai.analyzeDocument(parts.map((p) => p.text).join('\n\n'), packPrompt(vocabulary), `${pages.length} pages`, {
       spaceKey: pages[0].spaceKey,

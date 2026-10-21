@@ -21,6 +21,7 @@ import { parsePage } from '../parser/convert.js';
 import { mapChunked } from '../util/pause.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
+import { AttachmentReader } from './attachments.js';
 import { SpaceCatalog, type CatalogEntry } from './catalog.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { tagsOf } from './tags.js';
@@ -44,6 +45,8 @@ type Manifest = Omit<SyncedSpace, 'metadataCount' | 'hasTOC'>;
 export class SpaceStore {
   /** Each space's page catalog, which whole-space views read instead of every page's file. */
   public readonly catalog: SpaceCatalog;
+  /** Reads a synced page's attachments for the AI (ADR-066). */
+  public readonly attachments: AttachmentReader;
   private readonly spacesDir: string;
   // Built from pages_cache once per change, because a large space has thousands of files.
   private readonly trees = new Map<string, { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> }>();
@@ -66,6 +69,7 @@ export class SpaceStore {
       readMetadata: (key, id): PageMetadata | undefined => this.readMetadata(key, id),
       log,
     });
+    this.attachments = new AttachmentReader((key, page) => this.attachmentFiles(key, page), log);
   }
 
   public spaceDir(spaceKey: string): string {
@@ -81,6 +85,14 @@ export class SpaceStore {
     const file = this.cacheFile(spaceKey, pageId);
     if (!fs.existsSync(file)) return undefined;
     return JSON.parse(fs.readFileSync(file, 'utf8')) as PageDetail;
+  }
+
+  /**
+   * A page's Markdown as the AI reads it: its text, then the text of its text attachments as
+   * sections of their own (ADR-066).
+   */
+  public readableMarkdown(spaceKey: string, page: PageDetail): string {
+    return `${parsePage(page).markdown}${this.attachments.of(spaceKey.toUpperCase(), page).text}`;
   }
 
   /** The synced space a page belongs to, when the caller does not know it. */

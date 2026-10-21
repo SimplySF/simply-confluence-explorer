@@ -450,7 +450,7 @@ export class BranchRunner {
       item.status = 'working';
       step(item, `Writing the edit, applying ${plural(item.fixes?.length ?? 0, 'suggestion')}`);
       this.store.save(run);
-      const prompt = applyPrompt(item.fixes ?? [], run.instructions);
+      const prompt = applyPrompt(item.fixes ?? [], run.instructions) + this.attachmentsNote(run.spaceKey, item.pageId);
       const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
         spaceKey: run.spaceKey,
         signal,
@@ -482,6 +482,15 @@ export class BranchRunner {
     delete item.writing;
     run.processed++;
     this.store.save(run);
+  }
+
+  /** The page's text attachments, for the edit model to read but never edit (ADR-066). */
+  private attachmentsNote(spaceKey: string, pageId: string): string {
+    const page = this.deps.store.readPage(spaceKey, pageId);
+    const text = page ? this.deps.store.attachments.of(spaceKey, page).text : '';
+    return text
+      ? `\n\nThe page's attachments, to read for context only; never edit them or copy them into the page:${text}`
+      : '';
   }
 
   /**

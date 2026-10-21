@@ -149,6 +149,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     ai,
     sessions,
     exclusions,
+    store,
     readMetadataTopics: (key, page): string[] => tagsOf(page, store.readMetadata(key, page.id)),
     pageSize: (key, page): number => corpusSize(key, [page], index),
     dataDir,

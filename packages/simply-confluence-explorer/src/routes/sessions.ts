@@ -45,7 +45,6 @@ import { isValidPageId, isValidSpaceKey, PARAMS } from '../http/guards.js';
 import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { pageText } from '../branches/pageChanges.js';
-import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import {
@@ -212,7 +211,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
   const unsyncedContext = async (scope: SessionScope, manifest: ManifestBuilder): Promise<TurnContext> => {
     const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
     if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
-    const root = parsePage(gate.page).markdown;
+    const root = store.readableMarkdown(scope.spaceKey, gate.page);
     const ctx: TurnContext = {
       context: manifest.include('page', gate.page.title, `## [Page: ${gate.page.title}]\n${root}`),
       manifest,
@@ -399,7 +398,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const gate = await gatePageForAi(item.pageId, run.spaceKey, deps);
     if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
     const fixes = (item.fixes ?? []).map((f) => `- [${f.kind}] ${f.detail}${f.suggestion ? ` → ${f.suggestion}` : ''}`);
-    const text = `## [Edit of: ${item.title}]\n### The page as it is\n${pageText(item)}\n### The edit so far\n${item.proposed}\n### The suggestions it applies\n${fixes.join('\n')}`;
+    const attached = store.attachments.of(run.spaceKey, gate.page!).text;
+    const text = `## [Edit of: ${item.title}]\n### The page as it is\n${pageText(item)}\n### The edit so far\n${item.proposed}\n### The suggestions it applies\n${fixes.join('\n')}${attached ? `\n### Its attachments, for context only${attached}` : ''}`;
     ctx.context += `\n\n---\n\n${ctx.manifest.include('page', `${item.title} (its edit)`, text)}`;
     return item;
   };

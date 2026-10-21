@@ -22,7 +22,6 @@ import { guardRulesPath, parseGuardRules, withWithheld } from '../ai/guard.js';
 import { API_PROVIDERS, type ApiProvider, type SettingsUpdate } from '../ai/settings.js';
 import { isValidPageId } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
-import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
 import { corpusSize, retrieveContext } from '../spaces/contextRetriever.js';
@@ -176,7 +175,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
           // page, or from before a rule changed, can never go out under this page's name.
           const checked = await gate(pageId, spaceKey);
           spaceKey = checked.spaceKey;
-          markdown = parsePage(checked.page).markdown;
+          markdown = store.readableMarkdown(checked.spaceKey, checked.page);
           pageTitle = checked.page.title;
           // A page with no body of its own, such as a folder page, is answered from the pages below it.
           const ownBody = markdown.replace(/^---[\s\S]*?---\s*/m, '').trim();
@@ -226,6 +225,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
           page,
           ai,
           (await tagIndex(store, spaceKey)).map((t) => t.tag),
+          (p) => store.readableMarkdown(spaceKey, p),
         );
         if (store.readPage(spaceKey, page.id)) store.writeMetadata(spaceKey, result);
         return { metadata: result };
