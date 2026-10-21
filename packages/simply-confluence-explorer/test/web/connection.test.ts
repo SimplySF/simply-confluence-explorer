@@ -68,4 +68,21 @@ describe('the connection status', () => {
     const none = await checkConnection({ ...api, connection: () => Promise.resolve({ ...view, baseUrl: '' }) });
     expect(none).toMatchObject({ connected: false, spaces: [] });
   });
+
+  it('says it is connected as soon as signing in works, before every space has been listed', async () => {
+    let listed!: (spaces: Array<typeof space>) => void;
+    const told: boolean[] = [];
+    const done = checkConnection(
+      {
+        connection: () => Promise.resolve(view),
+        verify: () => Promise.resolve({ success: true, baseUrl: view.baseUrl }),
+        spaces: () => new Promise((resolve) => (listed = resolve)),
+      },
+      (state) => told.push(state.connected),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(told).toEqual([true]);
+    listed([space]);
+    expect(await done).toMatchObject({ connected: true, spaces: [space] });
+  });
 });

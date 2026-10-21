@@ -69,4 +69,20 @@ describe('a 3,200-page space', () => {
       `long waits: ${labelled.join(', ') || 'none'}; garbage collections over 50 ms: ${collections.join(', ') || 'none'}`,
     ).toBeLessThan(250);
   }, 300_000);
+
+  it('answers the first tree and the list of synced spaces within 2 s of a cold start, while it indexes', async () => {
+    const space = await startLargeSpace({ startupIndexMs: 0 });
+    try {
+      const timed = async (route: string): Promise<number> => {
+        const at = Date.now();
+        await (await fetch(`${space.base}${route}`)).text();
+        return Date.now() - at;
+      };
+      const [tree, synced] = await Promise.all([timed('/spaces/BIG/pages'), timed('/space-cache/cached')]);
+      expect(tree, 'the page tree').toBeLessThan(2000);
+      expect(synced, 'the synced spaces').toBeLessThan(2000);
+    } finally {
+      await space.close();
+    }
+  }, 120_000);
 });

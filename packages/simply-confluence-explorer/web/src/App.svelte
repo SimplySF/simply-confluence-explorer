@@ -59,6 +59,9 @@
   let connection = $state<ConnectionView | null>(null);
   let connected = $state(false);
   let connUser = $state('');
+  // Until sign-in is checked the badge says so, and until the spaces are listed the sidebar does.
+  let checking = $state(true);
+  let spacesLoading = $state(false);
   let spaces = $state<ConfluenceSpace[]>([]);
   let activeSpace = $state(remembered('active_space') ?? '');
   let tree = $state<PageTreeNode[]>([]);
@@ -136,12 +139,20 @@
   $effect(() => {
     void connectionRev;
     let live = true;
-    checkConnection({ connection: api.connection, verify: () => api.verify(), spaces: api.spaces }).then(
+    checking = true;
+    const signedIn = (state: { connection: ConnectionView; connected: boolean; user?: string }): void => {
+      if (!live) return;
+      connection = state.connection;
+      connected = state.connected;
+      connUser = state.user ?? '';
+      checking = false;
+      spacesLoading = state.connected;
+    };
+    checkConnection({ connection: api.connection, verify: () => api.verify(), spaces: api.spaces }, signedIn).then(
       (state) => {
         if (!live) return;
-        connection = state.connection;
-        connected = state.connected;
-        connUser = state.user ?? '';
+        signedIn(state);
+        spacesLoading = false;
         if (state.spacesError) toast(`Signed in, but the spaces did not load: ${state.spacesError}`, 'error');
         if (state.spaces.length === 0) return;
         spaces = state.spaces;
@@ -151,7 +162,12 @@
       },
       // The server could not be asked at all. The status pill says "Not connected"; Settings shows
       // the reason when the connection is tested.
-      () => live && (connected = false),
+      () => {
+        if (!live) return;
+        connected = false;
+        checking = false;
+        spacesLoading = false;
+      },
     );
     return () => {
       live = false;
@@ -280,7 +296,13 @@
 
   const reloadTree = (): number => treeRev++;
   const statusLabel = $derived(
-    connected ? `Connected (${connUser})` : connection && !connection.baseUrl ? 'Not configured' : 'Not connected',
+    checking
+      ? 'Checking connection…'
+      : connected
+        ? `Connected (${connUser})`
+        : connection && !connection.baseUrl
+          ? 'Not configured'
+          : 'Not connected',
   );
 </script>
 
@@ -345,6 +367,7 @@
     <div class="sidebar-slot" style:width="{sidebarWidth}px" style:min-width="{sidebarWidth}px">
       <Sidebar
         {spaces}
+        {spacesLoading}
         selectedSpace={activeSpace}
         onSelectSpace={chooseSpace}
         {tree}

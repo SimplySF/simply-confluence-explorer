@@ -209,3 +209,20 @@ describe("a space's table of contents", () => {
     expect(node.tags).toEqual(['runbook', 'deploy']);
   });
 });
+
+describe("a page's metadata, once read", () => {
+  it('is read again when it is written again, however soon, or changed on disk by something else', () => {
+    const { store } = setup();
+    store.writePage('PLAT', page('1', 'Deploys', '<p>How to deploy.</p>'), '', []);
+    store.writeMetadata('PLAT', meta('1', { summary: 'First.' }));
+    expect(store.readMetadata('PLAT', '1')?.summary).toBe('First.');
+    store.writeMetadata('PLAT', meta('1', { summary: 'Second.' }));
+    expect(store.readMetadata('PLAT', '1')?.summary).toBe('Second.');
+    const file = path.join(store.spaceDir('PLAT'), 'metadata', '1.json');
+    fs.writeFileSync(file, JSON.stringify(meta('1', { summary: 'Changed outside.' })));
+    fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+    expect(store.readMetadata('PLAT', '1')?.summary).toBe('Changed outside.');
+    fs.rmSync(file);
+    expect(store.readMetadata('PLAT', '1')).toBeUndefined();
+  });
+});

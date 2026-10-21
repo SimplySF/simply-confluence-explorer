@@ -34,11 +34,19 @@ export type ConnectionState = {
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-export async function checkConnection(api: {
-  connection: () => Promise<ConnectionView>;
-  verify: () => Promise<AuthVerifyResponse>;
-  spaces: () => Promise<ConfluenceSpace[]>;
-}): Promise<ConnectionState> {
+/**
+ * Checks the connection and lists the spaces. Signing in is told to `onSignedIn` as soon as it is
+ * known, because listing every space of a large Confluence can take far longer, and the app is
+ * usable before it finishes.
+ */
+export async function checkConnection(
+  api: {
+    connection: () => Promise<ConnectionView>;
+    verify: () => Promise<AuthVerifyResponse>;
+    spaces: () => Promise<ConfluenceSpace[]>;
+  },
+  onSignedIn: (state: ConnectionState) => void = () => undefined,
+): Promise<ConnectionState> {
   const connection = await api.connection();
   if (!connection.baseUrl) return { connection, connected: false, spaces: [] };
   let verified: AuthVerifyResponse;
@@ -49,6 +57,7 @@ export async function checkConnection(api: {
   }
   if (!verified.success) return { connection, connected: false, reason: verified.error, spaces: [] };
   const user = verified.user?.displayName ?? 'User';
+  onSignedIn({ connection, connected: true, user, spaces: [] });
   try {
     return { connection, connected: true, user, spaces: await api.spaces() };
   } catch (e) {

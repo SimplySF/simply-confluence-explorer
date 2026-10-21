@@ -34,6 +34,8 @@
     onSelectPage: (pageId: string) => void;
     onJump: (target: { spaceKey: string; pageId?: string }) => void;
     loading: boolean;
+    /** The list of Confluence's spaces is still on its way. */
+    spacesLoading: boolean;
     error: string | null;
     /** The synced copy changed (a sync, a purge): reload the tree. */
     onTreeChanged: () => void;
@@ -56,6 +58,7 @@
     onSelectPage,
     onJump,
     loading,
+    spacesLoading,
     error,
     onTreeChanged,
     onAskTag,
@@ -289,6 +292,9 @@
             {/if}
           </div>
           <div class="space-switcher-scroll" role="listbox">
+            {#if spacesLoading}
+              <div class="muted list-heading"><RefreshCw size={11} class="spin" /> Loading Confluence's spaces…</div>
+            {/if}
             {#if savedShown.length > 0}
               <div class="list-heading"><HardDrive size={11} /> Synced to this machine</div>
             {/if}
@@ -413,7 +419,11 @@
     {#if error}
       <div class="alert alert-error"><AlertTriangle size={14} /> {error}</div>
     {:else if loading}
-      <div class="muted tree-message"><RefreshCw size={16} class="spin" /> Loading pages…</div>
+      <div class="muted tree-message"><RefreshCw size={16} class="spin" /> Loading {selectedSpace}'s pages…</div>
+    {:else if !selectedSpace}
+      <div class="muted tree-message">
+        {#if spacesLoading}<RefreshCw size={16} class="spin" /> Loading the spaces…{:else}Choose a space above.{/if}
+      </div>
     {:else if tree.length === 0}
       <div class="muted tree-message">
         No pages found in <strong>{selectedSpace}</strong>. Check your permissions, or paste a page URL above.
