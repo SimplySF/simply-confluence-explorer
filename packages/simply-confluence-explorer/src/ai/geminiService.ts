@@ -84,6 +84,12 @@ export function systemCliLookup(configured: string, env: NodeJS.ProcessEnv): Cli
 
 // Every account on the machine can read a process's arguments, so the prompt and the page travel on
 // standard input instead. The CLI appends piped input to this fixed -p instruction.
+const EXTENSIONS: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
 const STDIN_INSTRUCTION =
   'Follow the instructions at the start of the input below, applying them to the document that follows.';
 
@@ -104,9 +110,22 @@ export function runGeminiCli(
     payload.messages.length === 1
       ? payload.messages[0].content
       : payload.messages.map((m) => `${m.role === 'user' ? 'USER' : 'ASSISTANT'}:\n${m.content}`).join('\n\n');
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [scriptPath, '--skip-trust', '-p', STDIN_INSTRUCTION, '-o', 'text'], {
-      cwd: os.tmpdir(),
+  // Images the space chose to send are written to a folder made for this request, readable only by
+  // this account, and named in the fixed instruction with the CLI's @ syntax; page text never goes in
+  // the instruction, so no text on a page can make the CLI read a file (ADR-066).
+  const images = payload.images ?? [];
+  const folder = images.length > 0 ? fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-images-')) : undefined;
+  const names = images.map((im, i) => `img-${i + 1}${EXTENSIONS[im.mediaType] ?? '.png'}`);
+  if (folder) images.forEach((im, i) => fs.writeFileSync(path.join(folder, names[i]), Buffer.from(im.data, 'base64')));
+  const instruction = folder
+    ? `${STDIN_INSTRUCTION} Also look at these images from the pages: ${names.map((n) => `@${n}`).join(' ')}`
+    : STDIN_INSTRUCTION;
+  const tidy = (): void => {
+    if (folder) fs.rmSync(folder, { recursive: true, force: true });
+  };
+  return new Promise<Reply>((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath, '--skip-trust', '-p', instruction, '-o', 'text'], {
+      cwd: folder ?? os.tmpdir(),
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...env, NO_COLOR: '1' },
       signal,
@@ -157,5 +176,5 @@ export function runGeminiCli(
         resolve(code === 0 ? { text: cleanOutput } : { text: cleanOutput, cutOff: 'length' });
       }
     });
-  });
+  }).finally(tidy);
 }

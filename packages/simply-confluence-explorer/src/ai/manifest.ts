@@ -20,7 +20,7 @@
 // refused rather than sent with context silently missing.
 
 /** `notes` are what one batch of a thorough answer found, sent to the request that combines them. */
-export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes';
+export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image';
 export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit';
 
 export type ManifestItem = {
@@ -43,6 +43,8 @@ export type ManifestSummary = {
   sections: number;
   files: number;
   turns: number;
+  /** Images sent with the context, unchecked by the guard (ADR-066). */
+  images?: number;
   chars: number;
   leftOut: Array<{ kind: ContextKind; label: string; reason: LeftOutReason | 'cut' }>;
 };
@@ -70,6 +72,11 @@ export class ManifestBuilder {
   /** Records earlier turns of a conversation that were sent; they travel as messages, not context. */
   public includeTurns(count: number, chars: number): void {
     if (count > 0) this.items.push({ kind: 'turn', label: `${count} earlier messages`, chars, included: true });
+  }
+
+  /** Records images sent with the context; they travel beside the text, so they carry no marker. */
+  public includeImages(images: Array<{ name: string; bytes: number }>): void {
+    for (const image of images) this.items.push({ kind: 'image', label: image.name, chars: 0, included: true });
   }
 
   public leaveOut(kind: ContextKind, label: string, chars: number, reason: LeftOutReason): void {
@@ -109,6 +116,12 @@ export function checkPayload(manifest: ContextManifest, payload: string): string
   return problems;
 }
 
+/** The problem when the images a request was built to carry are not all in it. */
+export function checkImages(manifest: ContextManifest, sent: number): string[] {
+  const listed = manifest.items.filter((i) => i.included && i.kind === 'image').length;
+  return sent < listed ? [`${listed - sent} of its ${listed} images are missing`] : [];
+}
+
 export function summarise(manifest: ContextManifest): ManifestSummary {
   const sent = manifest.items.filter((i) => i.included);
   const count = (kind: ContextKind): number => sent.filter((i) => i.kind === kind).length;
@@ -118,6 +131,7 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
     sections: count('section'),
     files: count('file'),
     turns,
+    ...(count('image') ? { images: count('image') } : {}),
     chars: sent.reduce((n, i) => n + i.chars, 0),
     leftOut: [
       ...manifest.items.filter((i) => !i.included).map((i) => ({ kind: i.kind, label: i.label, reason: i.reason! })),
@@ -137,6 +151,7 @@ export function mergeSummaries(summaries: ManifestSummary[]): ManifestSummary {
     sections: sum('sections'),
     files: Math.max(0, ...summaries.map((s) => s.files)),
     turns: Math.max(0, ...summaries.map((s) => s.turns)),
+    ...(summaries.some((s) => s.images) ? { images: summaries.reduce((n, s) => n + (s.images ?? 0), 0) } : {}),
     chars: sum('chars'),
     leftOut: summaries.flatMap((s) => s.leftOut),
   };
