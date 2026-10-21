@@ -60,6 +60,9 @@ export class Telemetry implements Tracer {
   private lagNow = { p50: 0, max: 0 };
   private lagMinuteMax = 0;
   private lastSample = performance.now();
+  private loopUse = performance.eventLoopUtilization();
+  // A freeze still going on: its problem is shown at once and written when it ends.
+  private freeze: { record: ProblemRecord; times: number; worst: number } | null = null;
   private readonly timers: NodeJS.Timeout[] = [];
   private readonly print: (line: string) => void;
 
@@ -181,17 +184,19 @@ export class Telemetry implements Tracer {
     };
   }
 
-  /** Every record, newest first, from the files for the days that might hold them. */
+  /**
+   * Every record, newest first, from the files for the days that might hold them. Each file is read
+   * backwards a piece at a time, so a query that stops early, as every view does, reads only the end
+   * of a large day instead of holding the server while it reads the whole file.
+   */
   public *records(sinceIso?: string): Generator<TelemetryRecord> {
     this.flush();
     const days = this.files().reverse();
     for (const file of days) {
       if (sinceIso && path.basename(file, '.jsonl') < dayOf(sinceIso)) break;
-      const lines = fs.readFileSync(path.join(this.dir, file), 'utf8').split('\n');
-      for (let i = lines.length - 1; i >= 0; i--) {
-        if (!lines[i]) continue;
+      for (const line of linesBackwards(path.join(this.dir, file))) {
         try {
-          yield JSON.parse(lines[i]) as TelemetryRecord;
+          yield JSON.parse(line) as TelemetryRecord;
         } catch {
           // A line cut short by a crash is skipped; the records around it are still read.
         }
@@ -203,6 +208,7 @@ export class Telemetry implements Tracer {
   public close(): void {
     for (const t of this.timers) clearInterval(t);
     this.lag.disable();
+    this.thawed();
     this.flush();
   }
 
@@ -260,9 +266,38 @@ export class Telemetry implements Tracer {
       max: Math.max(Math.round(this.lag.max / 1e6), late),
     };
     this.lag.reset();
+    const busy = performance.eventLoopUtilization(this.loopUse);
+    this.loopUse = performance.eventLoopUtilization();
     this.lagMinuteMax = Math.max(this.lagMinuteMax, this.lagNow.max);
-    if (this.lagNow.max > 1000)
-      this.problem('frozen', `The server could not answer anything for ${(this.lagNow.max / 1000).toFixed(1)} s.`);
+    if (isFreeze(this.lagNow.max, busy.active)) this.froze(this.lagNow.max);
+    else this.thawed();
+  }
+
+  /** Counts a check that found the server blocked into the freeze it belongs to, shown as one problem. */
+  private froze(ms: number): void {
+    if (!this.freeze) {
+      const record: ProblemRecord = { type: 'problem', at: new Date().toISOString(), problem: 'frozen', message: '' };
+      this.problems.push(record);
+      this.problems.splice(0, Math.max(0, this.problems.length - 100));
+      this.freeze = { record, times: 0, worst: 0 };
+    }
+    const f = this.freeze;
+    f.times++;
+    f.worst = Math.max(f.worst, ms);
+    const worst = `${(f.worst / 1000).toFixed(1)} s`;
+    const clock = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    f.record.message =
+      f.times === 1
+        ? `The server could not answer anything for ${worst}.`
+        : `The server could not answer for up to ${worst}, ${f.times} times between ${clock(f.record.at)} and ${clock(new Date().toISOString())}.`;
+  }
+
+  /** Ends a freeze: it is written once, as a whole, when the server answers again. */
+  private thawed(): void {
+    if (!this.freeze) return;
+    this.write(this.freeze.record);
+    this.print(`problem: ${this.freeze.record.message}`);
+    this.freeze = null;
   }
 
   private rollMinute(): void {
@@ -323,5 +358,54 @@ export class Telemetry implements Tracer {
       total -= size(f);
       fs.rmSync(path.join(this.dir, f), { force: true });
     }
+  }
+}
+
+/** A check this late means the server could not answer; shorter waits are only recorded as a number. */
+const FROZEN_MS = 2000;
+/** How much of the wait the event loop must have been busy for it to count as blocked. */
+const BLOCKED_SHARE = 0.8;
+
+/**
+ * Whether a check that ran `lateMs` late found the server frozen: blocked by its own work for most
+ * of the wait. A timer that ran late while the loop sat idle, as macOS does to a process in the
+ * background or across sleep, is not a freeze (ADR-063).
+ *
+ * @param lateMs How late the check ran, or the longest delay Node's monitor saw.
+ * @param activeMs How long the event loop was busy since the last check.
+ */
+export function isFreeze(lateMs: number, activeMs: number): boolean {
+  return lateMs > FROZEN_MS && activeMs >= lateMs * BLOCKED_SHARE;
+}
+
+/** How much of a file is read at a time when it is read from its end. */
+const BACKWARDS_CHUNK = 1 << 20;
+
+/**
+ * A file's lines from the last to the first, read a piece at a time from its end. Lines are split on
+ * the newline byte, which never occurs inside a multi-byte character, so each line decodes whole.
+ */
+export function* linesBackwards(file: string, chunk = BACKWARDS_CHUNK): Generator<string> {
+  const fd = fs.openSync(file, 'r');
+  try {
+    let position = fs.fstatSync(fd).size;
+    let rest = Buffer.alloc(0);
+    while (position > 0) {
+      const size = Math.min(chunk, position);
+      position -= size;
+      const piece = Buffer.alloc(size);
+      fs.readSync(fd, piece, 0, size, position);
+      const buffer = Buffer.concat([piece, rest]);
+      let end = buffer.length;
+      for (let i = buffer.length - 1; i >= 0; i--) {
+        if (buffer[i] !== 0x0a) continue;
+        if (i + 1 < end) yield buffer.toString('utf8', i + 1, end);
+        end = i;
+      }
+      rest = buffer.subarray(0, end);
+    }
+    if (rest.length > 0) yield rest.toString('utf8');
+  } finally {
+    fs.closeSync(fd);
   }
 }

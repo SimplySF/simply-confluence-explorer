@@ -22,7 +22,14 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AiSessionView, MetadataProgress } from '../src/api/types.js';
 import { patternOf, queryLogs } from '../src/telemetry/query.js';
-import { Telemetry, type SpanRecord, type TelemetryRecord } from '../src/telemetry/telemetry.js';
+import {
+  isFreeze,
+  linesBackwards,
+  Telemetry,
+  type ProblemRecord,
+  type SpanRecord,
+  type TelemetryRecord,
+} from '../src/telemetry/telemetry.js';
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp } from './support/testApp.js';
@@ -168,23 +175,81 @@ function readAll(dataDir: string): TelemetryRecord[] {
 }
 
 describe('a frozen server', () => {
-  it('is flagged as a problem when nothing could be answered for over a second', async () => {
+  /** Holds the event loop for `ms`, as converting a large space all at once would. */
+  const hold = (ms: number): void => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      // Busy on purpose: nothing else can run.
+    }
+  };
+  /** Waits for the checks to run after a hold; on a busy machine it may be the one after next. */
+  const settle = async (t: Telemetry, done: () => boolean): Promise<void> => {
+    for (let waited = 0; waited < 3000 && !done(); waited += 50)
+      // eslint-disable-next-line no-await-in-loop -- polls until the check has run
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    void t;
+  };
+  const frozen = (t: Telemetry): ProblemRecord[] => t.now().problems.filter((p) => p.problem === 'frozen');
+
+  it('is flagged as a problem when nothing could be answered for over two seconds', async () => {
     const t = new Telemetry({ dataDir: tmp(), sampleMs: 100 });
     try {
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const until = Date.now() + 1200;
-      while (Date.now() < until) {
-        // Holds the event loop, as converting a large space all at once would.
-      }
-      // The check that sees the freeze may be the one after next on a busy machine, so it is waited for.
-      const flagged = (): boolean => t.now().problems.some((p) => p.problem === 'frozen');
-      for (let waited = 0; waited < 3000 && !flagged(); waited += 50)
-        // eslint-disable-next-line no-await-in-loop -- polls until the check has run
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(t.now().problems.map((p) => p.problem)).toContain('frozen');
+      hold(2500);
+      await settle(t, () => frozen(t).length > 0);
+      expect(frozen(t)).toHaveLength(1);
     } finally {
       t.close();
     }
+  }, 10_000);
+
+  it('is not flagged for a pause of about a second, which showed as many false problems', async () => {
+    const t = new Telemetry({ dataDir: tmp(), sampleMs: 100 });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      hold(1200);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(frozen(t)).toEqual([]);
+    } finally {
+      t.close();
+    }
+  });
+
+  it('is not seen in a check that ran late while the server sat idle, as macOS delays timers', () => {
+    expect(isFreeze(3000, 100)).toBe(false);
+    expect(isFreeze(3000, 2900)).toBe(true);
+    expect(isFreeze(1500, 1500)).toBe(false);
+  });
+
+  it('counts checks in a row that found it blocked as one problem, written once it answers again', async () => {
+    const dataDir = tmp();
+    const t = new Telemetry({ dataDir, sampleMs: 100 });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      hold(2500);
+      // The next hold starts as soon as the check has seen this one, before a calm check can run.
+      while (frozen(t).length === 0)
+        // eslint-disable-next-line no-await-in-loop -- yields to the check without waiting a timer's turn
+        await new Promise((resolve) => setImmediate(resolve));
+      hold(2500);
+      await settle(t, () => (frozen(t)[0]?.message ?? '').includes('2 times'));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(frozen(t)).toHaveLength(1);
+      expect(frozen(t)[0].message).toMatch(/^The server could not answer for up to 2\.\d s, 2 times between /);
+      t.flush();
+      expect(readAll(dataDir).filter((r) => r.type === 'problem')).toHaveLength(1);
+    } finally {
+      t.close();
+    }
+  }, 15_000);
+});
+
+describe('a day of records read from its end', () => {
+  it('gives every line newest first across the pieces it reads, multi-byte characters whole', () => {
+    const file = path.join(tmp(), 'day.jsonl');
+    const lines = Array.from({ length: 300 }, (_, i) => `{"n":${i},"text":"Ünïcödé 漢字 🚀"}`);
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    expect([...linesBackwards(file, 64)]).toEqual([...lines].reverse());
   });
 });
 
