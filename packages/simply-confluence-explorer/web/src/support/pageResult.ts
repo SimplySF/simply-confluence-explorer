@@ -17,6 +17,8 @@
 // A request about a page can finish after the person has opened another one. Its result belongs to
 // the page it was asked for, so it is shown only while that page is still the one on screen.
 
+import type { TaggedPages } from '../../../src/api/types.js';
+
 /**
  * Wraps a setter so that it only applies a result while the page it was requested for is current.
  *
@@ -30,17 +32,37 @@ export function forPage<T>(requested: string, current: () => string | undefined,
   };
 }
 
+/** What a view says while a space's page catalog is first built, before its tags can be listed. */
+export function catalogProgress(spaceKey: string, building: { done: number; total: number }): string {
+  return `Reading ${spaceKey}'s pages to list their tags: ${building.done.toLocaleString('en')} of ${building.total.toLocaleString('en')}`;
+}
+
 /**
- * Keeps only the newest of overlapping requests for the same thing. Each call starts a request and
- * returns a wrapper for its handlers; once a later request has started, an earlier one's answer is
- * dropped, so a slow, older answer never replaces a newer one.
+ * Reads a space's tags, asking again each second while its catalog is first built, and tells
+ * `onBuilding` how far it has got. Returns a function that stops asking.
  */
-export function newest(): () => <T>(apply: (value: T) => void) => (value: T) => void {
-  let latest = 0;
+export function readTags(
+  ask: () => Promise<{ tags: TaggedPages[]; building?: { done: number; total: number } }>,
+  onTags: (tags: TaggedPages[]) => void,
+  onBuilding: (building: { done: number; total: number }) => void,
+  onError: (error: unknown) => void,
+): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const next = (): void => {
+    ask().then(
+      (r) => {
+        if (stopped) return;
+        if (!r.building) return onTags(r.tags);
+        onBuilding(r.building);
+        timer = setTimeout(next, 1000);
+      },
+      (e: unknown) => !stopped && onError(e),
+    );
+  };
+  next();
   return () => {
-    const mine = ++latest;
-    return (apply) => (value) => {
-      if (mine === latest) apply(value);
-    };
+    stopped = true;
+    clearTimeout(timer);
   };
 }

@@ -42,7 +42,7 @@ import type {
   StagedPage,
   SyncedSpace,
   SyncProgress,
-  TaggedPages,
+  TagsResponse,
 } from '../../../src/api/types.js';
 import type { LogPage, ObservedEvent } from '../../../src/telemetry/query.js';
 import type { LiveJob, MetricRecord, ProblemRecord, SpanRecord } from '../../../src/telemetry/records.js';
@@ -177,7 +177,8 @@ export const api = {
   askSpace: (spaceKey: string, prompt: string) =>
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
-  tags: (spaceKey: string) => call<{ tags: TaggedPages[] }>(`/space-cache/${key(spaceKey)}/tags`).then((r) => r.tags),
+  /** A space's tags, or how far its page catalog has got while it is first built (ADR-064). */
+  tags: (spaceKey: string) => call<TagsResponse>(`/space-cache/${key(spaceKey)}/tags`),
   /** The staged pages of every chat in a space, for its push queue. */
   staged: (spaceKey: string) =>
     call<{ staged: StagedPage[] }>(`/space-cache/${key(spaceKey)}/staged`).then((r) => r.staged),
