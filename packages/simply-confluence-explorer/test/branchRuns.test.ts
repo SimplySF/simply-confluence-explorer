@@ -628,3 +628,35 @@ describe('a run the app stopped while it was writing edits', () => {
     });
   });
 });
+
+describe('a stopped run', () => {
+  it('can make a failed page again with Redo, without stopping at once', async () => {
+    // The provider refuses the Interviews edit until it is made again.
+    let failing = true;
+    const reply = (payload: GuardedPayload, _n: number, signal?: AbortSignal): string | Promise<string> => {
+      const text = textOf(payload);
+      if (text.includes('<<<PROPOSED_MARKDOWN>>>') && text.includes('# Document Title: Interviews\n') && failing)
+        throw new Error('the provider failed this edit');
+      if (text.includes('<<<PROPOSED_MARKDOWN>>>') && text.includes('# Document Title: Interview Guide') && failing)
+        return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('stopped'))));
+      return answer(payload);
+    };
+    await withApp(reply, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const { body: started } = await recommend(app, c.id, [0]);
+      for (let run = started; !run.items.some((i) => i.status === 'failed');) {
+        // eslint-disable-next-line no-await-in-loop -- waiting for the first page to fail
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        // eslint-disable-next-line no-await-in-loop -- as above
+        run = (await app.call<BranchRun>('GET', `/branches/runs/${started.id}`)).body;
+      }
+      await app.call('POST', `/branches/runs/${started.id}/cancel`);
+      await settled(app, started.id);
+      failing = false;
+      await app.call('POST', `/branches/runs/${started.id}/items/${interviews()}/redo`);
+      const again = await settled(app, started.id);
+      expect(itemOf(again, interviews()).status).toBe('proposed');
+    });
+  });
+});

@@ -66,6 +66,8 @@ const answer = (payload: GuardedPayload): string => {
   const [first, , gap] = queueIds(payload);
   if (ask.startsWith('Reword'))
     return `Done.\n<<<SUGGESTIONS>>>\nupdate #${first} {"detail":"Both pages walk through the loop","suggestion":"Keep it in Interviews"}\nremove #${gap}\nadd {"kind":"stale","pages":["Interview Guide"],"detail":"Old panel size"}\n<<<END SUGGESTIONS>>>`;
+  if (ask.startsWith('Add a twin'))
+    return 'Added.\n<<<SUGGESTIONS>>>\nadd {"kind":"structure","pages":["Interview Guide"],"detail":"The opening is vague","suggestion":"Move the purpose up"}\n<<<END SUGGESTIONS>>>';
   if (ask.startsWith('Shorter')) return 'Shortened.\n<<<EDIT>>>\nA shorter body.\n<<<END EDIT>>>';
   return 'An answer.';
 };
@@ -241,6 +243,25 @@ describe('an edit made from suggestions', () => {
           state: 'done',
           why: 'The page says it now.',
         });
+      } finally {
+        page.version--;
+      }
+    });
+  });
+
+  it('applies a suggestion still needed when another one worded the same is already done', async () => {
+    await withApp(async (app) => {
+      const reviewed = await reviewedChat(app);
+      const { body: chat } = await ask(app, reviewed.id, 'Add a twin of the vague-opening suggestion');
+      const twin = chat.suggestions!.at(-1)!;
+      const page = fake.page('PEOPLE', 'Interview Guide');
+      page.version++;
+      verdict = 'done';
+      try {
+        const run = await recommended(app, chat, [1, chat.suggestions!.length - 1]);
+        const item = itemOf(run, guide());
+        expect(item.status).toBe('proposed');
+        expect(item.fixes?.map((f) => f.suggestionId)).toEqual([twin.id]);
       } finally {
         page.version--;
       }

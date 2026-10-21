@@ -408,6 +408,8 @@ export class BranchRunner {
   private end(run: BranchRun): void {
     this.live.delete(run.id);
     this.stoppers.delete(run.id);
+    // A stopped run can be started again by Redo, which must not find it still stopped.
+    this.cancelled.delete(run.id);
   }
 
   private async propose(run: BranchRun, signal: AbortSignal): Promise<void> {
@@ -487,9 +489,10 @@ export class BranchRunner {
       );
       verdicts = parseVerdicts(answer.text, stale);
     }
-    const dropped = new Set(verdicts.filter((v) => v.verdict !== 'applies').map((v) => v.detail));
+    // Matched by position among the suggestions asked about, so two worded alike are judged apart.
+    const dropped = new Set(stale.filter((_, i) => verdicts[i]?.verdict !== 'applies'));
     item.freshness = { version: page.version, verdicts };
-    item.fixes = (item.fixes ?? []).filter((f) => !dropped.has(f.detail));
+    item.fixes = (item.fixes ?? []).filter((f) => !dropped.has(f));
     Object.assign(item, { baseVersion: page.version, ...now });
     if (item.fixes.length > 0) return true;
     item.status = 'skipped';
