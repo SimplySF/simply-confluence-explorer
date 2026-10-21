@@ -12,6 +12,7 @@
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
+  import SpacePush from './components/SpacePush.svelte';
   import ObservePage from './components/observe/ObservePage.svelte';
   import { checkConnection } from './support/connection.js';
   import { observe } from './support/observe.svelte.js';
@@ -72,7 +73,8 @@
   let resizing = $state(false);
   let dialog = $state<'settings' | 'new-page' | null>(null);
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
-  let view = $state<'page' | 'chat'>('page');
+  let view = $state<'page' | 'chat' | 'push'>('page');
+  let pushCount = $state(0);
   let chatSeed = $state<ChatSeed | null>(null);
   // Every page with where it sits and the pages under it, so a chat can add a directory in one step.
   const flatten = (nodes: PageTreeNode[], path: string[] = []): SpacePage[] =>
@@ -231,6 +233,17 @@
     return () => clearInterval(timer);
   });
 
+  // The sidebar counts the staged pages waiting to push; staging happens in a chat, so the count is
+  // read again whenever the view changes.
+  $effect(() => {
+    void view;
+    if (!activeSpace) return;
+    api.staged(activeSpace).then(
+      (s) => (pushCount = s.length),
+      () => (pushCount = 0), // The count is a hint; Ready to push reads the list itself.
+    );
+  });
+
   // Work started earlier, in this tab or before a reload, keeps reporting in the header.
   $effect(() => {
     if (activeSpace) jobs.resume(activeSpace);
@@ -343,6 +356,9 @@
         }}
         chatOpen={view === 'chat'}
         onOpenChat={() => (view = 'chat')}
+        {pushCount}
+        pushOpen={view === 'push'}
+        onOpenPush={() => (view = 'push')}
         onAskTag={(t) => {
           chatSeed = {
             title: `#${t.tag}`,
@@ -405,6 +421,28 @@
             pageRev++;
           }}
           onWriteNewPage={writeNewPage}
+        />
+      </div>
+      <div class="main-slot" hidden={view !== 'push'}>
+        <SpacePush
+          spaceKey={activeSpace}
+          active={view === 'push'}
+          onPushed={() => {
+            reloadTree();
+            pageRev++;
+          }}
+          onOpenChat={(p) =>
+            openJob({
+              kind: 'review',
+              jobId: p.runId,
+              spaceKey: activeSpace,
+              rootPageId: p.chatPageId,
+              sessionId: p.sessionId,
+              label: p.chatTitle,
+              processed: 0,
+              total: 0,
+            })}
+          onCount={(n) => (pushCount = n)}
         />
       </div>
     {/if}

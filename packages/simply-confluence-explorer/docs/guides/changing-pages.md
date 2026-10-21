@@ -1,109 +1,98 @@
 ---
 title: Changing pages from a chat
-description: Ask a chat for suggestions, tick the ones you want, accept or reject each change to each page, and push the accepted changes to Confluence without overwriting anyone else's edit.
+description: Collect a chat's suggestions in its review queue, rework them with the chat, decide each change side by side, stage the pages, and push them to Confluence without overwriting anyone else's edit.
 sidebar:
   order: 6
 ---
 
 Every change Confluence Explorer makes to a page starts in a chat (see
 [Asking an AI](/guides/asking-ai/)): one page, a directory, any mix of directories, pages and tags,
-or the whole space.
-You ask for suggestions, tick the ones you agree with, decide on each change the edits make, and
-push only the changes you accept. Nothing changes in Confluence until you confirm a push.
+or the whole space. Each chat has four tabs: **Chat**, **Review**, **Changes** and **Push**. The
+question box stays under every tab, so you can ask the chat to rework something while you look at
+it. Nothing changes in Confluence until you confirm a push.
 
 ## Get suggestions
 
-There are two ways to get them:
-
 - **Start a chat with a review.** A new chat on a directory or on chosen pages offers **Review for
-  problems**: the AI reads the pages together and lists what is wrong across them, such as pages
-  that contradict or repeat each other, content that is out of date, and pages that are missing or
-  in the wrong place. A new chat on one page offers **Suggest improvements**: clarity, missing
-  detail, structure and the like. To review again later, start a new chat.
-- **Turn a conversation into changes.** Once a chat has begun, **Turn this into changes** under it
-  lists the changes the conversation found or agreed. Talk it through first, then turn it into
-  changes.
+  problems**: pages that contradict or repeat each other, content that is out of date, and pages that
+  are missing or in the wrong place. A new chat on one page offers **Suggest improvements**.
+- **Turn a conversation into changes.** Once a chat has begun, **Turn this into changes** lists the
+  changes the conversation found or agreed.
 
-![Suggestions from a chat on a tag's pages, two of them ticked](../images/chat-suggestions.webp)
+The suggestions go to the chat's **Review** tab, and the answer says how many, with a link. When a
+chat's pages are too many for one request, the review reads them in batches, related pages together,
+and the header shows its progress; **Stop** ends it with nothing kept.
 
-When a chat's pages are too many for one request, **Review for problems** and **Turn this into
-changes** read them in batches instead. Pages that share a topic are read in the same batch, so
-repetition between them is found wherever they sit, and the suggestions from every batch arrive as
-one answer. The chat and the header show which batch is being read, **Stop** ends it with nothing
-kept, and you can work elsewhere in the app meanwhile; the answer is in the chat when you come back.
+## Rework them with the chat
 
-Each suggestion names the pages it is about; click a name to open the page. Two kinds cannot be
-carried out by editing a page, so they cannot be ticked: a page that should be moved, split or merged,
-which you do in Confluence, and a page that should exist and does not. For a missing page, **Write a
-new page** opens [Writing a new page](/guides/new-pages/) with the suggestion filled in.
+Ask the chat in your own words, for example "make the first one more specific" or "drop the one
+about the pager". It rewords, adds or removes suggestions, and the answer says what it changed. A
+reworded suggestion keeps its earlier wordings under **Reworded**, and **Use this** puts one back.
+**Dismiss** hides a suggestion and **Show dismissed** brings it back.
 
-## Queue the ones you want
+![The Review tab, grouped by page, with a reworded suggestion](../images/review-queue.webp)
 
-Tick the suggestions you agree with, or **Select all**, and click **Queue selected**. Each page a
-ticked suggestion names gets an edit that carries out only the suggestions about it and leaves the
-rest of the page as it is; when a suggestion is about repetition across two pages, each page's edit
-is told which other page shares the content. The edits arrive one page at a time under the
-suggestions, and the header shows them while they are being written. **Stop** ends it at once.
+A suggestion to move, split or merge a page is done in Confluence, so it cannot be ticked. For a page
+that should exist and does not, **Write a new page** opens [Writing a new page](/guides/new-pages/).
 
-![The queue of edits, with one page's changes and their Accept and Reject buttons](../images/chat-queue.webp)
+## Recommend changes
 
-## Decide each change
+Tick the suggestions you want and click **Recommend changes**. Each page they name gets one edit
+that carries out only those suggestions. Before the edit is written, the page is read from
+Confluence. If someone changed it since the suggestion was made, the copy on your computer is
+updated, and the AI first checks each suggestion against the page as it is now: one that is already
+done, or no longer makes sense, is not applied and goes back to Review with the reason.
 
-Each page's edit is shown as a list of **changes**: a rewritten paragraph, an added step, a removed
-sentence. Each card shows the text before and after, with the words that differ marked, and says
-whether the AI suggested it or you wrote it. **Accept** or **Reject** each one, and **Undo** a
-decision to change your mind; **Accept all** and **Reject all** decide a whole page. A page is ready
-to push once each of its changes is decided and at least one is accepted.
+## Decide each change, side by side
 
-**Edit the text** lets you change the page yourself. Your edits are saved as you type and appear as
-changes of your own, and a change you edit is asked about again. **Reset to the AI's edit** throws
-away your edits and decisions on that page and brings back the AI's version. **What will be written**
-shows the page with only the accepted changes.
+The **Changes** tab lists the edits. Open one to see the page as it is now on the left and the edit
+on the right. Each change sits between them with **Accept** and **Reject**, and **Undo** to change
+your mind; **Accept all** and **Reject all** decide the page at once. Beside it is the AI's
+recommendation: the suggestions applied, what it says it changed, and anything it did not apply.
 
-## Macros, images and other parts of a page
+![An edit side by side, with the AI's recommendation](../images/edit-side-by-side.webp)
 
-Some parts of a page have no form in Markdown: macros such as a table of contents, a status, a panel
-or a Jira issue, images, links to other pages, mentions, task lists and layouts. In an edit they
-appear as markers such as ⟦1 toc⟧, and a push puts each one back exactly as it was. A panel, an
-expand section or a layout column has a marker at each end, and its text can be edited between them.
-Anything on the page that a change does not touch is written back exactly as Confluence holds it.
+**Work on this edit in the chat** makes your next question about that edit, shown as "Working on"
+above the question box. Ask for a change, such as "shorter", and the chat proposes a revised edit;
+**Accept into the edit** adds its changes for you to decide, or **Dismiss** it. **Edit the text**
+lets you change the page yourself, **Reset to the AI's edit** brings back the first edit, and **What
+will be written** shows the page with only the accepted changes.
 
-A change that removes a part says so, for example "Removes ⟦1 toc⟧ from the page", and the part is
-removed only if you accept that change. A change to a paragraph with formatting the text cannot hold,
-such as coloured text, says what it would drop. If a marker is missing, repeated or invented, the
-check names it and nothing is written.
+Parts of a page that Markdown cannot hold, such as a table of contents, a status, a panel, an image
+or a page link, appear as markers like ⟦1 toc⟧ and are written back exactly as they were. A change
+that removes one says so, and the part is removed only if you accept that change. A page's own
+details, such as its id, version and author, are never written into it.
 
-## Check and push
+## Stage and push
 
-**Check and push** checks every ready page without writing anything, then lists the pages it will
-write and any page with a problem, with why. Confirm to write the accepted changes, one page at a
-time.
+Once every change of a page is decided, with at least one accepted, **Stage** moves it to the
+**Push** tab. Changing the edit after that unstages it, so what you push is what you looked at.
+**Ready to push** in the sidebar lists the staged pages of every chat in the space.
+
+Tick the pages to push and click **Check and push**. Each page is checked without writing anything,
+then the confirmation lists what will be written and any page with a problem, with why.
 
 ![The confirmation before a push, naming the pages](../images/push-confirm.webp)
 
-Each push names the version its edit was made from. If anyone has changed the page in Confluence
-since, that page is refused and nothing is written over their change, while the other pages are
-still written. **Make this edit again from the current page** asks for a new edit from the page as
-it is now, with the same suggestions.
+Each push names the version its edit was made from. A page someone changed since is refused and
+nothing is written over their change; **Make this edit again from the current page** starts again
+from the page as it is now.
 
 ## What is left out
 
-- **Excluded pages** are never read, suggested or edited, and never named.
-- **Pages holding a secret** are left out and listed under "Left out", so you know they were not read.
-- **The frontmatter block** at the top of the Markdown is never written to Confluence.
+- **Excluded pages** are never read, suggested, edited or listed, and never named.
+- **Pages holding a secret** are left out and listed under "Left out".
 
-Queues are saved on your computer, so they survive restarting the app.
+Chats, their queues and their edits are saved on your computer, so they survive restarting the app.
 
 ## How this is checked
 
-`test/branchRuns.test.ts` checks that suggestions are stored with the answer and never come from the
-browser, that each edit carries only its own suggestions, that only accepted changes are written with
-a table of contents kept as it was, that a removal is written only once accepted, that decisions
-survive your edits and reset brings back the AI's edit, that a page changed by someone else is
-refused while the others are written, that a check writes nothing, and that a stopped queue stops.
-`test/editForm.test.ts` checks that every test page is written back exactly when nothing changes,
-and that a missing, repeated or invented marker is refused. `test/corpusReview.test.ts` and `test/sessions.test.ts`
-check that a large review keeps related pages in one batch, leaves out a page holding a secret,
-merges the suggestions, and keeps nothing when stopped. `test/pagePush.test.ts` checks the version check and that a
-change keeping an image's marker keeps the image. `test/e2e/branches.e2e.ts` queues and pushes an
-edit, and `test/e2e/push.e2e.ts` changes a page with a panel, against a real Confluence Data Center.
+`test/chatQueue.test.ts` checks that the chat rewords, adds and removes suggestions and an earlier
+wording comes back, that an edit is made from the newer page and a suggestion already done is not
+applied, that the chat's revision is accepted or dismissed and its page is checked on every turn, and
+that only staged pages are pushed, never an excluded one. `test/branchRuns.test.ts` checks that each
+edit carries only its own suggestions, that only accepted changes are written with a table of
+contents kept, that a page changed by someone else is refused, and that a page's own details are
+never written. `test/editForm.test.ts` checks that every test page is written back exactly when
+nothing changes. `test/e2e/branches.e2e.ts` makes, stages and pushes an edit from a page a colleague
+changed, and `test/e2e/push.e2e.ts` changes a page with a panel, against a real Confluence Data Center.

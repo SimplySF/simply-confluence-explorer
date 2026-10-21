@@ -8,7 +8,8 @@
   import { AiChat } from '../support/chat.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
   import ChatContext from './ChatContext.svelte';
-  import ChatThread, { type Starter } from './ChatThread.svelte';
+  import { type Starter } from './ChatThread.svelte';
+  import ChatWorkspace from './ChatWorkspace.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
 
   // Conversations about a space, kept on this machine and listed beside the one open (ADR-049). A chat
@@ -132,7 +133,7 @@
           {
             label: 'Review for problems',
             detail:
-              'Repeats, contradictions, out-of-date and missing pages across these pages, as suggestions you can tick and queue as edits.',
+              'Repeats, contradictions, out-of-date and missing pages across these pages, as suggestions in the review queue.',
             icon: Search,
             review: true,
           },
@@ -227,17 +228,7 @@
         </button>
       {/if}
     </div>
-    <!-- Each chat starts with its own choice of what to read. -->
-    {#key shownChat}
-      <ChatContext
-        {spaceKey}
-        scope={chat.session?.scope ?? scope}
-        {pages}
-        onChange={(choice) => update({ scope: choice })}
-        {onSelectPage}
-      />
-    {/key}
-    <ChatThread
+    <ChatWorkspace
       {chat}
       subject="space {spaceKey}"
       blocked={false}
@@ -248,6 +239,18 @@
       {onPushed}
       {onWriteNewPage}
     >
+      {#snippet top()}
+        <!-- Each chat starts with its own choice of what to read. -->
+        {#key shownChat}
+          <ChatContext
+            {spaceKey}
+            scope={chat.session?.scope ?? scope}
+            {pages}
+            onChange={(choice) => update({ scope: choice })}
+            {onSelectPage}
+          />
+        {/key}
+      {/snippet}
       {#snippet empty()}
         <MessagesSquare size={32} />
         <strong>Ask about {spaceKey}</strong>
@@ -257,7 +260,7 @@
           these, or ask your own question below. Chats are saved on this machine.
         </p>
       {/snippet}
-    </ChatThread>
+    </ChatWorkspace>
   </section>
 </div>
 

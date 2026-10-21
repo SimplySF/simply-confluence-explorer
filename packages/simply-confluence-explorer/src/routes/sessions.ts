@@ -17,18 +17,33 @@
 import type {
   AiSessionView,
   BatchProgress,
-  BranchFinding,
+  BranchItem,
+  BranchRun,
+  ChatQueue,
   PageDetail,
   SessionScope,
   SessionTurn,
+  StagedPage,
 } from '../api/types.js';
+import {
+  applyQueueChanges,
+  editOfReply,
+  QUEUE_SYSTEM,
+  queueChangesOf,
+  queueContext,
+  SUGGESTION_ID,
+  suggestionViews,
+  toSuggestions,
+} from '../ai/chatQueue.js';
+import { CHAT_SYSTEM } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard, withWithheld, type ChatTurn } from '../ai/guard.js';
 import { ManifestBuilder, summarise } from '../ai/manifest.js';
 import { cutOffNote } from '../ai/reply.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
-import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
-import { parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
+import { isValidPageId, isValidSpaceKey, PARAMS } from '../http/guards.js';
+import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
+import { pageText } from '../branches/pageChanges.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
@@ -51,7 +66,8 @@ const CHANGES_PROMPT = `Turn what this conversation has found or agreed into con
 Reply with JSON only, in this shape:
 {"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to change"}]}
 Kinds: "incorrect", "redundant", "stale", "clarity", "depth", "structure", "operations", "placement" (move, split or merge a page) or "gap" (a page that should exist).
-Use exact page titles, and name every page a change is about. An empty list is a valid answer.`;
+Use exact page titles, and name every page a change is about. An empty list is a valid answer.
+${RECORD_NOTE}`;
 
 const idOf = (value: unknown): unknown => (typeof value === 'number' ? String(value) : value);
 
@@ -96,10 +112,25 @@ function scopeFrom(value: unknown): SessionScope {
   return { kind: kind as SessionScope['kind'], spaceKey, pageId, title };
 }
 
-/** The ids of the chat's pages that suggestions name by title, so each can be queued. */
-function pageIdsNamed(findings: BranchFinding[], pages: Array<{ id: string; title: string }>): Record<string, string> {
-  const named = new Set(findings.flatMap((f) => f.pages));
-  return Object.fromEntries(pages.filter((p) => named.has(p.title)).map((p) => [p.title, p.id]));
+/** The edit a person has open while they ask, named by ids the server reads it by. */
+type Focus = { runId: string; pageId: string };
+
+function focusFrom(value: unknown): Focus | undefined {
+  if (value === undefined || value === null) return undefined;
+  const f = fieldsOf(value);
+  const pageId = idOf(f.pageId);
+  if (typeof f.runId !== 'string' || !PARAMS.runId.valid(f.runId) || !isValidPageId(pageId))
+    throw new HttpError(400, 'an open edit is named by its run id and page id');
+  return { runId: f.runId, pageId };
+}
+
+/** Suggestion ids from a request: each one 12 hex characters, at most 200 at once. */
+function suggestionIdsFrom(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 200)
+    throw new HttpError(400, 'ids must name 1 to 200 suggestions');
+  if (!value.every((id) => typeof id === 'string' && SUGGESTION_ID.test(id)))
+    throw new HttpError(400, 'a suggestion is named by its 12-character id');
+  return [...new Set(value as string[])];
 }
 
 /**
@@ -144,7 +175,7 @@ type TurnContext = {
   corpus?: SessionTurn['corpus'];
   weak?: boolean;
   /** Every page the chat reads from, so a suggestion can name one that was not retrieved this turn. */
-  pages: Array<{ id: string; title: string }>;
+  pages: Array<{ id: string; title: string; version: number }>;
 };
 
 /**
@@ -187,7 +218,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       withheld: [],
       note: '',
       matchedPages: [{ id: gate.page.id, title: gate.page.title, score: 1 }],
-      pages: [{ id: gate.page.id, title: gate.page.title }],
+      pages: [{ id: gate.page.id, title: gate.page.title, version: gate.page.version }],
     };
     if (scope.kind === 'branch') {
       const branch = await collectBranch(
@@ -205,7 +236,10 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         ...(ctx.matchedPages ?? []),
         ...branch.pages.map((p) => ({ id: p.page.id, title: p.page.title, score: 1 })),
       ];
-      ctx.pages = ctx.matchedPages.map(({ id, title }) => ({ id, title }));
+      ctx.pages = [
+        ctx.pages[0],
+        ...branch.pages.map((p) => ({ id: p.page.id, title: p.page.title, version: p.page.version })),
+      ];
     }
     return ctx;
   };
@@ -313,7 +347,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         considered: r.considered,
         corpus: r.corpus,
         weak: r.weak,
-        pages: corpus.map(({ id, title }) => ({ id, title })),
+        pages: corpus.map(({ id, title, version }) => ({ id, title, version })),
       };
     }
     const files = sessions.filesContext(session.id, manifest);
@@ -352,18 +386,38 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     activity.set(sessionId, { step: text, since: activity.get(sessionId)?.since ?? Date.now() });
   };
 
+  /**
+   * The edit a person has open, added to the turn's context so the chat can revise it. It must be
+   * one of this chat's edits, and its page is checked against the exclusion rules on every turn.
+   */
+  const withFocus = async (session: AiSessionView, focus: Focus, ctx: TurnContext): Promise<BranchItem> => {
+    if (!(session.runIds ?? []).includes(focus.runId)) throw new HttpError(404, "that edit is not one of this chat's");
+    const run = branches.get(focus.runId);
+    const item = run.items.find((i) => i.pageId === focus.pageId);
+    if (item?.proposed === undefined) throw new HttpError(409, 'that edit is not ready to work on yet');
+    const gate = await gatePageForAi(item.pageId, run.spaceKey, deps);
+    if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
+    const fixes = (item.fixes ?? []).map((f) => `- [${f.kind}] ${f.detail}${f.suggestion ? ` → ${f.suggestion}` : ''}`);
+    const text = `## [Edit of: ${item.title}]\n### The page as it is\n${pageText(item)}\n### The edit so far\n${item.proposed}\n### The suggestions it applies\n${fixes.join('\n')}`;
+    ctx.context += `\n\n---\n\n${ctx.manifest.include('page', `${item.title} (its edit)`, text)}`;
+    return item;
+  };
+
   const answer = async (
     session: AiSessionView,
     prompt: { shown: string; sent: string },
     signal: AbortSignal,
     suggestions = false,
+    focus?: Focus,
   ): Promise<AiSessionView> =>
     services.telemetry.span(
       'chat',
       suggestions ? 'suggestions' : 'question',
       { sessionId: session.id, scope: session.scope.kind, spaceKey: session.scope.spaceKey },
       (span) =>
-        answerTraced(session, prompt, signal, suggestions, span.traceId).finally(() => activity.delete(session.id)),
+        answerTraced(session, prompt, signal, suggestions, span.traceId, focus).finally(() =>
+          activity.delete(session.id),
+        ),
     );
 
   const answerTraced = async (
@@ -372,30 +426,47 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     signal: AbortSignal,
     suggestions: boolean,
     traceId: string,
+    focus?: Focus,
   ): Promise<AiSessionView> => {
     step(session.id, 'Gathering what this chat reads');
     const ctx = await contextFor(session, prompt.sent, signal);
+    const queue = queueContext(session.suggestions ?? []);
+    if (queue && !suggestions) ctx.context += `\n\n---\n\n${ctx.manifest.include('notes', 'review queue', queue)}`;
+    const item = focus ? await withFocus(session, focus, ctx) : undefined;
     const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
     const history = historyToSend(session.turns);
     recordHistory(ctx.manifest, session, history);
     const manifest = ctx.manifest.build();
     step(session.id, 'Writing the answer');
+    // A question may change the chat's review queue or revise the open edit; a request for
+    // suggestions asks for a list instead.
     const reply = await ai.chat(
-      { context: ctx.context, history, prompt: prompt.sent, manifest },
+      {
+        context: ctx.context,
+        history,
+        prompt: prompt.sent,
+        manifest,
+        ...(suggestions ? {} : { system: `${CHAT_SYSTEM}\n\n${QUEUE_SYSTEM}` }),
+      },
       { spaceKey: session.scope.spaceKey, guard, signal },
     );
     const report = withWithheld(reply.guard, ctx.withheld);
     const findings = suggestions ? parseFindings(reply.text) : null;
+    const queueBlock = suggestions ? { text: reply.text } : queueChangesOf(reply.text);
+    const revised = item ? editOfReply(queueBlock.text) : { text: queueBlock.text };
     const now = new Date().toISOString();
+    const text = findings
+      ? findings.length
+        ? `${findings.length} suggestion${findings.length === 1 ? '' : 's'} added to the review queue.`
+        : 'Nothing to suggest: the review found nothing to change.'
+      : revised.text || (revised.edit ? 'Here is a revised edit.' : reply.text);
     return sessions.addTurns(
       session.id,
       [
         { role: 'user', text: prompt.shown, at: now },
         {
           role: 'assistant',
-          text: findings
-            ? `${findings.length} suggestion${findings.length === 1 ? '' : 's'}. Tick the ones to queue as edits.`
-            : reply.text,
+          text,
           at: now,
           guardSummary: report.summary + ctx.note + cutOffNote(reply.cutOff),
           sent: summarise(manifest),
@@ -405,12 +476,62 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           ...(ctx.considered ? { considered: ctx.considered } : {}),
           ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
           ...(ctx.weak ? { weakMatch: true } : {}),
-          ...(findings ? { findings, pageIds: pageIdsNamed(findings, ctx.pages) } : {}),
+          ...(item && revised.edit
+            ? { proposedEdit: { runId: focus!.runId, pageId: item.pageId, title: item.title, text: revised.edit } }
+            : {}),
           traceId,
         },
       ],
       guard.exportState(),
+      (list, turn) => {
+        if (findings) {
+          const added = toSuggestions(findings, ctx.pages, turn);
+          list.push(...added);
+          return { added: added.length, updated: 0, removed: 0 };
+        }
+        return queueBlock.lines ? applyQueueChanges(queueBlock.lines, list, turn, ctx.pages) : undefined;
+      },
     );
+  };
+
+  /** A chat's suggestions with their state, and the runs of edits made from them. */
+  const queueOf = (session: AiSessionView): ChatQueue => {
+    const runs = (session.runIds ?? []).flatMap((id): BranchRun[] => {
+      try {
+        return [branches.get(id)];
+      } catch {
+        // A run file removed by hand: the chat's other runs are still listed.
+        return [];
+      }
+    });
+    return { suggestions: suggestionViews(session.suggestions ?? [], runs), runs };
+  };
+
+  /** The staged pages of every chat in a space, for its push queue. An excluded page is never listed. */
+  const stagedIn = async (spaceKey: string): Promise<StagedPage[]> => {
+    const staged: StagedPage[] = [];
+    for (const session of sessions.list({ spaceKey })) {
+      for (const run of queueOf(session).runs) {
+        for (const i of run.items.filter((x) => x.staged && x.status !== 'pushed')) {
+          // eslint-disable-next-line no-await-in-loop -- each page is checked in turn
+          if (!(await gatePageForAi(i.pageId, spaceKey, deps)).allowed) continue;
+          staged.push({
+            sessionId: session.id,
+            chatTitle: session.title,
+            ...(session.scope.pageId && ['page', 'branch'].includes(session.scope.kind)
+              ? { chatPageId: session.scope.pageId }
+              : {}),
+            runId: run.id,
+            pageId: i.pageId,
+            title: i.title,
+            accepted: (i.changes ?? []).filter((c) => c.decision === 'accepted').length,
+            status: i.status,
+            ...(i.message ? { message: i.message } : {}),
+          });
+        }
+      }
+    }
+    return staged;
   };
 
   return (
@@ -480,7 +601,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             ? await thorough(session, prompt).finally(() => activity.delete(session.id))
             : null;
         if (batch) return { ...session, batch };
-        return answer(session, { shown: prompt, sent: prompt }, signal);
+        return answer(session, { shown: prompt, sent: prompt }, signal, false, focusFrom(fieldsOf(body).focus));
       })
       // Asks for suggestions the person can tick and queue: a review of what the chat reads, or the
       // changes the conversation so far has agreed. The answer's suggestions are stored with the turn.
@@ -526,28 +647,70 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         batch: reviews.activeFor(found(params.sessionId).id) ?? null,
       }))
       .add('POST', '/api/ai/batches/:jobId/cancel', ({ params }) => ({ cancelled: reviews.cancel(params.jobId) }))
-      // Stages an edit of each page the chosen suggestions of one answer name (ADR-049).
-      .add('POST', '/api/ai/sessions/:sessionId/turns/:turn/queue', async ({ params, body }) => {
+      // A chat's review queue: its suggestions with their state, and the edits made from them (ADR-060).
+      .add('GET', '/api/ai/sessions/:sessionId/queue', ({ params }) => queueOf(chat(params.sessionId)))
+      // Makes edits from picked suggestions, each page read fresh from Confluence first (ADR-061).
+      .add('POST', '/api/ai/sessions/:sessionId/suggestions/recommend', async ({ params, body }) => {
         const session = chat(params.sessionId);
-        const turnIndex = Number(params.turn);
-        const turn = session.turns[turnIndex];
-        if (turn?.role !== 'assistant' || !turn.findings) throw new HttpError(404, 'that answer has no suggestions');
-        const chosen = fieldsOf(body).findings;
-        if (!Array.isArray(chosen) || chosen.some((i) => typeof i !== 'number'))
-          throw new HttpError(400, 'findings must be a list of suggestion numbers');
-        const run = await branches.stageEdits(
-          {
-            spaceKey: session.scope.spaceKey,
-            rootPageId: session.scope.pageId ?? '',
-            rootTitle: session.title,
-            findings: turn.findings,
-            pageIds: turn.pageIds ?? {},
-            fromSessionId: session.id,
-          },
-          chosen as number[],
-        );
-        sessions.addRun(session.id, turnIndex, run.id);
+        const ids = suggestionIdsFrom(fieldsOf(body).ids);
+        const picked = ids.map((id) => session.suggestions?.find((s) => s.id === id && !s.dismissed));
+        if (picked.some((s) => !s)) throw new HttpError(404, "a picked suggestion is not in this chat's queue");
+        const run = await branches.recommend({
+          spaceKey: session.scope.spaceKey,
+          rootPageId: session.scope.pageId ?? '',
+          rootTitle: session.title,
+          fromSessionId: session.id,
+          suggestions: picked.filter((s) => s !== undefined),
+        });
+        sessions.addRun(session.id, run.id);
         return run;
       })
+      .add('POST', '/api/ai/sessions/:sessionId/suggestions/dismiss', ({ params, body }) => {
+        const session = chat(params.sessionId);
+        const ids = suggestionIdsFrom(fieldsOf(body).ids);
+        const undo = fieldsOf(body).undo === true;
+        sessions.editSuggestions(session.id, (list) => {
+          for (const s of list.filter((x) => ids.includes(x.id))) {
+            if (undo) delete s.dismissed;
+            else s.dismissed = 'you';
+          }
+        });
+        return queueOf(chat(session.id));
+      })
+      // Puts a suggestion back to one of its earlier wordings; the wording it had is kept too.
+      .add('POST', '/api/ai/sessions/:sessionId/suggestions/:suggestionId/revert', ({ params, body }) => {
+        const session = chat(params.sessionId);
+        const to = fieldsOf(body).to;
+        sessions.editSuggestions(session.id, (list) => {
+          const s = list.find((x) => x.id === params.suggestionId);
+          const earlier = typeof to === 'number' ? s?.history?.[to] : undefined;
+          if (!s || !earlier) throw new HttpError(404, 'that suggestion has no such wording');
+          s.history = [
+            ...(s.history ?? []),
+            { detail: s.detail, suggestion: s.suggestion, turn: session.turns.length },
+          ];
+          s.detail = earlier.detail;
+          s.suggestion = earlier.suggestion;
+        });
+        return queueOf(chat(session.id));
+      })
+      // Puts an answer's revised edit into that page's working text, where its changes are decided.
+      .add('POST', '/api/ai/sessions/:sessionId/turns/:turn/accept-edit', ({ params }) => {
+        const session = chat(params.sessionId);
+        const turn = session.turns[Number(params.turn)];
+        const proposal = turn?.proposedEdit;
+        if (!proposal || turn.proposalClosed) throw new HttpError(404, 'that answer has no edit to accept');
+        const run = branches.refine(proposal.runId, proposal.pageId, proposal.text);
+        return { session: sessions.closeProposal(session.id, Number(params.turn)), run };
+      })
+      .add('POST', '/api/ai/sessions/:sessionId/turns/:turn/close-proposal', ({ params }) => {
+        const session = chat(params.sessionId);
+        if (!session.turns[Number(params.turn)]?.proposedEdit) throw new HttpError(404, 'that answer has no edit');
+        return sessions.closeProposal(session.id, Number(params.turn));
+      })
+      // The staged pages of every chat in a space, which its push queue pushes together.
+      .add('GET', '/api/space-cache/:spaceKey/staged', async ({ params }) => ({
+        staged: await stagedIn(params.spaceKey.toUpperCase()),
+      }))
   );
 }

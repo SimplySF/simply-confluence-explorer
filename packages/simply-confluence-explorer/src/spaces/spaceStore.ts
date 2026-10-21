@@ -24,6 +24,7 @@ import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { isCurrentMetadata } from './metadata.js';
+import { tagsOf } from './tags.js';
 
 // A synced space lives in `<data dir>/spaces/<KEY>/`:
 //
@@ -221,7 +222,7 @@ export class SpaceStore {
           ? path.relative(this.pagesDir(spaceKey), this.markdownFile(spaceKey, page)).split(path.sep).join('/')
           : '',
         summary: meta?.summary,
-        tags: meta?.tags ?? page?.labels ?? [],
+        tags: page ? tagsOf(page, meta) : (meta?.tags ?? []),
         documentType: meta?.documentType,
         children: node.children.map(toNode),
       };

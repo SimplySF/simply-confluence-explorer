@@ -3,6 +3,7 @@
   import type { TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
+  import { newest } from '../support/pageResult.js';
   import { messageOf } from '../support/toast.svelte.js';
 
   // The pages of a space grouped by tag, so pages about one subject can be found and reviewed
@@ -21,6 +22,9 @@
   let chosen = $state<string | null>(null);
   let error = $state<string | null>(null);
   let loaded = $state(0);
+  // A large space's tags take a moment to read; until they arrive the list is not known to be empty.
+  let reading = $state(false);
+  const request = newest();
 
   // Read again after a sync or an indexing run, which can add pages and tags.
   $effect(() => jobs.onFinished((j) => j.spaceKey === spaceKey && loaded++));
@@ -37,11 +41,20 @@
     error = null;
     if (!synced) {
       tags = [];
+      reading = false;
       return;
     }
+    reading = true;
+    const current = request();
     api.tags(key).then(
-      (t) => (tags = t),
-      (e: unknown) => (error = messageOf(e)),
+      current((t: TaggedPages[]) => {
+        tags = t;
+        reading = false;
+      }),
+      current((e: unknown) => {
+        error = messageOf(e);
+        reading = false;
+      }),
     );
   });
 
@@ -90,7 +103,9 @@
       <Search size={13} />
       <input class="form-input input-sm" placeholder="Filter tags" aria-label="Filter tags" bind:value={filter} />
     </div>
-    {#if tags.length === 0}
+    {#if reading && tags.length === 0}
+      <p class="muted tree-message">Reading tags…</p>
+    {:else if tags.length === 0}
       <p class="muted tree-message">
         No tags yet. Pages get tags from their Confluence labels and from the AI index (Space menu).
       </p>

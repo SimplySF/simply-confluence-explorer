@@ -199,3 +199,13 @@ describe('an index run whose pack reply cannot be read', () => {
     expect(pipeline.get(jobId)).toMatchObject({ status: 'completed', processed: 3 });
   });
 });
+
+describe("a space's table of contents", () => {
+  it("shows a page's Confluence labels and its AI tags together, as every other view does", async () => {
+    const { store } = setup();
+    store.writePage('PLAT', { ...page('1', 'Deploys', '<p>How to deploy.</p>'), labels: ['runbook'] }, '', []);
+    store.writeMetadata('PLAT', meta('1', { tags: ['deploy'] }));
+    const [node] = await store.writeToc('PLAT');
+    expect(node.tags).toEqual(['runbook', 'deploy']);
+  });
+});

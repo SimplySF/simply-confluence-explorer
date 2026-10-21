@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-// Changes from a chat against the real Confluence Data Center test environment: edits are staged only
-// from the suggestions chosen, only accepted pages are written, and a page a colleague changed after
-// its edit was made is never written over.
+// Changes from a chat against the real Confluence Data Center test environment: edits are made only
+// from the suggestions chosen, from the page as Confluence holds it now, only staged pages are
+// written, and a page a colleague changed after its edit was made is never written over.
 
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -66,16 +66,26 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   };
-  /** A chat on the Interviews directory reviews it, then queues edits from a suggestion naming both visible pages. */
-  const improve = async (): Promise<BranchRun> => {
+  /** A chat on the Interviews directory reviews it, then edits are made from a suggestion naming both visible pages. */
+  const improve = async (beforeEdit: () => Promise<unknown> = () => Promise.resolve()): Promise<BranchRun> => {
     const chat = await call<AiSessionView>('POST', '/ai/sessions', {
       scope: { kind: 'branch', spaceKey: 'PEOPLE', pageId: id('Interviews') },
     });
     const reviewed = await call<AiSessionView>('POST', `/ai/sessions/${chat.id}/suggest`, { kind: 'review' });
-    const turn = reviewed.turns.length - 1;
-    return settled(
-      (await call<BranchRun>('POST', `/ai/sessions/${chat.id}/turns/${turn}/queue`, { findings: [0] })).id,
-    );
+    await beforeEdit();
+    const ids = [reviewed.suggestions![0].id];
+    return settled((await call<BranchRun>('POST', `/ai/sessions/${chat.id}/suggestions/recommend`, { ids })).id);
+  };
+  /** A colleague's edit of a page in Confluence, made outside the app. */
+  const colleagueEdits = async (pageId: string, text: string): Promise<RestPage> => {
+    const current = await read(pageId);
+    await rest('PUT', `/rest/api/content/${pageId}`, {
+      type: 'page',
+      title: current.title,
+      version: { number: current.version.number + 1 },
+      body: { storage: { value: `${current.body.storage.value}<p>${text}</p>`, representation: 'storage' } },
+    });
+    return current;
   };
 
   beforeAll(async () => {
@@ -106,6 +116,7 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
     const item = `/branches/runs/${run.id}/items/${id('Interview Guide')}`;
     await call('PUT', `${item}/text`, { text: `# Interview Guide\n\n${marker}` });
     await call('POST', `${item}/decide-all`, { decision: 'accept' });
+    await call('POST', `${item}/stage`, { staged: true });
 
     const checked = await call<BranchRun>('POST', `/branches/runs/${run.id}/check`);
     expect(checked.items[1].status, checked.items[1].message).toBe('checked');
@@ -122,21 +133,23 @@ describe.skipIf(!env)(`branch runs against the test environment${env ? '' : ` (s
 
   it('refuses to push over a page a colleague changed after the proposal', async () => {
     const run = await improve();
-    await call('POST', `/branches/runs/${run.id}/items/${id('Interviews')}/decide-all`, { decision: 'accept' });
-    const current = await read(id('Interviews'));
-    await rest('PUT', `/rest/api/content/${id('Interviews')}`, {
-      type: 'page',
-      title: current.title,
-      version: { number: current.version.number + 1 },
-      body: {
-        storage: { value: `${current.body.storage.value}<p>Added by a colleague.</p>`, representation: 'storage' },
-      },
-    });
+    const item = `/branches/runs/${run.id}/items/${id('Interviews')}`;
+    await call('POST', `${item}/decide-all`, { decision: 'accept' });
+    await call('POST', `${item}/stage`, { staged: true });
+    const current = await colleagueEdits(id('Interviews'), 'Added by a colleague.');
     const pushed = await call<BranchRun>('POST', `/branches/runs/${run.id}/push`);
     expect(pushed.items[0].status).toBe('push-failed');
     expect(pushed.items[0].message).toContain('changed in Confluence after the proposal');
     const after = await read(id('Interviews'));
     expect(after.version.number).toBe(current.version.number + 1);
     expect(after.body.storage.value).toContain('Added by a colleague.');
+  });
+
+  it('makes an edit from the page a colleague changed after the suggestion was made', async () => {
+    const note = `Changed by a colleague before the edit ${Date.now()}.`;
+    const run = await improve(() => colleagueEdits(id('Interview Guide'), note));
+    const guide = run.items.find((i) => i.pageId === id('Interview Guide'))!;
+    expect(guide.baseVersion).toBe((await read(id('Interview Guide'))).version.number);
+    expect(guide.original).toContain(note.slice(0, 30));
   });
 });

@@ -18,6 +18,8 @@
 // edit per page, and nothing is written that a person did not accept, each write checked against the
 // version its edit was made from (ADR-024, ADR-049).
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AiSessionView, BranchFinding, BranchItem, BranchRun } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
@@ -95,20 +97,35 @@ const directoryChat = async (app: TestApp): Promise<AiSessionView> =>
   ).body;
 const suggest = async (app: TestApp, id: string, kind = 'review'): Promise<AiSessionView> =>
   (await app.call<AiSessionView>('POST', `/ai/sessions/${id}/suggest`, { kind })).body;
-const queue = (
-  app: TestApp,
-  id: string,
-  turn: number,
-  findings: unknown[],
-): Promise<{ status: number; body: BranchRun }> =>
-  app.call<BranchRun>('POST', `/ai/sessions/${id}/turns/${turn}/queue`, { findings });
-/** A directory chat's review, then edits staged from its first suggestion, which names both pages. */
-const staged = async (app: TestApp, findings = [0]): Promise<BranchRun> => {
+const chatOf = async (app: TestApp, id: string): Promise<AiSessionView> =>
+  (await app.call<AiSessionView>('GET', `/ai/sessions/${id}`)).body;
+/** Makes edits from the chat's suggestions at these places in its queue. */
+const recommend = async (app: TestApp, id: string, picks: number[]): Promise<{ status: number; body: BranchRun }> => {
+  const ids = (await chatOf(app, id)).suggestions?.map((s) => s.id) ?? [];
+  return app.call<BranchRun>('POST', `/ai/sessions/${id}/suggestions/recommend`, { ids: picks.map((i) => ids[i]) });
+};
+/** A directory chat's review, then edits made from its first suggestion, which names both pages. */
+const staged = async (app: TestApp, picks = [0]): Promise<BranchRun> => {
   const c = await directoryChat(app);
-  const reviewed = await suggest(app, c.id);
-  const res = await queue(app, c.id, reviewed.turns.length - 1, findings);
+  await suggest(app, c.id);
+  const res = await recommend(app, c.id, picks);
   expect(res.status, JSON.stringify(res.body)).toBe(200);
   return settled(app, res.body.id);
+};
+/** Stages every page whose changes are decided with one accepted, as the Push tab offers them. */
+const stageReady = async (app: TestApp, id: string): Promise<void> => {
+  const run = (await app.call<BranchRun>('GET', `/branches/runs/${id}`)).body;
+  for (const i of run.items.filter((x) => ['accepted', 'checked', 'push-failed'].includes(x.status)))
+    // eslint-disable-next-line no-await-in-loop -- one page at a time, as the browser does
+    await app.call('POST', `/branches/runs/${id}/items/${i.pageId}/stage`, { staged: true });
+};
+const push = async (app: TestApp, id: string): Promise<{ status: number; body: BranchRun }> => {
+  await stageReady(app, id);
+  return app.call<BranchRun>('POST', `/branches/runs/${id}/push`);
+};
+const check = async (app: TestApp, id: string): Promise<{ status: number; body: BranchRun }> => {
+  await stageReady(app, id);
+  return app.call<BranchRun>('POST', `/branches/runs/${id}/check`);
 };
 const decideAll = (
   app: TestApp,
@@ -141,9 +158,12 @@ describe('suggestions in a chat', () => {
       const reviewed = await suggest(app, c.id);
       const turn = reviewed.turns.at(-1)!;
       expect(reviewed.turns.at(-2)?.text).toBe('Review these pages for problems');
-      expect(turn.findings).toEqual(FINDINGS);
-      expect(turn.pageIds).toEqual({ Interviews: interviews(), 'Interview Guide': guide() });
-      expect(turn.text).toContain('3 suggestions');
+      expect(
+        reviewed.suggestions?.map(({ kind, pages, detail, suggestion }) => ({ kind, pages, detail, suggestion })),
+      ).toEqual(FINDINGS);
+      expect(reviewed.suggestions?.[0].pageIds).toEqual({ Interviews: interviews(), 'Interview Guide': guide() });
+      expect(turn.text).toBe('3 suggestions added to the review queue.');
+      expect(turn.queued).toEqual({ added: 3, updated: 0, removed: 0 });
       expect(app.sentText()).not.toContain('Candidate Feedback');
     });
   });
@@ -164,7 +184,7 @@ describe('suggestions in a chat', () => {
       expect((await app.call('POST', `/ai/sessions/${c.id}/suggest`, { kind: 'changes' })).status).toBe(400);
       await app.call('POST', `/ai/sessions/${c.id}/messages`, { prompt: 'Do these pages repeat each other?' });
       const changed = await suggest(app, c.id, 'changes');
-      expect(changed.turns.at(-1)?.findings).toEqual(FINDINGS);
+      expect(changed.suggestions?.map((f) => f.detail)).toEqual(FINDINGS.map((f) => f.detail));
       expect((await app.call('POST', `/ai/sessions/${c.id}/suggest`, { kind: 'rewrite' })).status).toBe(400);
     });
   });
@@ -176,7 +196,7 @@ describe('suggestions in a chat', () => {
         const c = await directoryChat(app);
         const reviewed = await suggest(app, c.id);
         expect(reviewed.turns.at(-1)?.text).toBe('Looks fine overall.');
-        expect(reviewed.turns.at(-1)?.findings).toBeUndefined();
+        expect(reviewed.suggestions ?? []).toEqual([]);
       },
     );
     expect(parseFindings('{"findings":[{"kind":"made-up","detail":"x"}]}')).toEqual([]);
@@ -188,22 +208,27 @@ describe('queueing suggestions', () => {
     await withApp(answer, async (app) => {
       const c = await directoryChat(app);
       const reviewed = await suggest(app, c.id);
-      const turn = reviewed.turns.length - 1;
       const sentBefore = app.sent.length;
-      const res = await queue(app, c.id, turn, [1]);
+      const res = await recommend(app, c.id, [1]);
       const run = await settled(app, res.body.id);
       expect(run.kind).toBe('improve');
       expect(run.fromSessionId).toBe(c.id);
       expect(run.items.map((i) => i.title)).toEqual(['Interview Guide']);
       expect(run.items[0].fixes).toEqual([
-        { kind: 'clarity', detail: 'The opening is vague', suggestion: 'Say who it is for', otherPages: [] },
+        {
+          kind: 'clarity',
+          detail: 'The opening is vague',
+          suggestion: 'Say who it is for',
+          otherPages: [],
+          suggestionId: reviewed.suggestions?.[1].id,
+          seenVersion: fake.page('PEOPLE', 'Interview Guide').version,
+        },
       ]);
       expect(run.items[0].baseVersion).toBe(fake.page('PEOPLE', 'Interview Guide').version);
       const sent = app.sent.slice(sentBefore).map(textOf).join('\n');
       expect(sent).toContain('The opening is vague');
       expect(sent).not.toContain('Both describe the loop');
-      const after = (await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`)).body;
-      expect(after.turns[turn].runIds).toEqual([run.id]);
+      expect((await chatOf(app, c.id)).runIds).toEqual([run.id]);
     });
   });
 
@@ -221,25 +246,29 @@ describe('queueing suggestions', () => {
     await withApp(answer, async (app) => {
       const c = await directoryChat(app);
       const reviewed = await suggest(app, c.id);
-      const turn = reviewed.turns.length - 1;
-      expect((await queue(app, c.id, turn, [7])).status).toBe(400);
-      expect((await queue(app, c.id, turn, [])).status).toBe(400);
-      expect((await queue(app, c.id, turn, [1, 2])).status).toBe(400);
-      expect((await queue(app, c.id, turn, ['0'])).status).toBe(400);
-      expect((await queue(app, c.id, turn - 1, [0])).status).toBe(404);
-      expect((await queue(app, c.id, 99, [0])).status).toBe(404);
+      const ask = (ids: unknown): Promise<{ status: number }> =>
+        app.call('POST', `/ai/sessions/${c.id}/suggestions/recommend`, { ids });
+      const [, clarity, gap] = reviewed.suggestions!.map((s) => s.id);
+      expect((await ask(['ffffffffffff'])).status).toBe(404);
+      expect((await ask([])).status).toBe(400);
+      expect((await ask([clarity, gap])).status).toBe(400);
+      expect((await ask(['0'])).status).toBe(400);
+      const other = await directoryChat(app);
+      expect(
+        (await app.call('POST', `/ai/sessions/${other.id}/suggestions/recommend`, { ids: [clarity] })).status,
+      ).toBe(404);
     });
   });
 
   it('leaves out a page excluded after the suggestion was made', async () => {
     await withApp(answer, async (app) => {
       const c = await directoryChat(app);
-      const reviewed = await suggest(app, c.id);
+      await suggest(app, c.id);
       await app.call('POST', '/space-cache/PEOPLE/ignore', {
         patterns: [`id:${guide()}`, 'id:{{id:Salary Bands}}', 'Interviews/Internal/'],
         purge: false,
       });
-      const res = await queue(app, c.id, reviewed.turns.length - 1, [0]);
+      const res = await recommend(app, c.id, [0]);
       const run = await settled(app, res.body.id);
       expect(run.items.map((i) => i.title)).toEqual(['Interviews']);
     });
@@ -256,8 +285,8 @@ describe('queueing suggestions', () => {
     };
     await withApp(reply, async (app) => {
       const c = await directoryChat(app);
-      const reviewed = await suggest(app, c.id);
-      const res = await queue(app, c.id, reviewed.turns.length - 1, [0]);
+      await suggest(app, c.id);
+      const res = await recommend(app, c.id, [0]);
       await new Promise((resolve) => setTimeout(resolve, 20));
       const stopped = (await app.call<BranchRun>('POST', `/branches/runs/${res.body.id}/cancel`)).body;
       expect(stopped.status).toBe('cancelled');
@@ -280,7 +309,7 @@ describe('the queued edits', () => {
       await setText(app, run.id, guide(), '# Interview Guide\n\nEdited by a person.');
       await decideAll(app, run.id, guide(), 'accept');
       await decideAll(app, run.id, interviews(), 'reject');
-      const pushed = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body;
+      const pushed = (await push(app, run.id)).body;
 
       expect(fake.writes.slice(before)).toEqual([guide()]);
       expect(fake.page('PEOPLE', 'Interview Guide').storage).toContain('Edited by a person.');
@@ -296,7 +325,7 @@ describe('the queued edits', () => {
       await decideAll(app, run.id, guide(), 'accept');
       fake.page('PEOPLE', 'Interviews').version++;
       const before = fake.writes.length;
-      const pushed = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body;
+      const pushed = (await push(app, run.id)).body;
       const changed = pushed.items.find((i) => i.pageId === interviews())!;
       expect(changed.status).toBe('push-failed');
       expect(changed.message).toContain('changed in Confluence after the proposal');
@@ -310,7 +339,7 @@ describe('the queued edits', () => {
       const run = await staged(app);
       await decideAll(app, run.id, guide(), 'accept');
       const before = fake.writes.length;
-      const checked = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/check`)).body;
+      const checked = (await check(app, run.id)).body;
       expect(checked.items.find((i) => i.pageId === guide())?.status).toBe('checked');
       expect(fake.writes.length).toBe(before);
     });
@@ -326,8 +355,8 @@ describe('the queued edits', () => {
     };
     await withApp(reply, async (app) => {
       const c = await directoryChat(app);
-      const reviewed = await suggest(app, c.id);
-      const { body: started } = await queue(app, c.id, reviewed.turns.length - 1, [0]);
+      await suggest(app, c.id);
+      const { body: started } = await recommend(app, c.id, [0]);
       for (let run = started; run.items[0].status !== 'proposed';) {
         // eslint-disable-next-line no-await-in-loop -- waiting for the first edit
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -345,7 +374,7 @@ describe('the queued edits', () => {
     await withApp(answer, async (app) => {
       const run = await staged(app);
       await decideAll(app, run.id, guide(), 'accept');
-      await app.call('POST', `/branches/runs/${run.id}/push`);
+      await push(app, run.id);
       const late = await decideAll(app, run.id, guide(), 'reject');
       expect(late.status).toBe(409);
     });
@@ -390,7 +419,7 @@ describe('the changes of one page', () => {
         const decided = (await decideChange(app, run.id, guide(), second.id, 'reject')).body;
         expect(itemOf(decided, guide()).status).toBe('accepted');
         expect(itemOf(decided, guide()).result).toBe('⟦1 toc⟧\n\nFirst, reworded.\n\nSecond paragraph.');
-        await app.call('POST', `/branches/runs/${run.id}/push`);
+        await push(app, run.id);
         expect(fake.page('PEOPLE', 'Interview Guide').storage).toBe(
           `${TOC}<p>First, reworded.</p><p>Second paragraph.</p>`,
         );
@@ -426,7 +455,7 @@ describe('the changes of one page', () => {
         expect(removal.notes).toEqual(['Removes ⟦1 toc⟧ from the page']);
         await decideAll(app, run.id, guide(), 'accept');
         await decideChange(app, run.id, guide(), removal.id, 'reject');
-        await app.call('POST', `/branches/runs/${run.id}/push`);
+        await push(app, run.id);
         expect(fake.page('PEOPLE', 'Interview Guide').storage).toBe(
           `${TOC}<p>First, reworded.</p><p>Second, reworded.</p>`,
         );
@@ -452,12 +481,12 @@ describe('the changes of one page', () => {
         const run = await stagedGuide(app);
         await setText(app, run.id, guide(), '⟦1 toc⟧\n\nFirst, reworded.\n\n```\nunclosed');
         await decideAll(app, run.id, guide(), 'accept');
-        const failed = itemOf((await app.call<BranchRun>('POST', `/branches/runs/${run.id}/check`)).body, guide());
+        const failed = itemOf((await check(app, run.id)).body, guide());
         expect(failed.status).toBe('check-failed');
         expect(failed.message).toMatch(/^The dry run found a problem: Line \d+/);
         await setText(app, run.id, guide(), '⟦1 toc⟧\n\nFirst, reworded.\n\nSecond, reworded.');
         await decideAll(app, run.id, guide(), 'accept');
-        const checked = itemOf((await app.call<BranchRun>('POST', `/branches/runs/${run.id}/check`)).body, guide());
+        const checked = itemOf((await check(app, run.id)).body, guide());
         expect(checked.status).toBe('checked');
       }),
     );
@@ -470,7 +499,7 @@ describe('the changes of one page', () => {
         await setText(app, run.id, guide(), '```\n⟦1 toc⟧\n```\n\nFirst, reworded.\n\nSecond, reworded.');
         await decideAll(app, run.id, guide(), 'accept');
         const before = fake.writes.length;
-        const pushed = itemOf((await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body, guide());
+        const pushed = itemOf((await push(app, run.id)).body, guide());
         expect(pushed.status).toBe('push-failed');
         expect(pushed.message).toContain('no accepted change removes: ⟦1 toc⟧');
         expect(fake.writes.length).toBe(before);
@@ -517,7 +546,7 @@ describe('the changes of one page', () => {
         await decideAll(app, run.id, guide(), 'accept');
         const page = fake.page('PEOPLE', 'Interview Guide');
         page.version++;
-        const refused = (await app.call<BranchRun>('POST', `/branches/runs/${run.id}/push`)).body;
+        const refused = (await push(app, run.id)).body;
         expect(itemOf(refused, guide()).status).toBe('push-failed');
         await app.call('POST', `/branches/runs/${run.id}/items/${guide()}/redo`);
         const again = itemOf(await settled(app, run.id), guide());
@@ -526,5 +555,76 @@ describe('the changes of one page', () => {
         expect(again.changes).toHaveLength(2);
       }),
     );
+  });
+});
+
+describe("a page's own record, its id, version, author and the like", () => {
+  const RECORD =
+    '---\nid: "1"\ntitle: Interview Guide\nversion: 3\nupdatedAt: 2026-10-20\nbreadcrumbs:\n  - People\n---';
+  /** An edit that echoes the title line and the record, as a model shown them might. */
+  const echo = (payload: GuardedPayload): string =>
+    textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>')
+      ? `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Said who it is for\n<<<PROPOSED_MARKDOWN>>>\n# Document Title: Interview Guide\n\n\`\`\`yaml\n${RECORD}\n\`\`\`\n\nFor interviewers. ${++edits}`
+      : answer(payload);
+
+  it('is not given to the model that writes an edit', async () => {
+    const sent: string[] = [];
+    await withApp(
+      (payload) => {
+        sent.push(textOf(payload));
+        return answer(payload);
+      },
+      async (app) => {
+        await staged(app, [1]);
+        const edit = sent.find((t) => t.includes('<<<PROPOSED_MARKDOWN>>>'))!;
+        expect(edit).not.toMatch(/^(version|updatedAt|confluenceUrl|breadcrumbs):/m);
+      },
+    );
+  });
+
+  it('is not written into the page when an edit echoes it', async () => {
+    await withApp(echo, async (app) => {
+      const run = await staged(app, [1]);
+      const item = itemOf(run, guide());
+      expect(item.proposed).toMatch(/^For interviewers\./);
+      await decideAll(app, run.id, guide(), 'accept');
+      await push(app, run.id);
+      const storage = fake.page('PEOPLE', 'Interview Guide').storage;
+      expect(storage).toContain('For interviewers.');
+      expect(storage).not.toMatch(/updatedAt|breadcrumbs|Document Title/);
+    });
+  });
+
+  it('cannot be accepted when a change writes it as a list', async () => {
+    await withApp(answer, async (app) => {
+      const run = await staged(app, [1]);
+      const list = '- **id:** 1\n- **version:** 3\n- **updatedAt:** 2026-10-20\n- **confluenceUrl:** https://wiki';
+      const edited = (await setText(app, run.id, guide(), `${list}\n\n${itemOf(run, guide()).proposed}`)).body;
+      const added = itemOf(edited, guide()).changes!.find((c) => c.after.includes('updatedAt'))!;
+      expect(added.problem).toContain("the app's record of the page");
+      expect((await decideChange(app, run.id, guide(), added.id, 'accept')).status).toBe(409);
+    });
+  });
+});
+
+describe('a run the app stopped while it was writing edits', () => {
+  it('does not stay running after a restart, and its unfinished page can be made again', async () => {
+    await withApp(answer, async (app) => {
+      const run = await staged(app, [1]);
+      // As the file is left when the app stops while the page's edit is being written.
+      const file = path.join(app.dataDir, 'data', 'branch-runs', `${run.id}.json`);
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as BranchRun;
+      saved.status = 'running';
+      Object.assign(itemOf(saved, guide()), { status: 'working', proposed: undefined, changes: undefined });
+      fs.writeFileSync(file, JSON.stringify(saved));
+      const read = (await app.call<BranchRun>('GET', `/branches/runs/${run.id}`)).body;
+      expect(read.status).toBe('ready');
+      expect(itemOf(read, guide())).toMatchObject({
+        status: 'failed',
+        message: 'The app stopped while this edit was being written.',
+      });
+      await app.call('POST', `/branches/runs/${run.id}/items/${guide()}/redo`);
+      expect(itemOf(await settled(app, run.id), guide()).status).toBe('proposed');
+    });
   });
 });

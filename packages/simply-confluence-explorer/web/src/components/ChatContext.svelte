@@ -21,11 +21,13 @@
   };
 
   let { spaceKey, scope, pages, onChange, onSelectPage }: Props = $props();
-  /** How many tags are shown before "Show all", so a space with hundreds stays readable. */
-  const TAGS_SHOWN = 24;
   let open = $state(false);
-  let tags = $state<TaggedPages[]>([]);
+  // Unread until the panel first offers them, so "no tags" is not said while they are being read.
+  let tags = $state<TaggedPages[] | null>(null);
+  // Collapsed, the most-used tags fill two lines; expanded, every tag scrolls in a box of its own,
+  // so a space with hundreds of tags never pushes the conversation down.
   let allTags = $state(false);
+  let tagFilter = $state('');
   let query = $state('');
   let counts = $state<Coverage | null>(null);
   // The mode the person picked. Choosing pages starts with none chosen, and until one is, the chat
@@ -41,7 +43,7 @@
   }
 
   $effect(() => {
-    if (!open || mode !== 'pages' || tags.length) return;
+    if (!open || mode !== 'pages' || tags) return;
     api.tags(spaceKey).then(
       (t) => (tags = t),
       () => (tags = []), // An unsynced space has no tags; choosing pages by title still works.
@@ -53,9 +55,10 @@
   const chosenTags = $derived(scope.kind === 'pages' ? (scope.tags ?? []) : []);
   const byId = $derived(new Map(pages.map((p) => [p.id, p])));
   const pageOf = (id: string): SpacePage => byId.get(id) ?? { id, title: id, path: '', under: [] };
-  const tagSize = (tag: string): number | undefined => tags.find((t) => t.tag === tag)?.pages.length;
+  const tagSize = (tag: string): number | undefined => tags?.find((t) => t.tag === tag)?.pages.length;
   const results = $derived(searchPages(pages, query));
-  const shownTags = $derived(allTags ? tags : tags.slice(0, TAGS_SHOWN));
+  const shownTags = $derived((tags ?? []).filter((t) => t.tag.includes(tagFilter.trim().toLowerCase())));
+  const listed = $derived(allTags || tagFilter.trim() !== '');
   const chosen = $derived(scope.kind === 'pages' ? { dirs, pageIds: singles, tags: chosenTags } : undefined);
 
   const names = $derived([
@@ -177,7 +180,18 @@
         </div>
         <div class="chat-context-section">
           <span class="muted">Or add every page with a tag</span>
-          <div class="chip-row">
+          {#if (tags?.length ?? 0) > 12}
+            <div class="search-field">
+              <Search size={13} />
+              <input
+                class="form-input input-sm"
+                placeholder="Filter tags"
+                aria-label="Filter tags"
+                bind:value={tagFilter}
+              />
+            </div>
+          {/if}
+          <div class={['chip-row', 'chat-context-tags', listed ? 'listed' : 'collapsed']}>
             {#each shownTags as t (t.tag)}
               <button
                 type="button"
@@ -189,14 +203,20 @@
                 {t.tag} <span class="muted">{t.pages.length}</span>
               </button>
             {:else}
-              <span class="muted">Sync the space to choose pages by tag.</span>
+              <span class="muted"
+                >{tags === null
+                  ? 'Reading tags…'
+                  : tags.length
+                    ? 'No tag matches.'
+                    : 'Sync the space to choose pages by tag.'}</span
+              >
             {/each}
-            {#if tags.length > TAGS_SHOWN}
-              <button type="button" class="link-btn" onclick={() => (allTags = !allTags)}>
-                {allTags ? 'Show fewer' : `Show all ${tags.length} tags`}
-              </button>
-            {/if}
           </div>
+          {#if (tags?.length ?? 0) > 12 && !tagFilter.trim()}
+            <button type="button" class="link-btn" onclick={() => (allTags = !allTags)}>
+              {allTags ? 'Show fewer' : `Show all ${tags?.length} tags`}
+            </button>
+          {/if}
         </div>
         <div class="chat-context-section">
           <span class="muted">Chosen</span>

@@ -3,7 +3,7 @@
 
   /**
    * A way to begin a chat without writing a question: a question to ask, or a review, whose answer is
-   * a list of suggestions to tick and queue as edits (ADR-049).
+   * a list of suggestions added to the chat's review queue (ADR-060).
    */
   export type Starter = { label: string; detail: string; icon: Component; prompt?: string; review?: boolean };
 </script>
@@ -18,6 +18,7 @@
     Layers,
     ListChecks,
     Paperclip,
+    PenLine,
     Send,
     ShieldCheck,
     Sparkles,
@@ -25,22 +26,20 @@
     Wand2,
     X,
   } from '@lucide/svelte';
-  import { tick, type Snippet } from 'svelte';
-  import type { BranchFinding } from '../../../src/api/types.js';
-  import { sessions } from '../support/api.js';
+  import type { Snippet } from 'svelte';
+  import { sessions, type Focus } from '../support/api.js';
   import type { AiChat } from '../support/chat.svelte.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { observe } from '../support/observe.svelte.js';
   import { readLabel, sentLines } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
-  import ChangeQueue from './ChangeQueue.svelte';
-  import FindingsList from './FindingsList.svelte';
+  import Diff from './ui/Diff.svelte';
   import Markdown from './ui/Markdown.svelte';
 
   // A conversation with the AI: its turns, the files added to it, and the box to ask the next question,
-  // with Stop while an answer is coming (ADR-047). An answer can hold suggestions, which the person
-  // ticks and queues as edits, reviewed and pushed below it (ADR-049). The page's Chat tab and Space
-  // chat both show one.
+  // with Stop while an answer is coming (ADR-047). Suggestions an answer makes go to the chat's review
+  // queue, which the answer links to; an answer about an open edit can propose a revision of it, to
+  // accept or dismiss (ADR-060). The page's Chat tab and Space chat both show one.
   type Props = {
     chat: AiChat;
     /** What the conversation is about, as the thinking note and the question box name it. */
@@ -55,10 +54,17 @@
     empty?: Snippet;
     /** Ways to begin, shown until the first question is asked. */
     starters?: Starter[];
-    /** Pages were written from a queue, so the tree and the page reload. */
-    onPushed: () => void;
-    /** A suggestion for a page that does not exist yet: start writing it. */
-    onWriteNewPage?: (finding: BranchFinding) => void;
+    /** Shown in place of the conversation, such as one of the chat's queues; the question box stays. */
+    view?: Snippet;
+    /** The edit the next question is about, while the person has it open. */
+    focus?: Focus | null;
+    onLeaveFocus?: () => void;
+    /** Opens one of the chat's queues. */
+    onOpenTab?: (tab: 'review' | 'changes') => void;
+    /** The working text of an edit, so a revision the chat proposes is shown against it. */
+    currentText?: (runId: string, pageId: string) => string | undefined;
+    /** A revision was accepted or dismissed, so the queues are read again. */
+    onEditDecided?: () => void;
   };
 
   let {
@@ -70,26 +76,37 @@
     placeholder,
     empty,
     starters = [],
-    onPushed,
-    onWriteNewPage,
+    view,
+    focus = null,
+    onLeaveFocus,
+    onOpenTab,
+    currentText,
+    onEditDecided,
   }: Props = $props();
-  // The suggestions ticked on each answer, by the answer's place in the conversation.
-  let chosen = $state<Record<number, Set<number>>>({});
-  let queueing = $state<number | null>(null);
+  let deciding = $state<number | null>(null);
 
-  async function queue(turn: number): Promise<void> {
-    queueing = turn;
+  /** Accepts or dismisses a revision the chat proposed for an open edit. */
+  async function decideEdit(turn: number, accept: boolean): Promise<void> {
+    const id = chat.session?.id;
+    if (!id) return;
+    deciding = turn;
     try {
-      await chat.queue(turn, [...(chosen[turn] ?? [])]);
-      chosen[turn] = new Set();
-      await tick();
-      bottom.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      chat.session = accept ? (await sessions.acceptEdit(id, turn)).session : await sessions.dismissEdit(id, turn);
+      onEditDecided?.();
     } catch (e) {
-      toast(`Nothing was queued: ${messageOf(e)}`, 'error');
+      toast(`The revision was not ${accept ? 'accepted' : 'dismissed'}: ${messageOf(e)}`, 'error');
     } finally {
-      queueing = null;
+      deciding = null;
     }
   }
+  const queuedLine = (q: { added: number; updated: number; removed: number }): string =>
+    [
+      q.added ? `${q.added} added` : '',
+      q.updated ? `${q.updated} reworded` : '',
+      q.removed ? `${q.removed} removed` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
   const UPLOAD_TYPES = '.pdf,.md,.markdown,.txt,.csv,.tsv,.json,.yaml,.yml,.log,.xml,.html,.htm';
 
   let input = $state('');
@@ -137,7 +154,7 @@
     const clean = prompt.trim();
     if (!clean || chat.sending || blocked) return;
     input = '';
-    void chat.send(clean, thorough && canBeThorough);
+    void chat.send(clean, thorough && canBeThorough && !focus, focus ?? undefined);
   }
 
   // A chat over many pages can read far more of them for one question, over several requests.
@@ -175,7 +192,10 @@
   $effect(() => jobs.onFinished((j) => j.kind === 'batch' && j.sessionId === chat.session?.id && void chat.reload()));
 </script>
 
-<div class="chat-stream">
+{#if view}
+  <div class="chat-view">{@render view()}</div>
+{/if}
+<div class="chat-stream" hidden={!!view}>
   {#if turns.length === 0 && !chat.pending && !batch}
     <div class="empty-state">{@render empty?.()}</div>
     {#if starters.length && !blocked}
@@ -287,31 +307,37 @@
         {:else}
           <Markdown source={t.text} extraClass="ai-response-rendered" />
         {/if}
-        {#if t.findings?.length}
-          <div class="branch-findings">
-            <FindingsList
-              findings={t.findings}
-              pageIds={t.pageIds ?? {}}
-              chosen={chosen[i] ?? new Set()}
-              onChange={(c) => (chosen[i] = c)}
-              onOpenPage={onSelectPage}
-              {onWriteNewPage}
-            />
-            <div class="review-footer">
-              <span class="branch-note">Each page the ticked suggestions name gets an edit carrying only those.</span>
-              <button
-                class="btn btn-primary btn-sm"
-                disabled={!chosen[i]?.size || queueing !== null}
-                onclick={() => queue(i)}
-              >
-                <ListChecks size={13} /> Queue selected ({chosen[i]?.size ?? 0})
-              </button>
-            </div>
+        {#if t.queued}
+          <div class="chat-queued">
+            <ListChecks size={13} /> Review queue: {queuedLine(t.queued)}.
+            <button class="link-btn" onclick={() => onOpenTab?.('review')}>Review</button>
           </div>
         {/if}
-        {#each t.runIds ?? [] as runId (runId)}
-          <ChangeQueue {runId} {onPushed} />
-        {/each}
+        {#if t.proposedEdit}
+          {@const p = t.proposedEdit}
+          <div class="chat-proposal">
+            <div class="chat-queued">
+              <PenLine size={13} /> A revised edit of {p.title}
+              {#if t.proposalClosed}<span class="muted">· decided</span>{/if}
+              <button class="link-btn" onclick={() => onOpenTab?.('changes')}>Open the edit</button>
+            </div>
+            {#if !t.proposalClosed}
+              <Diff before={currentText?.(p.runId, p.pageId) ?? ''} after={p.text} />
+              <div class="branch-actions">
+                <button class="btn btn-primary btn-sm" disabled={deciding !== null} onclick={() => decideEdit(i, true)}>
+                  <Check size={13} /> Accept into the edit
+                </button>
+                <button
+                  class="btn btn-secondary btn-sm"
+                  disabled={deciding !== null}
+                  onclick={() => decideEdit(i, false)}
+                >
+                  <X size={13} /> Dismiss
+                </button>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     {/if}
   {/each}
@@ -350,11 +376,32 @@
       class="btn btn-secondary btn-sm"
       disabled={chat.sending || !!batch}
       onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
-      title="List the changes this conversation found or agreed, as suggestions to tick and queue as edits"
+      title="Add the changes this conversation found or agreed to the review queue"
     >
       <Wand2 size={13} /> Turn this into changes
     </button>
-    <span class="muted chat-actions-note">Lists what this chat found or agreed as edits you can tick and queue.</span>
+    <span class="muted chat-actions-note">Adds what this chat found or agreed to its review queue.</span>
+  </div>
+{/if}
+
+<!-- On a queue tab the conversation is out of sight, so its state is shown above the question box. -->
+{#if view && (chat.sending || chat.error || turns.at(-1)?.role === 'assistant')}
+  <div class="chat-peek">
+    {#if chat.sending}
+      <Sparkles size={13} class="spin" /> {step ? `${step}…` : 'Thinking…'}
+    {:else if chat.error}
+      <span class="branch-error">Not answered: {chat.error}</span>
+    {:else}
+      <Sparkles size={13} /> <span class="chat-peek-text">{turns.at(-1)?.text}</span>
+    {/if}
+  </div>
+{/if}
+
+{#if focus}
+  <div class="chat-focus">
+    <PenLine size={13} /> Working on: <strong>{focus.title}</strong>
+    <span class="muted">Your next message is about this edit.</span>
+    <button class="link-btn" onclick={() => onLeaveFocus?.()}>Leave</button>
   </div>
 {/if}
 
@@ -406,7 +453,7 @@
   </button>
   <input
     class="form-input"
-    placeholder={placeholder ?? `Ask about ${subject}…`}
+    placeholder={focus ? `Ask for a change to ${focus.title}…` : (placeholder ?? `Ask about ${subject}…`)}
     bind:value={input}
     disabled={chat.sending || blocked}
   />

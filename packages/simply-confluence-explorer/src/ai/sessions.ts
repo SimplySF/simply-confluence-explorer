@@ -17,10 +17,18 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AiSessionView, DraftState, SessionFileInfo, SessionScope, SessionTurn } from '../api/types.js';
+import type {
+  AiSessionView,
+  DraftState,
+  QueuedSuggestion,
+  SessionFileInfo,
+  SessionScope,
+  SessionTurn,
+} from '../api/types.js';
 import { storageToBody } from '../parser/convert.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
+import { migrateQueue } from './chatQueue.js';
 import type { ChatTurn } from './guard.js';
 import type { ManifestBuilder } from './manifest.js';
 
@@ -206,21 +214,30 @@ export class SessionStore {
     return viewOf(s);
   }
 
-  /** Records a queue of edits staged from the suggestions of one answer. */
-  public addRun(id: string, turn: number, runId: string): AiSessionView {
+  /** Records a run of edits made from the chat's suggestions. */
+  public addRun(id: string, runId: string): AiSessionView {
     const s = this.load(id);
-    const t = s?.turns[turn];
-    if (!s || !t) throw new Error('no such turn');
-    t.runIds = [...(t.runIds ?? []), runId];
+    if (!s) throw new Error('no such session');
+    s.runIds = [...(s.runIds ?? []), runId];
     this.save(s);
     return viewOf(s);
   }
 
-  /** Records that the author accepted or dismissed a co-writer's proposal, so it is not offered again. */
+  /** Changes the chat's review queue: a suggestion dismissed, brought back or reworded. */
+  public editSuggestions(id: string, change: (suggestions: QueuedSuggestion[]) => void): AiSessionView {
+    const s = this.load(id);
+    if (!s) throw new Error('no such session');
+    s.suggestions ??= [];
+    change(s.suggestions);
+    this.save(s);
+    return viewOf(s);
+  }
+
+  /** Records that the author accepted or dismissed a proposal, so it is not offered again. */
   public closeProposal(id: string, turn: number): AiSessionView {
     const s = this.load(id);
     const t = s?.turns[turn];
-    if (!s || !t || (t.proposedDraft === undefined && t.proposedSeries === undefined))
+    if (!s || !t || (t.proposedDraft === undefined && t.proposedSeries === undefined && !t.proposedEdit))
       throw new Error('no such proposal');
     t.proposalClosed = true;
     this.save(s);
@@ -231,11 +248,24 @@ export class SessionStore {
     return this.load(id)?.guardState ?? [];
   }
 
-  /** Records a question and its answer, and the guard's placeholders after them. */
-  public addTurns(id: string, turns: SessionTurn[], guardState: Array<[string, string]>): AiSessionView {
+  /**
+   * Records a question and its answer, and the guard's placeholders after them. `queue` changes the
+   * chat's review queue in the same save, given the answer's turn, and returns what it changed.
+   */
+  public addTurns(
+    id: string,
+    turns: SessionTurn[],
+    guardState: Array<[string, string]>,
+    queue?: (suggestions: QueuedSuggestion[], turn: number) => SessionTurn['queued'],
+  ): AiSessionView {
     const s = this.load(id);
     if (!s) throw new Error('no such session');
     s.turns.push(...turns);
+    if (queue) {
+      s.suggestions ??= [];
+      const queued = queue(s.suggestions, s.turns.length - 1);
+      if (queued && queued.added + queued.updated + queued.removed > 0) s.turns[s.turns.length - 1].queued = queued;
+    }
     s.guardState = guardState;
     if (!s.draft && !s.named && s.turns.length === turns.length && turns[0]?.role === 'user')
       s.title = turns[0].text.slice(0, 80);
@@ -254,7 +284,10 @@ export class SessionStore {
 
   private load(id: string): Stored | null {
     const f = this.file(id);
-    return fs.existsSync(f) ? readJsonOrEmpty<Stored>(f) : null;
+    if (!fs.existsSync(f)) return null;
+    const s = readJsonOrEmpty<Stored>(f);
+    if (migrateQueue(s)) writePrivateJson(f, s);
+    return s;
   }
 
   private save(s: Stored): void {
@@ -264,6 +297,17 @@ export class SessionStore {
 }
 
 function viewOf(s: Stored): AiSessionView {
-  const { id, scope, title, createdAt, updatedAt, turns, files, draft } = s;
-  return { id, scope, title, createdAt, updatedAt, turns, files, ...(draft ? { draft } : {}) };
+  const { id, scope, title, createdAt, updatedAt, turns, files, draft, suggestions, runIds } = s;
+  return {
+    id,
+    scope,
+    title,
+    createdAt,
+    updatedAt,
+    turns,
+    files,
+    ...(draft ? { draft } : {}),
+    ...(suggestions ? { suggestions } : {}),
+    ...(runIds ? { runIds } : {}),
+  };
 }

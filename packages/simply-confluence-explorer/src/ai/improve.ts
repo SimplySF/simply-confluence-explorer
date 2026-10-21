@@ -17,7 +17,7 @@
 // The prompt that asks for an edit of one page applying the suggestions a person chose from a
 // review, and the parsing of the answer (ADR-046).
 
-import type { BranchFix } from '../api/types.js';
+import type { BranchFix, BranchItem } from '../api/types.js';
 
 /**
  * The instruction for an edit that applies only the chosen suggestions, so nothing the person did
@@ -39,7 +39,7 @@ ${list}
 ${userPrompt ? `Additional User Instructions: "${userPrompt}"\n` : ''}
 CRITICAL RULES:
 1. Change only what the suggestions need. Keep every other sentence, heading, list and fact exactly as it is.
-2. Preserve existing YAML frontmatter at the very top (id, title, space, version, etc.).
+2. Return only the page's body. Never add the page's id, version, author, dates, address or breadcrumbs: the app keeps those, and they are not part of the page.
 3. When a suggestion concerns another page too, change only this page's part of it.
 4. Text written ⟦3 name⟧ is a marker for a part of the page that is not text, such as a macro, an image, a link or a layout. Keep every marker exactly as written, where its part belongs. Move or remove a marker only when a suggestion asks for that part to move or go, and never write a marker the page does not already have.
 5. A marker on a line of its own with a matching ⟦/3⟧ later holds the text between the two, such as the body of a panel or a column. You may edit that text; keep both markers, in order.
@@ -53,7 +53,7 @@ CRITICAL RULES:
 - Specific change 2 made to the page
 
 <<<PROPOSED_MARKDOWN>>>
-[Put the full, complete edited Markdown page here with its frontmatter. Do NOT wrap this section in outer backticks.]`;
+[Put the full, complete edited Markdown page here. Do NOT wrap this section in outer backticks.]`;
 }
 
 export type Recommendation = {
@@ -135,4 +135,52 @@ export function parseRecommendationResponse(raw: string): Recommendation {
     changelog: ['Enhanced formatting, section headers, and clarity.'],
     improvedMarkdown: unfence(text) || text,
   };
+}
+
+/**
+ * The instruction that checks suggestions made before a page changed against the page as it is now,
+ * so an edit never applies one the page already carries out or no longer needs (ADR-061).
+ *
+ * @param fixes The suggestions made before the page changed.
+ * @param changes What changed in the page since, or a note that the earlier version is not known.
+ */
+export function freshnessPrompt(fixes: BranchFix[], changes: string): string {
+  const list = fixes
+    .map((f, i) => `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}`)
+    .join('\n');
+  return `These suggestions for the page below were made before someone changed the page:
+${list}
+What changed since:
+${changes}
+For each suggestion, say whether it still applies to the page as it is now, is already done, or no longer makes sense.
+Reply with JSON only, in this shape:
+{"verdicts":[{"n":1,"verdict":"applies","why":"one short sentence"}]}
+Use "applies", "done" or "not-relevant" for each verdict.`;
+}
+
+/**
+ * Reads the answer to `freshnessPrompt`. A suggestion the answer does not judge, or an answer that
+ * cannot be read, keeps the suggestion, so it is still shown to the person rather than dropped.
+ *
+ * @param text The AI's answer.
+ * @param fixes The suggestions that were asked about, in the order they were listed.
+ */
+export function parseVerdicts(text: string, fixes: BranchFix[]): NonNullable<BranchItem['freshness']>['verdicts'] {
+  let judged: Array<{ n?: unknown; verdict?: unknown; why?: unknown }> = [];
+  try {
+    const raw = (JSON.parse(/\{[\s\S]*\}/.exec(text)?.[0] ?? '{}') as { verdicts?: unknown }).verdicts;
+    if (Array.isArray(raw)) judged = raw as typeof judged;
+  } catch {
+    // Unreadable: every suggestion is kept, as below.
+  }
+  return fixes.map((f, i) => {
+    const v = judged.find((j) => j.n === i + 1);
+    const verdict = v?.verdict === 'done' || v?.verdict === 'not-relevant' ? v.verdict : 'applies';
+    return {
+      suggestionId: f.suggestionId,
+      detail: f.detail,
+      verdict,
+      ...(typeof v?.why === 'string' ? { why: v.why.slice(0, 300) } : {}),
+    };
+  });
 }

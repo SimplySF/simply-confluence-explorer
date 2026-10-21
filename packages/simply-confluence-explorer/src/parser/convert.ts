@@ -36,6 +36,19 @@ export function parsePage(page: PageDetail): ParsedPage {
   };
 }
 
+/** The fields of a page's frontmatter: the app's record of the page, which is never text for the page. */
+export const RECORD_FIELDS = [
+  'id',
+  'title',
+  'space',
+  'version',
+  'author',
+  'updatedAt',
+  'labels',
+  'confluenceUrl',
+  'breadcrumbs',
+] as const;
+
 function frontmatterFields(page: PageDetail): Record<string, unknown> {
   const frontmatter: Record<string, unknown> = {
     id: page.id,
@@ -121,10 +134,19 @@ export function missingParts(before: string, after: string): string[] {
 }
 
 /**
- * Removes the frontmatter block that `parsePage` writes, so that it is never pushed into a page.
+ * Removes the frontmatter block that `parsePage` writes, so that it is never pushed into a page. A
+ * model that was shown a page can echo its title line and frontmatter, plain or in a yaml fence, so
+ * those are removed from the start too, however many times they repeat.
  *
  * @param markdown A page body that may start with frontmatter.
  */
 export function stripFrontmatter(markdown: string): string {
-  return markdown.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, '').replace(/^\s*\n/, '');
+  let text = markdown.replace(/^\uFEFF/, '');
+  for (let before = ''; before !== text;) {
+    before = text;
+    text = text
+      .replace(/^\s*# Document Title:[^\n]*(\n|$)/i, '')
+      .replace(/^\s*(?:```(?:ya?ml)?[ \t]*\r?\n)?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n```[ \t]*)?(\r?\n|$)/, '');
+  }
+  return text.replace(/^\s*\n/, '');
 }

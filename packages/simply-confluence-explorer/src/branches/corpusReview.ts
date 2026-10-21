@@ -20,6 +20,7 @@ import { AiStopped } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
 import { ManifestBuilder, mergeSummaries, summarise, type ManifestSummary } from '../ai/manifest.js';
 import { cutOffNote } from '../ai/reply.js';
+import { toSuggestions } from '../ai/chatQueue.js';
 import { historyToSend, type SessionStore } from '../ai/sessions.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
@@ -285,7 +286,7 @@ export class CorpusReviews {
     const withheld: string[] = [];
     const overflow: string[] = [];
     const unread: string[] = [];
-    const titles = new Map<string, string>();
+    const read = new Map<string, { id: string; title: string; version: number }>();
     try {
       for (const batch of batches) {
         if (this.jobs.isCancelled(job.jobId)) return;
@@ -297,7 +298,9 @@ export class CorpusReviews {
         withheld.push(...result.withheld);
         overflow.push(...result.overflow);
         if (result.pages.length > 0) {
-          result.pages.forEach((p) => titles.set(p.page.title, p.page.id));
+          result.pages.forEach((p) =>
+            read.set(p.page.id, { id: p.page.id, title: p.page.title, version: p.page.version }),
+          );
           const manifest = new ManifestBuilder();
           const context = pagesAsContext(result, manifest);
           manifest.includeTurns(
@@ -340,13 +343,12 @@ export class CorpusReviews {
       this.stoppers.delete(job.jobId);
     }
     const findings = mergeFindings(found);
-    const named = new Set(findings.flatMap((f) => f.pages));
     const now = new Date().toISOString();
     const turns: SessionTurn[] = [
       { role: 'user', text: request.shown, at: now },
       {
         role: 'assistant',
-        text: `${findings.length} suggestion${findings.length === 1 ? '' : 's'} from ${job.pages} pages, read in ${batches.length} batches. Tick the ones to queue as edits.`,
+        text: `${findings.length} suggestion${findings.length === 1 ? '' : 's'} from ${job.pages} pages, read in ${batches.length} batches, added to the review queue.`,
         at: now,
         guardSummary:
           withWithheld({ blocked: [], redacted: {}, summary: 'Leak guard: checked every batch.' }, withheld).summary +
@@ -354,11 +356,13 @@ export class CorpusReviews {
           (unread.length ? ` Not reviewed, because the AI's reply could not be read twice: ${unread.join(', ')}.` : ''),
         engine: ai.getEngine(),
         corpus: { pages: job.pages, mode: 'batched', batches: batches.length },
-        findings,
-        pageIds: Object.fromEntries([...titles].filter(([title]) => named.has(title))),
       },
     ];
-    sessions.addTurns(session.id, turns, guard.exportState());
+    sessions.addTurns(session.id, turns, guard.exportState(), (list, turn) => {
+      const added = toSuggestions(findings, [...read.values()], turn);
+      list.push(...added);
+      return { added: added.length, updated: 0, removed: 0 };
+    });
   }
 
   private async runAnswer(job: BatchProgress, request: ThoroughRequest, signal: AbortSignal): Promise<void> {

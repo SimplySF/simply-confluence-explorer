@@ -316,12 +316,6 @@ export type SessionTurn = {
    * several requests, so it is `retrieved` with `batches` set.
    */
   corpus?: { pages: number; mode: 'full' | 'retrieved' | 'batched'; batches?: number };
-  /** On an answer that suggested changes: the suggestions, stored here so the browser never supplies them. */
-  findings?: BranchFinding[];
-  /** The pages the answer read, by title, so a suggestion's pages can be found. */
-  pageIds?: Record<string, string>;
-  /** The queues of edits staged from this answer's suggestions. */
-  runIds?: string[];
   /** The trace that recorded how this answer was made, for the Observability page (ADR-054). */
   traceId?: string;
   /** What was sent to the model for this answer, and what was left out with why (ADR-054). */
@@ -334,8 +328,56 @@ export type SessionTurn = {
   proposedDraft?: string;
   /** On a co-writer's answer: a proposed series, an overview page then its child pages. */
   proposedSeries?: SeriesPage[];
+  /** On an answer about an open edit: the complete revised text it proposed for that page. */
+  proposedEdit?: { runId: string; pageId: string; title: string; text: string };
   /** The author accepted or dismissed this answer's proposal, so it is not offered again. */
   proposalClosed?: boolean;
+  /** On an answer that changed the chat's suggestions: how many it added, updated and removed. */
+  queued?: { added: number; updated: number; removed: number };
+};
+
+/**
+ * A suggestion in a chat's review queue (ADR-060). Its state beyond open or dismissed (being edited,
+ * edited, already done, no longer relevant) is read from the runs made from it, not stored here.
+ */
+export type QueuedSuggestion = BranchFinding & {
+  /** 12 hex characters, which the chat and the browser name it by. */
+  id: string;
+  /** The pages it names, by title, with their ids. */
+  pageIds: Record<string, string>;
+  /** The version of each named page when it was suggested, so a page changed since is checked again. */
+  seenVersions: Record<string, number>;
+  fromTurn: number;
+  /** Earlier wordings, newest last, each with the turn that changed it. */
+  history?: Array<{ detail: string; suggestion?: string; turn: number }>;
+  dismissed?: 'you' | 'chat';
+};
+
+/** A queued suggestion with the state the chat's runs give it. */
+export type SuggestionView = QueuedSuggestion & {
+  state: 'open' | 'dismissed' | 'editing' | 'edited' | 'done' | 'not-relevant' | 'skipped';
+  /** Why it is done, not relevant or skipped, from the check against the page as it is now. */
+  why?: string;
+  runId?: string;
+  /** Its edit was made from an earlier wording of it. */
+  outdated?: boolean;
+};
+
+/** A chat's queues: its suggestions and the runs of edits made from them. */
+export type ChatQueue = { suggestions: SuggestionView[]; runs: BranchRun[] };
+
+/** A staged page ready to push, with the chat it came from, for the space's push queue. */
+export type StagedPage = {
+  sessionId: string;
+  chatTitle: string;
+  /** For a page's chat, the page, whose Chat tab holds it; a Space chat has none. */
+  chatPageId?: string;
+  runId: string;
+  pageId: string;
+  title: string;
+  accepted: number;
+  status: BranchItemStatus;
+  message?: string;
 };
 
 export type SessionFileInfo = {
@@ -358,6 +400,10 @@ export type AiSessionView = {
   files: SessionFileInfo[];
   /** On a draft conversation: the page being written. */
   draft?: DraftState;
+  /** The chat's review queue (ADR-060). */
+  suggestions?: QueuedSuggestion[];
+  /** The runs of edits made from the chat's suggestions, oldest first. */
+  runIds?: string[];
 };
 
 /** An existing page that may already say what a new page is meant to. */
@@ -413,6 +459,8 @@ export type WriteResult = {
 
 export type BranchItemStatus =
   | 'pending'
+  /** Reading the page from Confluence and checking its suggestions still apply (ADR-061). */
+  | 'checking'
   | 'working'
   | 'proposed'
   | 'accepted'
@@ -430,6 +478,10 @@ export type BranchFix = {
   detail: string;
   suggestion?: string;
   otherPages: string[];
+  /** The chat suggestion it came from, worded as it was when the edit was made. */
+  suggestionId?: string;
+  /** The page's version when it was suggested. */
+  seenVersion?: number;
 };
 
 /** A part of a page the text stands in for with a marker, such as a macro or an image (ADR-058). */
@@ -459,7 +511,7 @@ export type BranchItem = {
   /** The page version the proposal was made from; a push is refused if the page has moved on. */
   baseVersion: number;
   status: BranchItemStatus;
-  /** The page as the model was given it: its frontmatter, then its edit form (ADR-058). */
+  /** The page as the model was given it, its edit form (ADR-058); unset until the page is read. */
   original?: string;
   /** The model's edit, kept as it was, so the working text can be reset to it. */
   suggested?: string;
@@ -471,6 +523,8 @@ export type BranchItem = {
   drops?: Record<number, string[]>;
   /** The changes from the page to the working text, each with its decision. */
   changes?: PageChange[];
+  /** The page in order, as unchanged blocks and changes, so the two can be shown side by side. */
+  rows?: Array<{ same: string } | { change: string }>;
   /** The decisions made, by change id. */
   decisions?: Record<string, 'accepted' | 'rejected'>;
   /** What a push writes: the page's text with only the accepted changes applied. */
@@ -483,6 +537,23 @@ export type BranchItem = {
   pushedVersion?: number;
   /** The suggestions this page's edit applies. */
   fixes?: BranchFix[];
+  /** The last revision the chat proposed and the person accepted, which counts as the AI's. */
+  refined?: string;
+  /** Picked to be pushed; any later change to the edit unpicks it, so what is pushed was looked at. */
+  staged?: boolean;
+  /**
+   * The check made before the edit (ADR-061): the version read, and for each suggestion made before
+   * the page changed, whether it still applies.
+   */
+  freshness?: {
+    version: number;
+    verdicts: Array<{
+      suggestionId?: string;
+      detail: string;
+      verdict: 'applies' | 'done' | 'not-relevant';
+      why?: string;
+    }>;
+  };
 };
 
 /** Something a review found that a maintainer should fix. */
