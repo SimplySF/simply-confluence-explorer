@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.4.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.3.0...%40simplysf%2Fsimply-confluence-explorer%400.4.0) (2026-10-21)
+
+### Features
+
+- pages with macros can be changed, and each change is accepted or rejected on its own ([#33](https://github.com/SimplySF/simply-confluence-explorer/issues/33)) ([02118d3](https://github.com/SimplySF/simply-confluence-explorer/commit/02118d30511a6df9177b9a59545f121d7f5d54df))
+
 # [0.3.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.2.0...%40simplysf%2Fsimply-confluence-explorer%400.3.0) (2026-10-20)
 
 ### Bug Fixes

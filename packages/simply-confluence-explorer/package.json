@@ -1,7 +1,7 @@
 {
   "name": "@simplysf/simply-confluence-explorer",
   "description": "A local web app for browsing and exploring Confluence spaces and pages",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "@ClayChipps",
   "homepage": "https://github.com/SimplySF/simply-confluence-explorer",
   "bugs": "https://github.com/SimplySF/simply-confluence-explorer/issues",
