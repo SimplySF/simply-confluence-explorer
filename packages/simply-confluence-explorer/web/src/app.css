@@ -2429,6 +2429,15 @@ div.disclosure-body {
   cursor: pointer;
   font: inherit;
 }
+.chat-context-tags.collapsed {
+  max-height: 3.4rem;
+  overflow: hidden;
+}
+.chat-context-tags.listed {
+  max-height: 220px;
+  overflow-y: auto;
+  align-content: flex-start;
+}
 .chat-context-tag.active {
   background: var(--accent-light);
   border-color: var(--accent-primary);
