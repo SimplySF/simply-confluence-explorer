@@ -206,6 +206,7 @@ export class BranchRunner {
 
   public get(id: string): BranchRun {
     const run = this.live.get(id) ?? this.store.get(id);
+    if (run.status === 'running' && !this.live.has(id)) this.interrupted(run);
     // A run saved before edits were decided change by change has an edit but no changes yet.
     for (const item of run.items)
       if (item.proposed !== undefined && item.changes === undefined) {
@@ -431,6 +432,20 @@ export class BranchRunner {
         ...result.overflow.map((title) => `${title} (over the size limit)`),
       ],
     };
+  }
+
+  /**
+   * Settles a run saved as running that no request is filling, because the app stopped while it
+   * was: its unfinished pages are marked failed, with why, so each can be made again with Redo.
+   */
+  private interrupted(run: BranchRun): void {
+    for (const item of run.items)
+      if (item.status === 'pending' || item.status === 'working') {
+        item.status = 'failed';
+        item.message = 'The app stopped while this edit was being written.';
+      }
+    run.status = run.kind === 'review' ? 'failed' : 'ready';
+    this.store.save(run);
   }
 
   private begin(run: BranchRun): AbortSignal {

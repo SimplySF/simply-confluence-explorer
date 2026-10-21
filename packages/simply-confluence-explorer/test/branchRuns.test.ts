@@ -18,6 +18,8 @@
 // edit per page, and nothing is written that a person did not accept, each write checked against the
 // version its edit was made from (ADR-024, ADR-049).
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AiSessionView, BranchFinding, BranchItem, BranchRun } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
@@ -574,6 +576,28 @@ describe("a page's own record, its id, version, author and the like", () => {
       const added = itemOf(edited, guide()).changes!.find((c) => c.after.includes('updatedAt'))!;
       expect(added.problem).toContain("the app's record of the page");
       expect((await decideChange(app, run.id, guide(), added.id, 'accept')).status).toBe(409);
+    });
+  });
+});
+
+describe('a run the app stopped while it was writing edits', () => {
+  it('does not stay running after a restart, and its unfinished page can be made again', async () => {
+    await withApp(answer, async (app) => {
+      const run = await staged(app, [1]);
+      // As the file is left when the app stops while the page's edit is being written.
+      const file = path.join(app.dataDir, 'data', 'branch-runs', `${run.id}.json`);
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as BranchRun;
+      saved.status = 'running';
+      Object.assign(itemOf(saved, guide()), { status: 'working', proposed: undefined, changes: undefined });
+      fs.writeFileSync(file, JSON.stringify(saved));
+      const read = (await app.call<BranchRun>('GET', `/branches/runs/${run.id}`)).body;
+      expect(read.status).toBe('ready');
+      expect(itemOf(read, guide())).toMatchObject({
+        status: 'failed',
+        message: 'The app stopped while this edit was being written.',
+      });
+      await app.call('POST', `/branches/runs/${run.id}/items/${guide()}/redo`);
+      expect(itemOf(await settled(app, run.id), guide()).status).toBe('proposed');
     });
   });
 });
