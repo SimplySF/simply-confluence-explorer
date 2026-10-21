@@ -90,10 +90,19 @@ export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Mes
 
 const withCutOff = (text: string, cutOff: Reply['cutOff']): Reply => (cutOff ? { text, cutOff } : { text });
 
-async function anthropic(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<Reply> {
+async function anthropic(
+  cfg: ResolvedApi,
+  system: string,
+  messages: Messages,
+  signal?: AbortSignal,
+  onText?: (text: string) => void,
+): Promise<Reply> {
   const client = new Anthropic({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
-  // Streamed, because page context can be long, and a long request that is not streamed can time out.
-  const message = await client.beta.messages.stream(anthropicRequest(cfg, system, messages), { signal }).finalMessage();
+  // Streamed, because page context can be long, and a long request that is not streamed can time out;
+  // the text so far is passed on as it arrives.
+  const stream = client.beta.messages.stream(anthropicRequest(cfg, system, messages), { signal });
+  if (onText) stream.on('text', (_delta: string, snapshot: string) => onText(snapshot));
+  const message = await stream.finalMessage();
   if (message.stop_reason === 'refusal') {
     const category = message.stop_details?.category;
     throw new Error(`Claude declined this request${category ? ` (${category})` : ''}`);
@@ -139,10 +148,12 @@ export async function complete(
   cfg: ResolvedApi,
   payload: GuardedPayload,
   signal?: AbortSignal,
+  onText?: (text: string) => void,
 ): Promise<Reply> {
   if (!cfg.apiKey) throw new Error(`no API key is set for ${provider}`);
   if (!cfg.model) throw new Error(`no model is chosen for ${provider}`);
-  const run = { anthropic, openai, gemini }[provider];
+  if (provider === 'anthropic') return anthropic(cfg, payload.system, payload.messages, signal, onText);
+  const run = { openai, gemini }[provider];
   return run(cfg, payload.system, payload.messages, signal);
 }
 

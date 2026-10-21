@@ -3032,10 +3032,6 @@ div.disclosure-body {
 .queue-bar .branch-note {
   margin-right: auto;
 }
-.queue-group h4 {
-  margin: 0.8rem 0 0.4rem;
-  font-size: 0.85rem;
-}
 .queue-row {
   display: flex;
   flex-wrap: wrap;
@@ -3185,4 +3181,57 @@ div.disclosure-body {
   .change-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Changes, one group per run of edits, and an edit being written. */
+.queue-section {
+  margin: 0.8rem 0 0.3rem;
+  font-size: 0.85rem;
+  cursor: default;
+}
+.queue-closed > summary {
+  cursor: pointer;
+}
+.queue-group h5 {
+  margin: 0.5rem 0 0.3rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.run-group {
+  margin-bottom: 0.9rem;
+}
+.run-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  margin-bottom: 0.35rem;
+}
+.run-step {
+  color: var(--accent-primary);
+}
+.run-not-edited {
+  font-size: 0.78rem;
+  margin-top: 0.3rem;
+}
+.edit-progress {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+}
+.edit-steps {
+  font-size: 0.8rem;
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+.edit-writing {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  max-height: 260px;
+  overflow: auto;
+  background: var(--bg-panel-secondary);
+  border-radius: 4px;
+  padding: 0.4rem;
 }

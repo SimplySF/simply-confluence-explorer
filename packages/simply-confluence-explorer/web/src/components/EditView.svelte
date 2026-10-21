@@ -140,6 +140,30 @@
           </div>
         </div>
       {/if}
+      {#if item.proposed === undefined && ['pending', 'checking', 'working'].includes(item.status)}
+        <div class="edit-progress">
+          <strong>This edit is being written</strong>
+          <p class="branch-note">It opens here for you to decide as soon as it is ready.</p>
+          <ol class="edit-steps">
+            {#each item.steps ?? [] as s, n (n)}
+              <li>
+                <span class="muted"
+                  >{new Date(s.at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}</span
+                >
+                {s.text}
+              </li>
+            {:else}<li>Waiting for a free request to the AI.</li>{/each}
+          </ol>
+          {#if item.writing}
+            <p class="branch-note">The answer so far, {item.writing.chars.toLocaleString()} characters; its end:</p>
+            <pre class="edit-writing">{item.writing.tail}</pre>
+          {/if}
+        </div>
+      {/if}
       {#if item.proposed !== undefined}
         <div class="branch-toolbar">
           <Segmented
@@ -248,6 +272,14 @@
       {/if}
       {#if item.critique?.length && !(item.critique.length === 1 && /^none\.?$/i.test(item.critique[0]))}
         <p class="branch-note">Not applied: {item.critique.join(' ')}</p>
+      {/if}
+      {#if item.steps?.length && item.proposed !== undefined}
+        <details class="branch-note">
+          <summary>How this edit was made</summary>
+          <ol class="edit-steps">
+            {#each item.steps as s, n (n)}<li>{s.text}</li>{/each}
+          </ol>
+        </details>
       {/if}
       <h5>Refine with the chat</h5>
       {#if focused}

@@ -168,9 +168,35 @@ describe("a chat's review queue", () => {
     await withApp(async (app) => {
       const chat = await reviewedChat(app);
       const run = await recommended(app, chat, [0]);
-      expect((await queueOf(app, chat.id)).suggestions[0]).toMatchObject({ state: 'edited', runId: run.id });
+      expect((await queueOf(app, chat.id)).suggestions[0]).toMatchObject({ state: 'to-decide', runId: run.id });
       await ask(app, chat.id, 'Reword the first');
-      expect((await queueOf(app, chat.id)).suggestions[0]).toMatchObject({ state: 'edited', outdated: true });
+      expect((await queueOf(app, chat.id)).suggestions[0]).toMatchObject({ state: 'to-decide', outdated: true });
+    });
+  });
+
+  it('follows each suggestion from its edit being decided to staged and pushed', async () => {
+    await withApp(async (app) => {
+      const chat = await reviewedChat(app);
+      const run = await recommended(app, chat, [1]);
+      const stateOf = async (): Promise<string> => (await queueOf(app, chat.id)).suggestions[1].state;
+      expect(await stateOf()).toBe('to-decide');
+      await acceptAll(app, run, guide());
+      await stage(app, run, guide());
+      expect(await stateOf()).toBe('staged');
+      await app.call('POST', `/branches/runs/${run.id}/push`);
+      expect(await stateOf()).toBe('pushed');
+    });
+  });
+
+  it('does not make a second edit of a suggestion whose edit waits, until the chat rewords it', async () => {
+    await withApp(async (app) => {
+      const chat = await reviewedChat(app);
+      await recommended(app, chat, [0]);
+      const again = (): Promise<{ status: number }> =>
+        app.call('POST', `/ai/sessions/${chat.id}/suggestions/recommend`, { ids: [chat.suggestions![0].id] });
+      expect((await again()).status).toBe(409);
+      await ask(app, chat.id, 'Reword the first');
+      expect((await again()).status).toBe(200);
     });
   });
 

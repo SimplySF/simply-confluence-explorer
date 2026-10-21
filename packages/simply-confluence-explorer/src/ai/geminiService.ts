@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import type { GuardedPayload } from './guard.js';
 import type { Reply } from './reply.js';
 
@@ -95,6 +96,7 @@ export function runGeminiCli(
   payload: GuardedPayload,
   env: NodeJS.ProcessEnv,
   signal?: AbortSignal,
+  onText?: (text: string) => void,
 ): Promise<Reply> {
   const systemPrompt = payload.system;
   // The CLI takes one prompt, so a conversation is written out as a transcript.
@@ -111,12 +113,20 @@ export function runGeminiCli(
     });
 
     // Output is gathered as bytes and decoded once, so a character split between two chunks arrives whole.
+    // The text so far is decoded as it comes too, by a decoder that holds back a split character.
     const stdout: Buffer[] = [];
+    const decoder = new StringDecoder('utf8');
+    let soFar = '';
     const stderr: Buffer[] = [];
 
     child.stdin.on('error', (err) => reject(new Error(`Gemini CLI closed its input: ${err.message}`)));
     child.stdin.end(`INSTRUCTIONS:\n${systemPrompt}\n\nDOCUMENT:\n${documentContext}`);
-    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout.push(chunk);
+      if (!onText) return;
+      soFar += decoder.write(chunk);
+      onText(soFar);
+    });
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
     child.on('error', (err) =>
       reject(

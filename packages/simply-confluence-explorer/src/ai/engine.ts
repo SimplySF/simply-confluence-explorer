@@ -48,6 +48,8 @@ export type AiContext = {
   guard?: OutboundGuard;
   /** Aborts the request when the person stops it (ADR-047). */
   signal?: AbortSignal;
+  /** Told the answer so far while it is written, where the provider streams it, so progress can be shown. */
+  onText?: (text: string) => void;
 };
 
 /** A request the person stopped. Nothing may act on its answer, even one that arrives afterwards. */
@@ -85,7 +87,11 @@ export type ChatParts = {
 };
 
 /** Sends a guarded payload and returns the reply. The real one calls a provider or the CLI. */
-export type Transport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<string | Reply>;
+export type Transport = (
+  payload: GuardedPayload,
+  signal?: AbortSignal,
+  onText?: (text: string) => void,
+) => Promise<string | Reply>;
 /** Embeds each message of a guarded payload. The real one calls a provider. */
 export type EmbedTransport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<number[][]>;
 
@@ -258,9 +264,9 @@ export class ConfiguredAi implements AiEngine {
     return embed(provider, this.settings.resolve().api[provider], payload, signal);
   }
 
-  private async send(payload: GuardedPayload, signal?: AbortSignal): Promise<Reply> {
+  private async send(payload: GuardedPayload, signal?: AbortSignal, onText?: (text: string) => void): Promise<Reply> {
     if (this.options.transport) {
-      const reply = await this.options.transport(payload, signal);
+      const reply = await this.options.transport(payload, signal, onText);
       return typeof reply === 'string' ? { text: reply } : reply;
     }
     const s = this.settings.resolve();
@@ -270,16 +276,16 @@ export class ConfiguredAi implements AiEngine {
         throw new Error(
           'The Gemini CLI was not found. Install it, set its path in Settings, or choose an API provider.',
         );
-      return runGeminiCli(cli, payload, this.options.env, signal);
+      return runGeminiCli(cli, payload, this.options.env, signal, onText);
     }
-    return complete(s.provider, s.api[s.provider], payload, signal);
+    return complete(s.provider, s.api[s.provider], payload, signal, onText);
   }
 
   private async deliver(
     payload: GuardedPayload,
     report: GuardReport,
     guard: OutboundGuard,
-    { spaceKey, signal }: AiContext,
+    { spaceKey, signal, onText }: AiContext,
     manifest: Attrs = {},
   ): Promise<AiAnswer> {
     if (signal?.aborted) throw new AiStopped();
@@ -293,7 +299,14 @@ export class ConfiguredAi implements AiEngine {
     };
     let reply: Reply;
     try {
-      reply = await this.traced('complete', { ...entry, ...manifest }, () => this.send(payload, signal), signal);
+      // The answer so far has its placeholders put back too, so progress shows what the person will read.
+      const progress = onText && ((text: string): void => onText(guard.restore(text)));
+      reply = await this.traced(
+        'complete',
+        { ...entry, ...manifest },
+        () => this.send(payload, signal, progress),
+        signal,
+      );
     } catch (error) {
       // Recorded either way: a request that failed or was stopped part of the way through may still
       // have been sent.

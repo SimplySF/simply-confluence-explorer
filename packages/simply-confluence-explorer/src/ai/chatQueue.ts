@@ -20,7 +20,14 @@
 // supplies a suggestion.
 
 import crypto from 'node:crypto';
-import type { BranchFinding, BranchRun, QueuedSuggestion, SessionTurn, SuggestionView } from '../api/types.js';
+import type {
+  BranchFinding,
+  BranchItem,
+  BranchRun,
+  QueuedSuggestion,
+  SessionTurn,
+  SuggestionView,
+} from '../api/types.js';
 
 const KINDS = new Set<string>([
   'incorrect',
@@ -190,27 +197,59 @@ function isFinding(f: Record<string, unknown>): f is BranchFinding & Record<stri
   );
 }
 
+type State = SuggestionView['state'];
+/** The state an edit's status gives its suggestion. */
+function stateOf(item: BranchItem): State {
+  if (['pending', 'checking', 'working'].includes(item.status)) return 'writing';
+  if (item.status === 'pushed') return 'pushed';
+  if (item.status === 'skipped') return 'skipped';
+  if (item.status === 'rejected') return 'rejected';
+  if (['failed', 'push-failed', 'check-failed'].includes(item.status)) return 'failed';
+  return item.staged ? 'staged' : 'to-decide';
+}
+// A suggestion on several pages is as far along as its least finished edit.
+const PROGRESS: State[] = ['writing', 'to-decide', 'failed', 'staged', 'pushed', 'rejected', 'skipped'];
+
 /**
  * Each suggestion with the state the chat's runs give it: the newest run that carries it decides
- * whether it is being edited, edited, already done or no longer relevant.
+ * whether it is being written, waiting to be decided, staged, pushed, failed, already done or no
+ * longer relevant.
  */
 export function suggestionViews(suggestions: QueuedSuggestion[], runs: BranchRun[]): SuggestionView[] {
   return suggestions.map((s): SuggestionView => {
     if (s.dismissed) return { ...s, state: 'dismissed' };
     for (const run of [...runs].reverse()) {
-      for (const item of run.items) {
-        const verdict = item.freshness?.verdicts.find((v) => v.suggestionId === s.id);
+      const verdict = run.items.flatMap((i) => i.freshness?.verdicts ?? []).find((v) => v.suggestionId === s.id);
+      const items = run.items.filter((i) => i.fixes?.some((f) => f.suggestionId === s.id));
+      const live = items.filter((i) => stateOf(i) !== 'writing' || run.status === 'running');
+      if (live.length === 0) {
         if (verdict && verdict.verdict !== 'applies')
           return { ...s, state: verdict.verdict, why: verdict.why, runId: run.id };
-        const fix = item.fixes?.find((f) => f.suggestionId === s.id);
-        if (!fix) continue;
-        const unfinished = ['pending', 'checking', 'working'].includes(item.status);
-        if (unfinished && run.status !== 'running') continue;
-        const outdated = fix.detail !== s.detail || (fix.suggestion ?? '') !== (s.suggestion ?? '');
-        if (item.status === 'skipped') return { ...s, state: 'skipped', why: item.message, runId: run.id };
-        return { ...s, state: unfinished ? 'editing' : 'edited', runId: run.id, ...(outdated ? { outdated } : {}) };
+        continue;
       }
+      const states = live.map(stateOf);
+      const state = PROGRESS.find((p) => states.includes(p)) ?? 'to-decide';
+      const fix = live[0].fixes!.find((f) => f.suggestionId === s.id)!;
+      const outdated = fix.detail !== s.detail || (fix.suggestion ?? '') !== (s.suggestion ?? '');
+      const why = live.find((i) => i.message && ['failed', 'skipped'].includes(stateOf(i)))?.message;
+      return {
+        ...s,
+        state,
+        runId: run.id,
+        editPageIds: live.map((i) => i.pageId),
+        ...(why ? { why } : {}),
+        ...(outdated ? { outdated } : {}),
+      };
     }
     return { ...s, state: 'open' };
   });
+}
+
+/**
+ * Whether a suggestion may be picked to make an edit. One whose edit is being written, or waits to
+ * be decided or pushed, is not picked again unless the chat has reworded it since.
+ */
+export function pickable(s: SuggestionView): boolean {
+  if (s.state === 'writing' || s.state === 'dismissed') return false;
+  return !['to-decide', 'staged'].includes(s.state) || !!s.outdated;
 }
