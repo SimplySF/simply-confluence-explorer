@@ -18,35 +18,33 @@
 // page's tags are the topic tags from its AI summary together with its Confluence labels, so a space
 // without summaries still has tags (ADR-046).
 
-import type { PageDetail, PageMetadata, TaggedPages } from '../api/types.js';
-import { mapChunked } from '../util/pause.js';
+import type { PageDetail, TaggedPages } from '../api/types.js';
 import type { SpaceStore } from './spaceStore.js';
 
 /** A page's tags, lower-cased, each once. */
-export function tagsOf(page: Pick<PageDetail, 'labels'>, metadata?: Pick<PageMetadata, 'tags'>): string[] {
+export function tagsOf(page: Pick<PageDetail, 'labels'>, metadata?: { tags?: string[] }): string[] {
   const all = [...page.labels, ...(metadata?.tags ?? [])].map((t) => t.trim().toLowerCase()).filter(Boolean);
   return [...new Set(all)];
 }
 
 /**
- * Every tag in a synced space with the pages that carry it, most-used first. Only pages the
- * exclusion rules allow are read, so an excluded page is never listed, nor its title sent anywhere.
+ * Every tag in a synced space with the pages that carry it, most-used first, from the space's
+ * catalog (ADR-064), so no page file is read. An excluded page is never listed, nor its title sent
+ * anywhere.
  *
  * @param store The synced copy.
  * @param spaceKey The space.
  */
 export async function tagIndex(store: SpaceStore, spaceKey: string): Promise<TaggedPages[]> {
   const byTag = new Map<string, TaggedPages['pages']>();
-  const visible = await store.visiblePages(spaceKey);
-  const metadata = await mapChunked(visible, (page) => store.readMetadata(spaceKey, page.id));
-  for (const [i, page] of visible.entries()) {
+  for (const page of await store.visibleEntries(spaceKey)) {
     const entry = {
       id: page.id,
       title: page.title,
       path: page.ancestors.map((a) => a.title).join(' › '),
-      summary: metadata[i]?.summary,
+      summary: page.summary,
     };
-    for (const tag of tagsOf(page, metadata[i])) byTag.set(tag, [...(byTag.get(tag) ?? []), entry]);
+    for (const tag of tagsOf(page, page)) byTag.set(tag, [...(byTag.get(tag) ?? []), entry]);
   }
   return [...byTag]
     .map(([tag, pages]) => ({ tag, pages: pages.sort((a, b) => a.title.localeCompare(b.title)) }))

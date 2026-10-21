@@ -108,6 +108,8 @@ export function addBrowseRoutes(router: Router, services: Services): Router {
         const spaceKey = params.spaceKey.toUpperCase();
         const rootPageId = query.get('rootPageId') ?? undefined;
         if (query.get('forceLive') !== 'true' && store.isSynced(spaceKey)) {
+          // Built from the space's catalog, letting other requests through if it is built for the first time.
+          await store.treeReady(spaceKey);
           return { tree: store.tree(spaceKey, rootPageId), isLocal: true };
         }
         const tree = await client().getPageTree(spaceKey, rootPageId);
