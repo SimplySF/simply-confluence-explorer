@@ -720,3 +720,31 @@ describe('edits written for several pages', () => {
     });
   });
 });
+
+describe('a run stopped while its first page is written, one request at a time', () => {
+  it('takes no new page once stopped', async () => {
+    const asked: string[] = [];
+    const reply = (payload: GuardedPayload, _n: number, signal?: AbortSignal): string | Promise<string> => {
+      const text = textOf(payload);
+      if (!text.includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      asked.push(/^# Document Title: (.+)$/m.exec(text)?.[1] ?? '');
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('stopped'))));
+    };
+    await withApp(reply, async (app) => {
+      await app.call('PUT', '/ai/settings', { parallel: 1 });
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const { body: started } = await recommend(app, c.id, [0]);
+      while (asked.length === 0)
+        // eslint-disable-next-line no-await-in-loop -- waiting for the first page's request
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      await app.call('POST', `/branches/runs/${started.id}/cancel`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(asked).toHaveLength(1);
+      const run = await settled(app, started.id);
+      expect(run.items.every((i) => i.status === 'pending')).toBe(true);
+      // The page the stop came before was never even read from Confluence.
+      expect(run.items.filter((i) => i.steps?.length)).toHaveLength(1);
+    });
+  });
+});
