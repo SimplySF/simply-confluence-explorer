@@ -29,7 +29,7 @@ The app has three ways to write to Confluence, and all of them go through a sing
 | `/api/ai/sessions/:id/turns/...`  | Stages an edit per page from the suggestions a person ticked in a chat's answer (ADR-049).                   |
 | `POST /api/pages/:pageId/dry-run` | Converts the proposal to Confluence's format without writing it, and reports anything the converter rejects. |
 | `POST /api/pages/:pageId/push`    | Writes the proposal to Confluence, stating which version of the page it was made from.                       |
-| `/api/branches/runs/...`          | Reads a queue of staged edits; accepts, edits or rejects each page; and pushes the accepted ones.            |
+| `/api/branches/runs/...`          | Reads a queue of staged edits; accepts or rejects each change; and pushes the accepted changes.              |
 | `/api/drafts/...`                 | Creates a new page: runs the redundancy check, supports writing the page with the AI, and creates it.        |
 
 - **An edit is made from the server's own copy of the page**, after the exclusion check, as a
@@ -37,17 +37,15 @@ The app has three ways to write to Confluence, and all of them go through a sing
 - **A push states the version it was made from.** If the page has changed in Confluence since the
   proposal was made, the push is refused with a "changed since" message. The app never tries to
   merge the two versions, because a merge could quietly drop someone else's edit.
-- **A page is never written from Markdown if Markdown cannot carry all of it** (ADR-041). Markdown
-  has no form for an image, a macro such as a status label or a panel, a link to another page, a
-  mention or a task list, so the converted page shows each as placeholder text. Writing that text
-  back would replace the real thing, so the dry run and the push refuse such a page and name what it
-  would lose.
+- **A part Markdown cannot carry is never lost** (ADR-041, ADR-058). An image, a macro, a link to
+  another page, a mention, a task list or a layout is edited as a marker and written back exactly,
+  as is every block a change leaves alone; a part missing from the result refuses the write unless
+  a person accepted removing it (design doc 0009).
 - **The page on disk is kept accurate.** Frontmatter, the block of metadata at the top of each saved
   page, is removed before the page is converted, so it never ends up in Confluence. After a push,
   the local copy's body and version are refreshed from what Confluence now holds.
-- **A branch's queue writes only the pages a person accepted.** It pushes them one at a time and
-  reports the result for each page (ADR-024). The queue is saved to disk, so it survives a restart
-  of the server.
+- **A branch's queue writes only the changes a person accepted** (ADR-024, ADR-059), a page at a
+  time, and reports the result for each page. It is saved to disk, so it survives a restart.
 - **A new page is created only after the redundancy check has been answered** (ADR-025). The check
   looks for existing pages that already cover the same topic, and the author must decide what to do
   about them. If the title is already taken, the app reports that the title is a duplicate.

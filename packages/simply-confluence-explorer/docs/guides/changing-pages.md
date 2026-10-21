@@ -1,6 +1,6 @@
 ---
 title: Changing pages from a chat
-description: Ask a chat for suggestions, tick the ones you want, read each page's edit, and push the accepted ones to Confluence without overwriting anyone else's change.
+description: Ask a chat for suggestions, tick the ones you want, accept or reject each change to each page, and push the accepted changes to Confluence without overwriting anyone else's edit.
 sidebar:
   order: 6
 ---
@@ -8,8 +8,8 @@ sidebar:
 Every change Confluence Explorer makes to a page starts in a chat (see
 [Asking an AI](/guides/asking-ai/)): one page, a directory, any mix of directories, pages and tags,
 or the whole space.
-You ask for suggestions, tick the ones you agree with, read the edit each page gets, and push only
-what you accept. Nothing changes in Confluence until you confirm a push.
+You ask for suggestions, tick the ones you agree with, decide on each change the edits make, and
+push only the changes you accept. Nothing changes in Confluence until you confirm a push.
 
 ## Get suggestions
 
@@ -45,38 +45,46 @@ rest of the page as it is; when a suggestion is about repetition across two page
 is told which other page shares the content. The edits arrive one page at a time under the
 suggestions, and the header shows them while they are being written. **Stop** ends it at once.
 
-![The queue of edits, with one page's changes and its Accept and Reject buttons](../images/chat-queue.webp)
+![The queue of edits, with one page's changes and their Accept and Reject buttons](../images/chat-queue.webp)
 
-For each page, read the suggestions it applies and its **Changes**, then **Accept** it, **Edit** it and
-**Accept with my edits**, or **Reject** it. **Undecide** puts it back. Each edit is made from the app's
-own copy of the page, after the exclusion check, and remembers the version of the page it was made
-from.
+## Decide each change
+
+Each page's edit is shown as a list of **changes**: a rewritten paragraph, an added step, a removed
+sentence. Each card shows the text before and after, with the words that differ marked, and says
+whether the AI suggested it or you wrote it. **Accept** or **Reject** each one, and **Undo** a
+decision to change your mind; **Accept all** and **Reject all** decide a whole page. A page is ready
+to push once each of its changes is decided and at least one is accepted.
+
+**Edit the text** lets you change the page yourself. Your edits are saved as you type and appear as
+changes of your own, and a change you edit is asked about again. **Reset to the AI's edit** throws
+away your edits and decisions on that page and brings back the AI's version. **What will be written**
+shows the page with only the accepted changes.
+
+## Macros, images and other parts of a page
+
+Some parts of a page have no form in Markdown: macros such as a table of contents, a status, a panel
+or a Jira issue, images, links to other pages, mentions, task lists and layouts. In an edit they
+appear as markers such as ⟦1 toc⟧, and a push puts each one back exactly as it was. A panel, an
+expand section or a layout column has a marker at each end, and its text can be edited between them.
+Anything on the page that a change does not touch is written back exactly as Confluence holds it.
+
+A change that removes a part says so, for example "Removes ⟦1 toc⟧ from the page", and the part is
+removed only if you accept that change. A change to a paragraph with formatting the text cannot hold,
+such as coloured text, says what it would drop. If a marker is missing, repeated or invented, the
+check names it and nothing is written.
 
 ## Check and push
 
-**Dry run accepted** checks every accepted page without writing anything. **Push N to Confluence**
-asks you to confirm, then writes the accepted pages one at a time.
+**Check and push** checks every ready page without writing anything, then lists the pages it will
+write and any page with a problem, with why. Confirm to write the accepted changes, one page at a
+time.
 
 ![The confirmation before a push, naming the pages](../images/push-confirm.webp)
 
 Each push names the version its edit was made from. If anyone has changed the page in Confluence
-since, that page is refused and nothing is written over their change, while the other accepted pages
-are still written. Ask for suggestions again to start from the page as it is now.
-
-## Pages that cannot be pushed
-
-Some parts of a Confluence page have no form in Markdown: images, macros such as status labels,
-panels, Jira issues, expand sections and tables of contents, links to other pages, mentions, task
-lists and page layouts. The app shows each as text in brackets, such as `[image: chart.png]` (see
-[Keeping a copy on disk](/guides/syncing-a-space/)). A push replaces the whole page, so pushing that
-text would replace each of those parts with its placeholder. To prevent that, **the dry run and the
-push refuse any page that holds one of them**, name exactly what it would lose, and write nothing.
-
-![A dry run refusing an edit, naming the macro the page would lose](../images/improve-refused.webp)
-
-Code blocks survive the round trip and do not stop a push. For any other page, use the edit as a
-guide and make the change in Confluence itself. The rule follows the converter, not a fixed list, so
-a part a later version learns to carry stops blocking pushes without any change on your side.
+since, that page is refused and nothing is written over their change, while the other pages are
+still written. **Make this edit again from the current page** asks for a new edit from the page as
+it is now, with the same suggestions.
 
 ## What is left out
 
@@ -89,10 +97,13 @@ Queues are saved on your computer, so they survive restarting the app.
 ## How this is checked
 
 `test/branchRuns.test.ts` checks that suggestions are stored with the answer and never come from the
-browser, that each edit carries only its own suggestions, that only accepted pages are written, that
-a page changed by someone else is refused while the others are written, that a dry run writes
-nothing, and that a stopped queue stops. `test/corpusReview.test.ts` and `test/sessions.test.ts`
+browser, that each edit carries only its own suggestions, that only accepted changes are written with
+a table of contents kept as it was, that a removal is written only once accepted, that decisions
+survive your edits and reset brings back the AI's edit, that a page changed by someone else is
+refused while the others are written, that a check writes nothing, and that a stopped queue stops.
+`test/editForm.test.ts` checks that every test page is written back exactly when nothing changes,
+and that a missing, repeated or invented marker is refused. `test/corpusReview.test.ts` and `test/sessions.test.ts`
 check that a large review keeps related pages in one batch, leaves out a page holding a secret,
 merges the suggestions, and keeps nothing when stopped. `test/pagePush.test.ts` checks the version check and that a
-page with an image or a page link is refused. `test/e2e/branches.e2e.ts` queues and pushes an edit
-against a real Confluence Data Center.
+change keeping an image's marker keeps the image. `test/e2e/branches.e2e.ts` queues and pushes an
+edit, and `test/e2e/push.e2e.ts` changes a page with a panel, against a real Confluence Data Center.

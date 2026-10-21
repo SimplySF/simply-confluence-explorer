@@ -20,6 +20,7 @@
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { WriteResult } from '../../src/api/types.js';
+import { toEditForm } from '../../src/parser/editForm.js';
 import { loadTestEnv, SKIP_REASON, startApp } from './testEnv.js';
 
 const env = loadTestEnv();
@@ -89,7 +90,7 @@ describe.skipIf(!env)(`writing a page to the test environment${env ? '' : ` (ski
     expect(after.body.storage.value).toContain('<strong>notes</strong>');
   });
 
-  it('refuses to write a page whose macro Markdown cannot carry, and leaves the macro in place', async () => {
+  it('refuses a change that would turn a macro into text, and leaves the macro in place', async () => {
     const runbook = env!.spaces.PLAT.pages['Gateway Runbook'].id;
     const before = await rest<RestPage>('GET', `/rest/api/content/${runbook}?expand=version,body.storage`);
     expect(before.body.storage.value).toContain('ac:name="warning"');
@@ -99,10 +100,33 @@ describe.skipIf(!env)(`writing a page to the test environment${env ? '' : ` (ski
       baseVersion: before.version.number,
     });
     expect(pushed.status).toBe(400);
-    expect(pushed.body.error).toContain('1 "warning" macro');
+    expect(pushed.body.error).toContain('⟦1 warning: Paging policy⟧');
     const after = await rest<RestPage>('GET', `/rest/api/content/${runbook}?expand=version,body.storage`);
     expect(after.version.number).toBe(before.version.number);
     expect(after.body.storage.value).toBe(before.body.storage.value);
+  });
+
+  it('writes a change to a page with a macro, keeping the macro and its text exactly', async () => {
+    const runbook = env!.spaces.PLAT.pages['Gateway Runbook'].id;
+    const route = `/rest/api/content/${runbook}?expand=version,body.storage`;
+    const before = await rest<RestPage>('GET', route);
+    const form = toEditForm(before.body.storage.value);
+    expect(form.markdown).toContain('⟦1 warning: Paging policy⟧');
+    const pushed = await post<WriteResult>(`/pages/${runbook}/push`, {
+      markdown: form.markdown.replace('Restart pods', 'Restart pods one at a time'),
+      baseVersion: before.version.number,
+    });
+    expect(pushed.status, JSON.stringify(pushed.body)).toBe(200);
+    const after = await rest<RestPage>('GET', route);
+    const panel = /<ac:structured-macro\b[\s\S]*?<\/ac:structured-macro>/;
+    expect(panel.exec(after.body.storage.value)?.[0]).toBe(panel.exec(before.body.storage.value)?.[0]);
+    expect(after.body.storage.value).toContain('Restart pods one at a time');
+    await rest('PUT', `/rest/api/content/${runbook}`, {
+      type: 'page',
+      title: after.title,
+      version: { number: after.version.number + 1 },
+      body: { storage: { value: before.body.storage.value, representation: 'storage' } },
+    });
   });
 
   it("refuses a push made from a version a colleague has since changed, and keeps the colleague's edit", async () => {

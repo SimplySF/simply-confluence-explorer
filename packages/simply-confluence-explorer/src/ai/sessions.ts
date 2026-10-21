@@ -216,6 +216,17 @@ export class SessionStore {
     return viewOf(s);
   }
 
+  /** Records that the author accepted or dismissed a co-writer's proposal, so it is not offered again. */
+  public closeProposal(id: string, turn: number): AiSessionView {
+    const s = this.load(id);
+    const t = s?.turns[turn];
+    if (!s || !t || (t.proposedDraft === undefined && t.proposedSeries === undefined))
+      throw new Error('no such proposal');
+    t.proposalClosed = true;
+    this.save(s);
+    return viewOf(s);
+  }
+
   public guardState(id: string): Array<[string, string]> {
     return this.load(id)?.guardState ?? [];
   }

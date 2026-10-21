@@ -105,11 +105,13 @@ titles and error messages, never page text, questions, answers, keys, or the tit
 
 ### A push or dry run is refused
 
-- **"This page has parts that Markdown cannot carry"**: the page holds images, macros, page links,
-  mentions or task lists, which a push would replace with text. Make the change in Confluence itself;
-  see [Changing pages from a chat](/guides/changing-pages/).
+- **"This change would remove parts of the page that no accepted change removes"**: the text has lost
+  a marker such as ⟦1 toc⟧, or put one inside code. Reset to the AI's edit, or put the marker back on
+  a line of its own; see [Changing pages from a chat](/guides/changing-pages/).
+- **"… is not a part of this page"** or **"… appears twice"**: a marker was invented or repeated.
+  Remove it, or reset to the AI's edit.
 - **"This page changed in Confluence after the proposal was made"**: someone edited the page since.
-  Ask the chat for suggestions again, so the edit starts from the page as it is now.
+  Click **Make this edit again from the current page**.
 - **"Line N: … is not supported in Markdown input"**: the text has something the converter cannot
   write, such as an image written as `![...]`, raw HTML, a footnote or a task list. Edit that line.
 - **"A page titled … already exists"**: page titles must be unique within a space. Choose another.

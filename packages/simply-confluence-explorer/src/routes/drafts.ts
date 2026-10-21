@@ -124,6 +124,13 @@ export function addDraftRoutes(router: Router, services: Services): Router {
         if (!prompt) throw new HttpError(400, 'prompt is required');
         return coWrite(params.sessionId, prompt, deps, signal);
       })
+      .add('POST', '/api/drafts/:sessionId/turns/:turn/close-proposal', ({ params }) => {
+        const { id, turns } = draftOf(params.sessionId, deps);
+        const turn = Number(params.turn);
+        if (turns[turn]?.proposedDraft === undefined && turns[turn]?.proposedSeries === undefined)
+          throw new HttpError(404, 'that answer proposed nothing');
+        return services.sessions.closeProposal(id, turn);
+      })
       .add('POST', '/api/drafts/:sessionId/check', ({ params }) => checkDraft(params.sessionId, deps))
       .add('POST', '/api/drafts/:sessionId/create', ({ params }) => createFromDraft(params.sessionId, deps))
   );
