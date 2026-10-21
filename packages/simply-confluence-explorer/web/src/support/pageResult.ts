@@ -29,3 +29,18 @@ export function forPage<T>(requested: string, current: () => string | undefined,
     if (current() === requested) apply(value);
   };
 }
+
+/**
+ * Keeps only the newest of overlapping requests for the same thing. Each call starts a request and
+ * returns a wrapper for its handlers; once a later request has started, an earlier one's answer is
+ * dropped, so a slow, older answer never replaces a newer one.
+ */
+export function newest(): () => <T>(apply: (value: T) => void) => (value: T) => void {
+  let latest = 0;
+  return () => {
+    const mine = ++latest;
+    return (apply) => (value) => {
+      if (mine === latest) apply(value);
+    };
+  };
+}

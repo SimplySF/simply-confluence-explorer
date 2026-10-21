@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { forPage } from '../../web/src/support/pageResult.js';
+import { forPage, newest } from '../../web/src/support/pageResult.js';
 
 describe('a result about a page', () => {
   it('is not shown on another page that was opened while it was on its way', () => {
@@ -39,5 +39,17 @@ describe('a result about a page', () => {
       (v: string) => shown.push(v),
     )('summary of page 1');
     expect(shown).toEqual(['summary of page 1']);
+  });
+});
+
+describe('overlapping requests for the same list', () => {
+  it('a slower, older tags answer does not replace a newer one', () => {
+    const request = newest();
+    let tags: string[] = [];
+    const older = request()((t: string[]) => (tags = t));
+    const newer = request()((t: string[]) => (tags = t));
+    newer(['ops', 'deploy']);
+    older([]);
+    expect(tags).toEqual(['ops', 'deploy']);
   });
 });
