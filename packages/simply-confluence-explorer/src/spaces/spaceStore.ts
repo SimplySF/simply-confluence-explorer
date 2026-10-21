@@ -18,12 +18,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PageDetail, PageMetadata, PageTreeNode, SpaceTocNode, SyncedSpace } from '../api/types.js';
 import { parsePage } from '../parser/convert.js';
-import { errorMessage } from '../util/errors.js';
 import { mapChunked } from '../util/pause.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
+import { SpaceCatalog, type CatalogEntry } from './catalog.js';
 import type { ExclusionManager } from './exclusionManager.js';
-import { isCurrentMetadata } from './metadata.js';
 import { tagsOf } from './tags.js';
 
 // A synced space lives in `<data dir>/spaces/<KEY>/`:
@@ -34,6 +33,7 @@ import { tagsOf } from './tags.js';
 //   metadata/<id>.json      AI summaries and tags, written by the metadata run
 //   vectors/<id>.json       each section's embedding, when the AI provider makes them (ADR-051)
 //   manifest.json           when the space was synced and from which page
+//   catalog.json            each page's title, place, labels and AI tags, without its text (ADR-064)
 //   toc.json, TOC.md        the table of contents
 //
 // pages/ is for people: they may read it, zip it, or delete a folder from it. The app reads
@@ -42,6 +42,8 @@ import { tagsOf } from './tags.js';
 type Manifest = Omit<SyncedSpace, 'metadataCount' | 'hasTOC'>;
 
 export class SpaceStore {
+  /** Each space's page catalog, which whole-space views read instead of every page's file. */
+  public readonly catalog: SpaceCatalog;
   private readonly spacesDir: string;
   // Built from pages_cache once per change, because a large space has thousands of files.
   private readonly trees = new Map<string, { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> }>();
@@ -54,9 +56,16 @@ export class SpaceStore {
   public constructor(
     dataDir: string,
     private readonly exclusions: ExclusionManager,
-    private readonly log: (message: string) => void,
+    log: (message: string) => void,
   ) {
     this.spacesDir = path.join(dataDir, 'spaces');
+    this.catalog = new SpaceCatalog({
+      file: (key): string => path.join(this.spaceDir(key), 'catalog.json'),
+      ids: (key): string[] => this.cachedIds(key),
+      readPage: (key, id): PageDetail | undefined => this.readPage(key, id),
+      readMetadata: (key, id): PageMetadata | undefined => this.readMetadata(key, id),
+      log,
+    });
   }
 
   public spaceDir(spaceKey: string): string {
@@ -100,6 +109,7 @@ export class SpaceStore {
     // A newer version makes the old summary, tags and embeddings stale.
     fs.rmSync(this.metadataFile(spaceKey, page.id), { force: true });
     fs.rmSync(this.vectorsFile(spaceKey, page.id), { force: true });
+    this.catalog.put(spaceKey.toUpperCase(), page);
     this.invalidate(spaceKey);
   }
 
@@ -140,15 +150,13 @@ export class SpaceStore {
       const file = path.join(dir, 'manifest.json');
       if (!fs.existsSync(file)) continue;
       const manifest = JSON.parse(fs.readFileSync(file, 'utf8')) as Manifest;
-      const metadataDir = path.join(dir, 'metadata');
-      const files = fs.existsSync(metadataDir) ? fs.readdirSync(metadataDir).filter((f) => f.endsWith('.json')) : [];
       // Only metadata of the current kind counts, so the Space menu offers to redo the rest.
-      // eslint-disable-next-line no-await-in-loop -- one space at a time, each read in chunks
-      const current = await mapChunked(files, (f) => isCurrentMetadata(this.readMetadata(key, f.slice(0, -5))));
+      // eslint-disable-next-line no-await-in-loop -- one space at a time
+      const pages = await this.catalog.ready(key.toUpperCase());
       spaces.push({
         ...manifest,
         pageCount: this.cachedIds(key).length,
-        metadataCount: current.filter(Boolean).length,
+        metadataCount: [...pages.values()].filter((p) => p.indexed).length,
         hasTOC: fs.existsSync(path.join(dir, 'toc.json')),
       });
     }
@@ -207,25 +215,18 @@ export class SpaceStore {
    */
   public async buildToc(spaceKey: string): Promise<SpaceTocNode[]> {
     await this.treeReady(spaceKey);
-    const all = (nodes: PageTreeNode[]): PageTreeNode[] => nodes.flatMap((n) => [n, ...all(n.children)]);
-    const read = new Map(
-      await mapChunked(
-        all(this.tree(spaceKey)),
-        (node) =>
-          [node.id, { page: this.readPage(spaceKey, node.id), meta: this.readMetadata(spaceKey, node.id) }] as const,
-      ),
-    );
+    const pages = await this.catalog.ready(spaceKey.toUpperCase());
     const toNode = (node: PageTreeNode): SpaceTocNode => {
-      const { page, meta } = read.get(node.id) ?? {};
+      const page = pages.get(node.id);
       return {
         id: node.id,
         title: node.title,
         path: page
           ? path.relative(this.pagesDir(spaceKey), this.markdownFile(spaceKey, page)).split(path.sep).join('/')
           : '',
-        summary: meta?.summary,
-        tags: page ? tagsOf(page, meta) : (meta?.tags ?? []),
-        documentType: meta?.documentType,
+        summary: page?.summary,
+        tags: page ? tagsOf(page, page) : [],
+        documentType: page?.documentType,
         children: node.children.map(toNode),
       };
     };
@@ -274,6 +275,12 @@ export class SpaceStore {
   }
 
   /** Every synced page in the space that is not excluded, read in chunks so the server keeps answering. */
+  /** Every page in the catalog that the exclusion rules allow: titles, places and tags, without text. */
+  public async visibleEntries(spaceKey: string): Promise<CatalogEntry[]> {
+    const key = spaceKey.toUpperCase();
+    return [...(await this.catalog.ready(key)).values()].filter((p) => !this.exclusions.isPageExcluded(p, key));
+  }
+
   public async visiblePages(spaceKey: string): Promise<PageDetail[]> {
     const pages = await mapChunked(this.cachedIds(spaceKey), (id) => this.readPage(spaceKey, id));
     return pages.filter((page): page is PageDetail => !!page && !this.exclusions.isPageExcluded(page, spaceKey));
@@ -284,6 +291,7 @@ export class SpaceStore {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(metadata, null, 2), 'utf8');
     this.metadataRead.set(file, { mtimeMs: fs.statSync(file).mtimeMs, metadata });
+    this.catalog.setMetadata(spaceKey.toUpperCase(), metadata);
     // A summary changes what the search finds but not the page tree, which an index run would
     // otherwise rebuild after every page.
     this.bump(spaceKey);
@@ -338,10 +346,8 @@ export class SpaceStore {
   public async treeReady(spaceKey: string): Promise<void> {
     const key = spaceKey.toUpperCase();
     if (this.trees.has(key)) return;
-    const pages = (await mapChunked(this.cachedIds(key), (id) => this.readSafely(key, id))).filter(
-      (p): p is PageDetail => !!p,
-    );
-    this.trees.set(key, this.treeOf(key, pages));
+    const pages = await this.catalog.ready(key);
+    this.trees.set(key, this.treeOf(key, [...pages.values()]));
   }
 
   private bump(spaceKey: string): void {
@@ -353,25 +359,12 @@ export class SpaceStore {
     const key = spaceKey.toUpperCase();
     const cached = this.trees.get(key);
     if (cached) return cached;
-    const tree = this.treeOf(
-      key,
-      this.cachedIds(key).flatMap((id) => this.readSafely(key, id) ?? []),
-    );
+    const tree = this.treeOf(key, [...this.catalog.now(key).values()]);
     this.trees.set(key, tree);
     return tree;
   }
 
-  private readSafely(key: string, id: string): PageDetail | undefined {
-    try {
-      return this.readPage(key, id);
-    } catch (error) {
-      // One damaged file must not hide the rest of the space; it is reported and left out.
-      this.log(`cannot read the synced copy of page ${id} in ${key}: ${errorMessage(error)}`);
-      return undefined;
-    }
-  }
-
-  private treeOf(key: string, pages: PageDetail[]): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
+  private treeOf(key: string, pages: CatalogEntry[]): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
     const onDisk = new Set(pages.map((p) => p.id));
     const byId = new Map<string, PageTreeNode>();
     for (const page of pages) {
@@ -415,6 +408,7 @@ export class SpaceStore {
     fs.rmSync(this.cacheFile(spaceKey, pageId), { force: true });
     fs.rmSync(this.metadataFile(spaceKey, pageId), { force: true });
     fs.rmSync(this.vectorsFile(spaceKey, pageId), { force: true });
+    this.catalog.remove(spaceKey.toUpperCase(), pageId);
     this.invalidate(spaceKey);
   }
 

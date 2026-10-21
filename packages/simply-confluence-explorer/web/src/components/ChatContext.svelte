@@ -2,6 +2,7 @@
   import { BookOpen, ChevronDown, ChevronUp, FileText, Folder, Plus, Search, Tag, X } from '@lucide/svelte';
   import type { SessionScope, TaggedPages } from '../../../src/api/types.js';
   import { api, type Coverage } from '../support/api.js';
+  import { catalogProgress, readTags } from '../support/pageResult.js';
   import { directoryLabel, readingLine, searchPages, type SpacePage } from '../support/pages.js';
   import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
@@ -24,6 +25,7 @@
   let open = $state(false);
   // Unread until the panel first offers them, so "no tags" is not said while they are being read.
   let tags = $state<TaggedPages[] | null>(null);
+  let tagsBuilding = $state<{ done: number; total: number } | null>(null);
   // Collapsed, the most-used tags fill two lines; expanded, every tag scrolls in a box of its own,
   // so a space with hundreds of tags never pushes the conversation down.
   let allTags = $state(false);
@@ -44,8 +46,13 @@
 
   $effect(() => {
     if (!open || mode !== 'pages' || tags) return;
-    api.tags(spaceKey).then(
-      (t) => (tags = t),
+    return readTags(
+      () => api.tags(spaceKey),
+      (t) => {
+        tags = t;
+        tagsBuilding = null;
+      },
+      (b) => (tagsBuilding = b),
       () => (tags = []), // An unsynced space has no tags; choosing pages by title still works.
     );
   });
@@ -205,7 +212,9 @@
             {:else}
               <span class="muted"
                 >{tags === null
-                  ? 'Reading tags…'
+                  ? tagsBuilding
+                    ? `${catalogProgress(spaceKey, tagsBuilding)}…`
+                    : 'Reading tags…'
                   : tags.length
                     ? 'No tag matches.'
                     : 'Sync the space to choose pages by tag.'}</span

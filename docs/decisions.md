@@ -1791,7 +1791,7 @@ recommended again.
 
 ## ADR-062 — The code budget rises to 16,500 lines and the prose budget to 1,950 lines for the chat's queues
 
-**Status:** accepted, 2026-10-21. Amends ADR-021 and ADR-055.
+**Status:** accepted, 2026-10-21. Amends ADR-021 and ADR-055. Amended by ADR-065, which raises the code budget to 17,000 lines.
 
 The chat's queues (ADR-060) and the fresh read before an edit (ADR-061) are a new feature: a review
 queue the chat can change, an edit view with the page and the edit side by side, staging, a push
@@ -1830,3 +1830,45 @@ the app. Each late check also added a problem of its own, so one slow spell fill
 **The argument against:** a real freeze of between one and two seconds is no longer reported as a
 problem. That is accepted because such a wait is still visible as a number on the Now view, and a
 problem should mean something a person needs to act on.
+
+---
+
+## ADR-064 — Each synced space keeps a page catalog, updated as pages and metadata are written, which lists, the tree and tags read instead of every page file
+
+**Status:** accepted, 2026-10-21.
+
+Tags were worked out on every request by reading every page's whole file, its text included, and
+every page's AI metadata, and nothing was kept. On a 3,200-page space with a slow disk or a virus
+scanner that took minutes, two views asking at once shared the wait, and the next visit started
+again. The page tree was built the same way after every restart.
+
+- **What is kept:** for each page, its id, title, parent and ancestors, labels, version, author,
+  dates and address, with its AI tags, summary and document type; never its text. It lives in
+  memory and in `spaces/<KEY>/catalog.json` (`src/spaces/catalog.ts`).
+- **How it stays current:** the store changes it whenever it writes a page (a newer version drops
+  the old AI tags), writes a page's metadata, or removes a page, and saves it a moment after a
+  burst of changes. Until it is saved the old file is removed, so an app stopped in between builds
+  the catalog again rather than trusting it.
+- **When it is built:** once, from the page files, when its file is missing, damaged, of an older
+  format, or no longer matches the number of page files. Every request waits on the same build,
+  and the tags route answers at once with how far it has got.
+- **What reads it:** tags, the page tree, the table of contents, and the counts in the list of
+  synced spaces. Anything that needs a page's text still reads its file.
+- **Exclusions are applied when it is read**, never stored, so a rule added since is honoured at
+  once.
+
+**The argument against:** a second copy of a page's facts can drift from the first. That is
+accepted because only the store writes either copy, every write updates both, and a catalog that
+does not match the page files on disk is built again.
+
+---
+
+## ADR-065 — The code budget rises to 17,000 lines for the page catalog
+
+**Status:** accepted, 2026-10-21. Amends ADR-062.
+
+The page catalog (ADR-064) and the progress shown while it is first built took the code to 16,605
+lines, over the 16,500 set by ADR-062. The limit rises to 17,000, keeping the usual small headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit. This is accepted
+because the increase is sized to the measured change, and the next one needs its own record.

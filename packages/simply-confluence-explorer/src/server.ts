@@ -158,6 +158,15 @@ export function createServer(options: ServerOptions = {}): http.Server {
   });
   for (const source of [sync, metadata, reviews]) telemetry.addJobSource(() => source.liveJobs());
   telemetry.addJobSource(() =>
+    store.catalog.building().map((b) => ({
+      jobId: `catalog-${b.spaceKey}`,
+      kind: 'catalog',
+      label: `Reading ${b.spaceKey}'s pages into its catalog`,
+      processed: b.done,
+      total: b.total,
+    })),
+  );
+  telemetry.addJobSource(() =>
     index.building().map((b) => ({
       jobId: `index-${b.spaceKey}`,
       kind: 'search-index',

@@ -85,4 +85,22 @@ describe('a 3,200-page space', () => {
       await space.close();
     }
   }, 120_000);
+
+  it("lists a space's tags within 200 ms once its catalog is built, where every page was read each time", async () => {
+    const space = await startLargeSpace();
+    try {
+      const tags = async (): Promise<{ ms: number; building: boolean }> => {
+        const at = Date.now();
+        const body = (await (await fetch(`${space.base}/space-cache/BIG/tags`)).json()) as { building?: unknown };
+        return { ms: Date.now() - at, building: !!body.building };
+      };
+      const started = Date.now();
+      // eslint-disable-next-line no-await-in-loop -- waits for the first build, as the Tags view does
+      while ((await tags()).building) await new Promise((resolve) => setTimeout(resolve, 100));
+      const built = Date.now() - started;
+      expect((await tags()).ms, `after a first build of ${built} ms`).toBeLessThan(200);
+    } finally {
+      await space.close();
+    }
+  }, 120_000);
 });

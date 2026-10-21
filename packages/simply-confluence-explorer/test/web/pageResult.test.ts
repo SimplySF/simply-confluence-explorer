@@ -15,7 +15,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { forPage, newest } from '../../web/src/support/pageResult.js';
+import type { TaggedPages } from '../../src/api/types.js';
+import { catalogProgress, forPage, readTags } from '../../web/src/support/pageResult.js';
 
 describe('a result about a page', () => {
   it('is not shown on another page that was opened while it was on its way', () => {
@@ -42,14 +43,34 @@ describe('a result about a page', () => {
   });
 });
 
-describe('overlapping requests for the same list', () => {
-  it('a slower, older tags answer does not replace a newer one', () => {
-    const request = newest();
-    let tags: string[] = [];
-    const older = request()((t: string[]) => (tags = t));
-    const newer = request()((t: string[]) => (tags = t));
-    newer(['ops', 'deploy']);
-    older([]);
-    expect(tags).toEqual(['ops', 'deploy']);
+describe('reading tags', () => {
+  it('a slower, older tags answer does not replace a newer one', async () => {
+    let answer!: (r: { tags: TaggedPages[] }) => void;
+    const shown: TaggedPages[][] = [];
+    const stop = readTags(
+      () => new Promise((resolve) => (answer = resolve)),
+      (t) => shown.push(t),
+      () => undefined,
+      () => undefined,
+    );
+    stop();
+    answer({ tags: [{ tag: 'ops', pages: [] }] });
+    await Promise.resolve();
+    expect(shown).toEqual([]);
   });
+
+  it("asks again while the space's catalog is built, saying how far it has got", async () => {
+    const answers = [{ tags: [], building: { done: 1200, total: 3200 } }, { tags: [{ tag: 'ops', pages: [] }] }];
+    const progress: string[] = [];
+    const tags = await new Promise<TaggedPages[]>((resolve) => {
+      readTags(
+        () => Promise.resolve(answers.shift()!),
+        resolve,
+        (b) => progress.push(catalogProgress('PLAT', b)),
+        () => undefined,
+      );
+    });
+    expect(progress).toEqual(["Reading PLAT's pages to list their tags: 1,200 of 3,200"]);
+    expect(tags.map((t) => t.tag)).toEqual(['ops']);
+  }, 5000);
 });
