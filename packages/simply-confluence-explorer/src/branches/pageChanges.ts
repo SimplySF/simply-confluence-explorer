@@ -132,6 +132,30 @@ export function partsOf(form: EditForm): { parts: PagePart[]; drops: Record<numb
   return { parts: form.parts.map((p) => ({ n: p.n, label: p.label, kind: p.kind })), drops };
 }
 
+/** At most this much of what changed in a page is sent with a check of its suggestions. */
+const CHANGED_CHARS = 8000;
+
+/**
+ * What changed in a page between two of its edit forms, as blocks added and removed, for the check
+ * of suggestions made before the change (ADR-061).
+ *
+ * @param before The page's text when the suggestions were made, if this machine still has it.
+ * @param after The page's text now.
+ */
+export function changedSince(before: string | undefined, after: string): string {
+  if (before === undefined)
+    return "(The page's earlier version is not on this machine; judge against the page as it is.)";
+  const was = blocksOf(before, () => false);
+  const now = blocksOf(after, () => false);
+  const lines = segments(was, now).flatMap((s) =>
+    'hunk' in s
+      ? [...s.hunk.removed.map((i) => `Removed: ${was[i]}`), ...s.hunk.added.map((i) => `Added: ${now[i]}`)]
+      : [],
+  );
+  const text = lines.join('\n\n') || '(Only formatting changed.)';
+  return text.length > CHANGED_CHARS ? `${text.slice(0, CHANGED_CHARS)}\n(…cut)` : text;
+}
+
 /** The page's own text, without the frontmatter the model is shown with it. */
 export const pageText = (item: BranchItem): string => stripFrontmatter(item.original ?? '');
 
@@ -147,8 +171,11 @@ export function refreshChanges(item: BranchItem): void {
   const before = blocksOf(pageText(item), block);
   const working = item.proposed ?? '';
   const after = blocksOf(working, block);
+  // A revision the chat proposed and the person accepted counts as the AI's, as its first edit does.
   const fromModel = new Set(
-    segments(before, blocksOf(item.suggested ?? working, block)).flatMap((s) => ('hunk' in s ? [s.hunk.id] : [])),
+    [item.suggested ?? working, ...(item.refined ? [item.refined] : [])].flatMap((text) =>
+      segments(before, blocksOf(text, block)).flatMap((s) => ('hunk' in s ? [s.hunk.id] : [])),
+    ),
   );
   const kept = new Set(markersIn(working));
   const label = (n: number): string => `⟦${n} ${parts.find((p) => p.n === n)?.label ?? ''}⟧`;
@@ -184,6 +211,7 @@ export function refreshChanges(item: BranchItem): void {
     ];
   });
   item.decisions = decisions;
+  item.rows = segments(before, after).map((s) => ('same' in s ? { same: before[s.same] } : { change: s.hunk.id }));
   item.result = acceptedText(item).markdown;
   const settled = item.changes.length > 0 && item.changes.every((c) => c.decision !== 'pending');
   item.status = !settled ? 'proposed' : item.changes.some((c) => c.decision === 'accepted') ? 'accepted' : 'rejected';

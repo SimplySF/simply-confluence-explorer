@@ -17,7 +17,7 @@
 // The prompt that asks for an edit of one page applying the suggestions a person chose from a
 // review, and the parsing of the answer (ADR-046).
 
-import type { BranchFix } from '../api/types.js';
+import type { BranchFix, BranchItem } from '../api/types.js';
 
 /**
  * The instruction for an edit that applies only the chosen suggestions, so nothing the person did
@@ -135,4 +135,52 @@ export function parseRecommendationResponse(raw: string): Recommendation {
     changelog: ['Enhanced formatting, section headers, and clarity.'],
     improvedMarkdown: unfence(text) || text,
   };
+}
+
+/**
+ * The instruction that checks suggestions made before a page changed against the page as it is now,
+ * so an edit never applies one the page already carries out or no longer needs (ADR-061).
+ *
+ * @param fixes The suggestions made before the page changed.
+ * @param changes What changed in the page since, or a note that the earlier version is not known.
+ */
+export function freshnessPrompt(fixes: BranchFix[], changes: string): string {
+  const list = fixes
+    .map((f, i) => `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}`)
+    .join('\n');
+  return `These suggestions for the page below were made before someone changed the page:
+${list}
+What changed since:
+${changes}
+For each suggestion, say whether it still applies to the page as it is now, is already done, or no longer makes sense.
+Reply with JSON only, in this shape:
+{"verdicts":[{"n":1,"verdict":"applies","why":"one short sentence"}]}
+Use "applies", "done" or "not-relevant" for each verdict.`;
+}
+
+/**
+ * Reads the answer to `freshnessPrompt`. A suggestion the answer does not judge, or an answer that
+ * cannot be read, keeps the suggestion, so it is still shown to the person rather than dropped.
+ *
+ * @param text The AI's answer.
+ * @param fixes The suggestions that were asked about, in the order they were listed.
+ */
+export function parseVerdicts(text: string, fixes: BranchFix[]): NonNullable<BranchItem['freshness']>['verdicts'] {
+  let judged: Array<{ n?: unknown; verdict?: unknown; why?: unknown }> = [];
+  try {
+    const raw = (JSON.parse(/\{[\s\S]*\}/.exec(text)?.[0] ?? '{}') as { verdicts?: unknown }).verdicts;
+    if (Array.isArray(raw)) judged = raw as typeof judged;
+  } catch {
+    // Unreadable: every suggestion is kept, as below.
+  }
+  return fixes.map((f, i) => {
+    const v = judged.find((j) => j.n === i + 1);
+    const verdict = v?.verdict === 'done' || v?.verdict === 'not-relevant' ? v.verdict : 'applies';
+    return {
+      suggestionId: f.suggestionId,
+      detail: f.detail,
+      verdict,
+      ...(typeof v?.why === 'string' ? { why: v.why.slice(0, 300) } : {}),
+    };
+  });
 }

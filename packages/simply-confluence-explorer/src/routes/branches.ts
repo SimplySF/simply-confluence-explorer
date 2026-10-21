@@ -14,9 +14,19 @@
  * limitations under the License.
  */
 
+import { isValidPageId } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
-import { optionalString } from './browse.js';
+import { fieldsOf, optionalString } from './browse.js';
+
+/** The staged pages a check or push is limited to, when the request names some. */
+const pageIdsOf = (body: unknown): string[] | undefined => {
+  const ids = fieldsOf(body).pageIds;
+  if (ids === undefined) return undefined;
+  if (!Array.isArray(ids) || ids.length > 500 || !ids.every(isValidPageId))
+    throw new HttpError(400, 'pageIds must be a list of page ids');
+  return ids;
+};
 
 const oneOf = <T extends string>(body: unknown, key: string, allowed: readonly T[]): T => {
   const value = optionalString(body, key);
@@ -26,10 +36,10 @@ const oneOf = <T extends string>(body: unknown, key: string, allowed: readonly T
 };
 
 /**
- * Adds the routes for a queue of staged edits: read it, stop it, decide on each change of each
- * page, edit or reset a page's text, and check or push the accepted changes (ADR-024, ADR-059). A
- * queue is filled from a chat's suggestions (ADR-049); only the changes a person accepts are checked
- * and pushed, a page at a time, each against the version its edit was made from.
+ * Adds the routes for a run of edits: read it, stop it, decide on each change of each page, edit or
+ * reset a page's text, stage a page, and check or push the staged pages (ADR-024, ADR-059, ADR-060).
+ * A run is made from a chat's suggestions; only the changes a person accepts, on the pages they
+ * staged, are checked and pushed, a page at a time, each against the version its edit was made from.
  *
  * @param router The router to add to.
  * @param services What the routes share.
@@ -59,9 +69,16 @@ export function addBranchRoutes(router: Router, services: Services): Router {
       })
       .add('POST', `${item}/reset`, ({ params }) => branches.reset(params.runId, params.pageId))
       .add('POST', `${item}/redo`, ({ params }) => branches.redo(params.runId, params.pageId))
-      // Dry-runs every page with accepted changes; nothing is written.
-      .add('POST', '/api/branches/runs/:runId/check', ({ params }) => branches.check(params.runId))
-      // Writes each page's accepted changes, one page at a time, each against its own base version.
-      .add('POST', '/api/branches/runs/:runId/push', ({ params }) => branches.push(params.runId))
+      .add('POST', `${item}/stage`, ({ params, body }) => {
+        const staged = fieldsOf(body).staged;
+        if (typeof staged !== 'boolean') throw new HttpError(400, 'staged must be true or false');
+        return branches.stage(params.runId, params.pageId, staged);
+      })
+      // Dry-runs the staged pages, or those of them named; nothing is written.
+      .add('POST', '/api/branches/runs/:runId/check', ({ params, body }) =>
+        branches.check(params.runId, pageIdsOf(body)),
+      )
+      // Writes each staged page's accepted changes, one page at a time, each against its own base version.
+      .add('POST', '/api/branches/runs/:runId/push', ({ params, body }) => branches.push(params.runId, pageIdsOf(body)))
   );
 }

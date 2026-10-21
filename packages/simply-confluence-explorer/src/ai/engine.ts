@@ -92,7 +92,7 @@ export type EmbedTransport = (payload: GuardedPayload, signal?: AbortSignal) => 
 /** How many texts one embedding request carries, below every provider's limit. */
 const EMBED_BATCH = 50;
 
-const CHAT_SYSTEM =
+export const CHAT_SYSTEM =
   'You are an expert technical assistant helping a person work with their Confluence documentation. ' +
   'The pages and files they are working with come first in the conversation. Answer in Markdown, ' +
   'name the page or file an answer comes from, and say plainly when the documents do not contain the answer.';

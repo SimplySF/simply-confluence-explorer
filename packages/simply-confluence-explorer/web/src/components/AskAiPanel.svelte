@@ -17,7 +17,8 @@
   import type { BranchFinding, PageDetail } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
-  import ChatThread, { type Starter } from './ChatThread.svelte';
+  import { type Starter } from './ChatThread.svelte';
+  import ChatWorkspace from './ChatWorkspace.svelte';
   import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
 
@@ -115,13 +116,13 @@
       ? {
           label: 'Review for problems',
           detail:
-            'Repeats, contradictions, out-of-date and missing pages across these pages, as suggestions you can tick and queue as edits.',
+            'Repeats, contradictions, out-of-date and missing pages across these pages, as suggestions in the review queue.',
           icon: Search,
           review: true,
         }
       : {
           label: 'Suggest improvements',
-          detail: 'Clarity, missing detail and structure, as suggestions you can tick and queue as edits.',
+          detail: 'Clarity, missing detail and structure, as suggestions in the review queue.',
           icon: Search,
           review: true,
         },
@@ -177,7 +178,7 @@
     </div>
   {/if}
 
-  <ChatThread
+  <ChatWorkspace
     {chat}
     {subject}
     {blocked}
@@ -195,5 +196,5 @@
         off; <strong>New conversation</strong> brings these back.
       </p>
     {/snippet}
-  </ChatThread>
+  </ChatWorkspace>
 </div>

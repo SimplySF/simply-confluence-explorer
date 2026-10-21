@@ -34,7 +34,7 @@ const sources = (ext: RegExp): Array<{ name: string; text: string }> =>
 const components = (): Array<{ name: string; text: string }> => sources(/\.svelte$/);
 
 // A class used only to find an element, or styled only through its parent, has no rule of its own.
-const HOOKS = new Set(['branch-findings', 'new-page-check', 'new-page-done']);
+const HOOKS = new Set(['new-page-check', 'new-page-done']);
 
 /**
  * The class names a component can set: plain words in a class attribute, and quoted words or object

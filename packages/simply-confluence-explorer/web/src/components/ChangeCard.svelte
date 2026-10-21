@@ -5,14 +5,16 @@
   import { partPieces } from '../support/markdown.js';
 
   // One change of a page's edit: the text it replaces and the text it puts there, with the words that
-  // differ marked, what else accepting it does, and the person's decision on it (ADR-059).
+  // differ marked, what else accepting it does, and the person's decision on it (ADR-059). Side by
+  // side, the page's text is on the left, the edit's on the right, and the decision between them.
   type Props = {
     change: PageChange;
     busy: boolean;
     onDecide: (decision: 'accept' | 'reject' | 'undo') => void;
+    columns?: boolean;
   };
 
-  let { change, busy, onDecide }: Props = $props();
+  let { change, busy, onDecide, columns = false }: Props = $props();
   const words = $derived(wordDiff(change.before, change.after));
   const kind = $derived(!change.before ? 'Adds' : !change.after ? 'Removes' : 'Changes');
   const wordClass = (w: WordPiece): string | undefined => (w.kind === 'changed' ? 'word-changed' : undefined);
@@ -26,18 +28,7 @@
   </div>
 {/snippet}
 
-<div class="change-card decision-{change.decision}">
-  <div class="change-head">
-    <span class="change-kind">{kind}</span>
-    <span class="change-source">{change.source === 'ai' ? 'Suggested by the AI' : 'Your edit'}</span>
-    {#if change.decision !== 'pending'}
-      <span class="change-decision">{change.decision === 'accepted' ? 'Accepted' : 'Rejected'}</span>
-    {/if}
-  </div>
-  {#if change.before}{@render side(words.before, 'change-before')}{/if}
-  {#if change.after}{@render side(words.after, 'change-after')}{/if}
-  {#each change.notes as note (note)}<p class="change-note"><AlertTriangle size={12} /> {note}</p>{/each}
-  {#if change.problem}<p class="branch-error">{change.problem}</p>{/if}
+{#snippet actions()}
   <div class="branch-actions">
     {#if change.decision === 'pending'}
       <button class="btn btn-primary btn-sm" disabled={busy || !!change.problem} onclick={() => onDecide('accept')}>
@@ -52,4 +43,27 @@
       </button>
     {/if}
   </div>
+{/snippet}
+
+<div class="change-card decision-{change.decision}">
+  <div class="change-head">
+    <span class="change-kind">{kind}</span>
+    <span class="change-source">{change.source === 'ai' ? 'Suggested by the AI' : 'Your edit'}</span>
+    {#if change.decision !== 'pending'}
+      <span class="change-decision">{change.decision === 'accepted' ? 'Accepted' : 'Rejected'}</span>
+    {/if}
+  </div>
+  {#if columns}
+    <div class="change-row">
+      {@render side(words.before, 'change-before')}
+      <div class="change-gutter">{@render actions()}</div>
+      {@render side(words.after, 'change-after')}
+    </div>
+  {:else}
+    {#if change.before}{@render side(words.before, 'change-before')}{/if}
+    {#if change.after}{@render side(words.after, 'change-after')}{/if}
+  {/if}
+  {#each change.notes as note (note)}<p class="change-note"><AlertTriangle size={12} /> {note}</p>{/each}
+  {#if change.problem}<p class="branch-error">{change.problem}</p>{/if}
+  {#if !columns}{@render actions()}{/if}
 </div>

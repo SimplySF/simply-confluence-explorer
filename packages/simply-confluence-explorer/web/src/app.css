@@ -877,12 +877,6 @@ body {
   font-size: 0.82rem;
   cursor: pointer;
 }
-.review-findings-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.4rem;
-}
 .review-footer {
   display: flex;
   align-items: center;
@@ -966,23 +960,6 @@ body {
   white-space: pre-wrap;
   font-size: 0.82rem;
 }
-.branch-queue {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 1rem;
-  min-height: 420px;
-}
-.branch-items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  overflow: auto;
-}
-.branch-items li {
-  border-bottom: 1px solid var(--border-subtle);
-}
 .branch-item-button {
   display: flex;
   justify-content: space-between;
@@ -996,10 +973,6 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-}
-.branch-items li.selected,
-.branch-items li:hover {
-  background: var(--bg-panel-secondary);
 }
 .branch-status {
   font-size: 0.7rem;
@@ -1015,9 +988,6 @@ body {
 .branch-status.status-check-failed,
 .branch-status.status-push-failed {
   color: var(--status-error);
-}
-.branch-detail h4 {
-  margin: 0 0 0.5rem;
 }
 .branch-critique {
   font-size: 0.8rem;
@@ -2498,14 +2468,6 @@ div.disclosure-body {
 .chat-actions-note {
   font-size: 0.78rem;
 }
-.change-queue {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
 
 /* How many of a chat's pages are in the AI index */
 .summary-coverage {
@@ -2985,4 +2947,233 @@ div.disclosure-body {
   font-size: 0.8rem;
   white-space: nowrap;
   color: var(--text-muted);
+}
+
+/* A chat's queues (ADR-060): tabs above the conversation, a queue shown in its place, and the
+   question box kept below every tab. */
+.chat-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.chat-view {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+.chat-queued {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+.chat-proposal {
+  border: 1px solid var(--accent-primary);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  margin: 0.5rem 0;
+}
+.chat-peek {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.chat-peek-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 6px;
+  background: var(--accent-light);
+}
+.space-push {
+  padding: 0.75rem 1.25rem;
+  overflow-y: auto;
+}
+.space-push h3 {
+  margin: 0 0 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.queue-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-bottom: 0.6rem;
+}
+.queue-bar .branch-note {
+  margin-right: auto;
+}
+.queue-group h4 {
+  margin: 0.8rem 0 0.4rem;
+  font-size: 0.85rem;
+}
+.queue-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+.queue-spacer {
+  flex: 1;
+}
+.queue-state {
+  font-size: 0.72rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-panel-secondary);
+  color: var(--text-muted);
+}
+.queue-state.state-edited,
+.queue-state.state-editing {
+  color: var(--accent-primary);
+}
+.queue-state.state-done {
+  color: var(--status-success);
+}
+.queue-state.state-not-relevant,
+.queue-state.state-skipped,
+.queue-state.state-dismissed {
+  color: var(--text-dim);
+}
+.branch-finding.state-dismissed {
+  opacity: 0.6;
+}
+.queue-history {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.queue-history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+.change-list,
+.push-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.change-list li,
+.push-list li {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.change-list li:last-child,
+.push-list li:last-child {
+  border-bottom: none;
+}
+.change-list li:hover {
+  background: var(--bg-panel-secondary);
+}
+.push-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.82rem;
+}
+.edit-view {
+  display: flex;
+  flex-direction: column;
+}
+.edit-main {
+  min-width: 0;
+}
+.side-by-side {
+  margin-top: 0.3rem;
+}
+.edit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.edit-head h4 {
+  margin: 0;
+}
+.edit-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 1rem;
+}
+.edit-side {
+  font-size: 0.8rem;
+  border-left: 1px solid var(--border-subtle);
+  padding-left: 0.8rem;
+}
+.edit-side h5 {
+  margin: 0.6rem 0 0.3rem;
+  font-size: 0.8rem;
+}
+.edit-answer {
+  font-size: 0.8rem;
+  max-height: 240px;
+  overflow: auto;
+}
+/* The page and its edit side by side: unchanged blocks dimmed, each change between them. */
+.side-head,
+.side-same,
+.change-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.side-head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+}
+.side-same {
+  opacity: 0.6;
+  margin-bottom: 0.4rem;
+}
+.side-cell {
+  font-size: 0.8rem;
+}
+.side-cell :is(h1, h2, h3, h4) {
+  font-size: 0.9rem;
+  margin: 0.2rem 0;
+}
+.change-gutter .branch-actions {
+  flex-direction: column;
+}
+@media (max-width: 900px) {
+  .edit-body {
+    grid-template-columns: 1fr;
+  }
+  .edit-side {
+    border-left: none;
+    padding-left: 0;
+  }
+  .side-head,
+  .side-same,
+  .change-row {
+    grid-template-columns: 1fr;
+  }
 }

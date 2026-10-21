@@ -9,6 +9,7 @@
     ChevronsUp,
     MessagesSquare,
     FileText,
+    Upload,
     Folder,
     HardDrive,
     RefreshCw,
@@ -40,6 +41,10 @@
     onAskTag: (tag: TaggedPages) => void;
     chatOpen: boolean;
     onOpenChat: () => void;
+    /** How many staged pages wait to be pushed across the space's chats. */
+    pushCount: number;
+    pushOpen: boolean;
+    onOpenPush: () => void;
   };
 
   let {
@@ -56,6 +61,9 @@
     onAskTag,
     chatOpen,
     onOpenChat,
+    pushCount,
+    pushOpen,
+    onOpenPush,
   }: Props = $props();
 
   type Row = { node: PageTreeNode; depth: number; parentId: string | null; hasChildren: boolean; expanded: boolean };
@@ -338,6 +346,15 @@
       title="Ask about the whole space, in conversations kept on this machine"
     >
       <MessagesSquare size={13} /> Space chat
+    </button>
+    <button
+      type="button"
+      class={['btn btn-secondary btn-sm space-chat-open', pushOpen && 'active']}
+      disabled={!selectedSpace}
+      onclick={onOpenPush}
+      title="The pages staged in every chat of this space, to push together"
+    >
+      <Upload size={13} /> Ready to push{pushCount ? ` (${pushCount})` : ''}
     </button>
 
     <div class="sidebar-view-switch">

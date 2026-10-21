@@ -15,7 +15,7 @@
  */
 
 import type { AiSessionView, SessionScope } from '../../../src/api/types.js';
-import { sessions } from './api.js';
+import { sessions, type Focus } from './api.js';
 import { jobs } from './jobs.svelte.js';
 import { messageOf } from './toast.svelte.js';
 
@@ -57,16 +57,16 @@ export class AiChat {
    * Asks a question. A thorough question about more pages than one request carries is answered in
    * the background over several requests, and its answer is read again when it finishes.
    */
-  public send(prompt: string, thorough = false): Promise<void> {
+  public send(prompt: string, thorough = false, focus?: Focus): Promise<void> {
     return this.ask(prompt, async (id, signal) => {
-      const { batch, ...session } = await sessions.send(id, prompt, signal, thorough);
+      const { batch, ...session } = await sessions.send(id, prompt, signal, thorough, focus);
       if (batch) jobs.watchBatch(batch, session.scope.kind === 'branch' ? session.scope.pageId : undefined);
       return session;
     });
   }
 
   /**
-   * Asks for suggestions the person can tick and queue as edits: a review of what the chat reads, or
+   * Asks for suggestions for the chat's review queue: a review of what the chat reads, or
    * the changes the conversation so far has agreed (ADR-049).
    */
   public suggest(kind: 'review' | 'changes', shown: string): Promise<void> {
@@ -82,14 +82,6 @@ export class AiChat {
   /** Reads the conversation again, as after a batched review writes its answer. */
   public async reload(): Promise<void> {
     if (this.session) this.session = await sessions.get(this.session.id);
-  }
-
-  /** Stages edits from the chosen suggestions of one answer, and shows the answer with its new queue. */
-  public async queue(turn: number, findings: number[]): Promise<void> {
-    if (!this.session) return;
-    const { id } = this.session;
-    await sessions.queue(id, turn, findings);
-    this.session = await sessions.get(id);
   }
 
   private async ask(shown: string, call: (id: string, signal: AbortSignal) => Promise<AiSessionView>): Promise<void> {

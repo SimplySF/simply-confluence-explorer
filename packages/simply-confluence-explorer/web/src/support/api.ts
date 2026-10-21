@@ -24,6 +24,7 @@ import type {
   AnalyzeResponse,
   AuthVerifyResponse,
   BranchRun,
+  ChatQueue,
   ConfluenceSpace,
   ConnectionUpdate,
   ConnectionView,
@@ -38,6 +39,7 @@ import type {
   ResolveResponse,
   SessionScope,
   SpaceTocNode,
+  StagedPage,
   SyncedSpace,
   SyncProgress,
   TaggedPages,
@@ -176,7 +178,13 @@ export const api = {
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
   tags: (spaceKey: string) => call<{ tags: TaggedPages[] }>(`/space-cache/${key(spaceKey)}/tags`).then((r) => r.tags),
+  /** The staged pages of every chat in a space, for its push queue. */
+  staged: (spaceKey: string) =>
+    call<{ staged: StagedPage[] }>(`/space-cache/${key(spaceKey)}/staged`).then((r) => r.staged),
 };
+
+/** The edit a question is about, while the person has it open. */
+export type Focus = { runId: string; pageId: string; title: string };
 
 const SESSIONS = '/ai/sessions';
 
@@ -203,17 +211,31 @@ export const sessions = {
   batch: (id: string) => call<{ batch: BatchProgress | null }>(`${SESSIONS}/${key(id)}/batch`),
   /** The step a question is on while it is being answered. */
   activity: (id: string) => call<{ step: string | null; ms?: number }>(`${SESSIONS}/${key(id)}/activity`),
-  queue: (id: string, turn: number, findings: number[]) =>
-    call<BranchRun>(`${SESSIONS}/${key(id)}/turns/${turn}/queue`, 'POST', { findings }),
+  /** The chat's review queue, and the runs of edits made from it (ADR-060). */
+  queue: (id: string) => call<ChatQueue>(`${SESSIONS}/${key(id)}/queue`),
+  recommend: (id: string, ids: string[]) =>
+    call<BranchRun>(`${SESSIONS}/${key(id)}/suggestions/recommend`, 'POST', { ids }),
+  dismiss: (id: string, ids: string[], undo = false) =>
+    call<ChatQueue>(`${SESSIONS}/${key(id)}/suggestions/dismiss`, 'POST', { ids, undo }),
+  revert: (id: string, suggestionId: string, to: number) =>
+    call<ChatQueue>(`${SESSIONS}/${key(id)}/suggestions/${key(suggestionId)}/revert`, 'POST', { to }),
+  acceptEdit: (id: string, turn: number) =>
+    call<{ session: AiSessionView; run: BranchRun }>(`${SESSIONS}/${key(id)}/turns/${turn}/accept-edit`, 'POST'),
+  dismissEdit: (id: string, turn: number) =>
+    call<AiSessionView>(`${SESSIONS}/${key(id)}/turns/${turn}/close-proposal`, 'POST'),
   update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
   /** Asks a question; `thorough` reads many sections over several requests, as a job (design doc 0008). */
-  send: (id: string, prompt: string, signal?: AbortSignal, thorough = false) =>
+  send: (id: string, prompt: string, signal?: AbortSignal, thorough = false, focus?: Focus) =>
     call<AiSessionView & { batch?: BatchProgress }>(
       `${SESSIONS}/${key(id)}/messages`,
       'POST',
-      { prompt, ...(thorough ? { thorough } : {}) },
+      {
+        prompt,
+        ...(thorough ? { thorough } : {}),
+        ...(focus ? { focus: { runId: focus.runId, pageId: focus.pageId } } : {}),
+      },
       signal,
     ),
   addFile: async (id: string, file: File): Promise<AiSessionView> => {
@@ -263,8 +285,10 @@ export const branches = {
     call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/text`, 'PUT', { text }),
   reset: (id: string, pageId: string) => call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/reset`, 'POST'),
   redo: (id: string, pageId: string) => call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/redo`, 'POST'),
-  check: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/check`, 'POST'),
-  push: (id: string) => call<BranchRun>(`${RUNS}/${key(id)}/push`, 'POST'),
+  stage: (id: string, pageId: string, staged: boolean) =>
+    call<BranchRun>(`${RUNS}/${key(id)}/items/${key(pageId)}/stage`, 'POST', { staged }),
+  check: (id: string, pageIds: string[]) => call<BranchRun>(`${RUNS}/${key(id)}/check`, 'POST', { pageIds }),
+  push: (id: string, pageIds: string[]) => call<BranchRun>(`${RUNS}/${key(id)}/push`, 'POST', { pageIds }),
 };
 
 const DRAFTS = '/drafts';

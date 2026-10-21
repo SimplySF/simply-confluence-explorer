@@ -615,8 +615,9 @@ test('a review of more pages than one request carries reads them in batches and 
     const turn = s.turns.at(-1)!;
     assert.match(s.turns.at(-2)!.text, /^Review these \d+ pages for problems$/);
     assert.equal(turn.corpus?.mode, 'batched');
-    assert.equal(turn.findings?.length, done.total, 'one suggestion from each batch');
-    assert.deepEqual(Object.keys(turn.pageIds ?? {}).sort(), turn.findings.map((f) => f.pages[0]).sort());
+    assert.equal(turn.queued?.added, done.total, 'one suggestion from each batch');
+    const queued = s.suggestions ?? [];
+    assert.deepEqual(queued.flatMap((f) => Object.keys(f.pageIds)).sort(), queued.map((f) => f.pages[0]).sort());
 
     // A page holding a secret is left out of its batch and named, as in any request.
     await syncSpace(app, 'OPS');
@@ -716,7 +717,7 @@ test('a batch whose reply cannot be read is asked again, then named as not revie
     assert.equal(asked, done.total * 2, 'each batch is asked twice');
     const { body: s } = await app.call<AiSessionView>('GET', `/ai/sessions/${c.id}`);
     assert.match(s.turns.at(-1)?.guardSummary ?? '', /Not reviewed, because the AI's reply could not be read twice: /);
-    assert.equal(s.turns.at(-1)?.findings?.length, 0);
+    assert.equal(s.suggestions?.length ?? 0, 0);
   } finally {
     await app.close();
   }

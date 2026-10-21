@@ -23,22 +23,21 @@ import type {
   BranchItem,
   BranchRun,
   PageDetail,
+  QueuedSuggestion,
   ReviewAspect,
-  ReviewSource,
 } from '../api/types.js';
 import { AiStopped, type AiEngine } from '../ai/engine.js';
 import { GuardBlockedError } from '../ai/guard.js';
-import { applyPrompt, parseRecommendationResponse } from '../ai/improve.js';
+import { applyPrompt, freshnessPrompt, parseRecommendationResponse, parseVerdicts } from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
 import { stripFrontmatter } from '../parser/convert.js';
 import { toEditForm } from '../parser/editForm.js';
-import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { contextCollector } from '../spaces/branchContext.js';
+import { EXCLUDED_MESSAGE, gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { errorMessage } from '../util/errors.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
-import { acceptedText, partsOf, refreshChanges } from './pageChanges.js';
+import { acceptedText, changedSince, partsOf, refreshChanges } from './pageChanges.js';
 
 // Reviews of a set of pages, and the edits staged from the suggestions a person chose (ADR-024,
 // ADR-046). A run is kept as a file in data/branch-runs/, so a queue survives a restart. Nothing is
@@ -112,6 +111,8 @@ const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIDABLE = new Set(['proposed', 'accepted', 'rejected', 'checked', 'check-failed', 'push-failed']);
 /** A page whose edit can be made again from the page as Confluence holds it now. */
 const REDOABLE = new Set(['failed', 'check-failed', 'push-failed']);
+/** A page whose changes are decided, with at least one accepted, so it can be staged and pushed. */
+const READY = ['accepted', 'checked', 'push-failed'];
 
 /**
  * Reads a review's findings, or returns `null` when the answer is not the JSON asked for, so the
@@ -168,27 +169,13 @@ export class BranchRunStore {
   }
 }
 
-type ReviewPage = {
-  id: string;
-  title: string;
-  version: number;
-  lastModified: string;
-  markdown: string;
-  detail: PageDetail;
-};
-
-/** Suggestions the server stored, ready to be staged as edits. */
-export type StagedOrigin = {
+/** A chat's suggestions picked to become edits, read from where the server stored them. */
+export type RecommendOrigin = {
   spaceKey: string;
   rootPageId: string;
   rootTitle: string;
-  source?: ReviewSource;
-  instructions?: string;
-  findings: BranchFinding[];
-  /** The pages that were read, by title, so a suggestion's pages can be found. */
-  pageIds: Record<string, string>;
-  fromRunId?: string;
-  fromSessionId?: string;
+  fromSessionId: string;
+  suggestions: QueuedSuggestion[];
 };
 
 export class BranchRunner {
@@ -217,58 +204,52 @@ export class BranchRunner {
   }
 
   /**
-   * Stages an edit of each page the chosen suggestions name, carrying only those suggestions. The
-   * suggestions come from where the server stored them, a review or a chat's answer, never from the
-   * browser, and each page is checked again and edited from its current version. It returns at once,
-   * and the run fills as it goes.
+   * Makes an edit of each page the picked suggestions name, carrying only those suggestions. The
+   * suggestions come from where the server stored them, never from the browser. It returns at once,
+   * and the run fills as it goes: each page is read from Confluence first, and a suggestion made
+   * before the page changed is checked again before it is applied (ADR-061).
    *
-   * @param origin The stored suggestions, the pages they may name by title, and where they came from.
-   * @param chosen The indexes of the chosen suggestions.
+   * @param origin The chat and its picked suggestions.
    */
-  public async stageEdits(origin: StagedOrigin, chosen: number[]): Promise<BranchRun> {
-    const { findings } = origin;
-    if (chosen.length === 0 || chosen.some((i) => !Number.isInteger(i) || i < 0 || i >= findings.length))
-      throw new HttpError(400, 'choose suggestions from the list');
-    const picked = [...new Set(chosen)].map((i) => findings[i]);
+  public async recommend(origin: RecommendOrigin): Promise<BranchRun> {
+    const picked = origin.suggestions;
+    if (picked.length === 0) throw new HttpError(400, 'choose suggestions from the list');
     if (picked.some((f) => NOT_EDITABLE.has(f.kind)))
       throw new HttpError(400, 'a suggestion to move, split, merge or write a page cannot be applied as an edit');
-    const fixesFor = new Map<string, BranchFix[]>();
+    const fixesFor = new Map<string, { title: string; fixes: BranchFix[] }>();
     for (const f of picked) {
       for (const title of f.pages) {
-        const id = origin.pageIds[title];
+        const id = f.pageIds[title];
         if (!id) continue;
-        const fix = {
+        const fix: BranchFix = {
           kind: f.kind,
           detail: f.detail,
           suggestion: f.suggestion,
           otherPages: f.pages.filter((p) => p !== title),
+          suggestionId: f.id,
+          seenVersion: f.seenVersions[id],
         };
-        fixesFor.set(id, [...(fixesFor.get(id) ?? []), fix]);
+        fixesFor.set(id, { title, fixes: [...(fixesFor.get(id)?.fixes ?? []), fix] });
       }
     }
     if (fixesFor.size === 0) throw new HttpError(400, 'the chosen suggestions name no page that was read');
-    // Each page is sent on its own, so the pages as a whole have no size limit.
-    const { pages, leftOut } = await this.pagesFor(
-      origin.spaceKey,
-      [...fixesFor.keys()],
-      Number.MAX_SAFE_INTEGER,
-      true,
-    );
-    if (pages.length === 0) throw new HttpError(422, `None of the pages can be edited: ${leftOut.join(', ')}.`);
+    // A page excluded since it was suggested is left out without being named.
+    for (const id of [...fixesFor.keys()]) {
+      // eslint-disable-next-line no-await-in-loop -- pages are checked in turn
+      const gate = await gatePageForAi(id, origin.spaceKey, this.deps);
+      if (!gate.allowed || gate.page?.spaceKey.toUpperCase() !== origin.spaceKey) fixesFor.delete(id);
+    }
+    if (fixesFor.size === 0) throw new HttpError(422, 'None of the pages these suggestions name can be edited.');
     const run = newRun('improve', origin.spaceKey, origin.rootPageId, origin.rootTitle, {
-      source: origin.source,
-      fromRunId: origin.fromRunId,
       fromSessionId: origin.fromSessionId,
-      instructions: origin.instructions,
-      total: pages.length,
-      leftOut,
-      items: pages.map((p): BranchItem => ({
-        pageId: p.id,
-        title: p.title,
-        baseVersion: p.version,
+      total: fixesFor.size,
+      leftOut: [],
+      items: [...fixesFor].map(([pageId, { title, fixes }]): BranchItem => ({
+        pageId,
+        title,
+        baseVersion: 0,
         status: 'pending',
-        ...editOf(p.detail),
-        fixes: fixesFor.get(p.id),
+        fixes,
       })),
     });
     this.store.save(run);
@@ -323,11 +304,20 @@ export class BranchRunner {
     });
   }
 
+  /** Puts a revision the chat proposed into a page's working text; its changes count as the AI's. */
+  public refine(id: string, pageId: string, text: string): BranchRun {
+    return this.edit(id, pageId, (item) => {
+      item.proposed = stripFrontmatter(text).trim();
+      item.refined = item.proposed;
+    });
+  }
+
   /** Puts a page's working text back to the model's edit and clears every decision on it. */
   public reset(id: string, pageId: string): BranchRun {
     return this.edit(id, pageId, (item) => {
       item.proposed = item.suggested;
       item.decisions = {};
+      delete item.refined;
     });
   }
 
@@ -335,29 +325,15 @@ export class BranchRunner {
    * Makes a page's edit again from the page as Confluence holds it now, with the same suggestions,
    * for an edit that failed or was refused because the page changed since it was made.
    */
-  public async redo(id: string, pageId: string): Promise<BranchRun> {
+  public redo(id: string, pageId: string): BranchRun {
     const run = this.get(id);
     const item = run.items.find((i) => i.pageId === pageId);
     if (!item) throw new HttpError(404, 'that page is not in this run');
     if (run.status === 'running') throw new HttpError(409, 'wait for the run to finish before making an edit again');
     if (!REDOABLE.has(item.status)) throw new HttpError(409, `a page that is ${item.status} is not made again`);
-    const page = await this.deps.client().getPageDetail(pageId);
-    this.deps.store.refreshPage(run.spaceKey, page);
-    const { pages, leftOut } = await this.pagesFor(run.spaceKey, [pageId], Number.MAX_SAFE_INTEGER, true);
-    if (pages.length === 0)
-      throw new HttpError(422, `This page can no longer be edited: ${leftOut.join(', ') || 'it is excluded'}.`);
-    Object.assign(item, {
-      baseVersion: pages[0].version,
-      status: 'pending',
-      ...editOf(pages[0].detail),
-      suggested: undefined,
-      proposed: undefined,
-      changes: undefined,
-      decisions: undefined,
-      critique: undefined,
-      changelog: undefined,
-      message: undefined,
-    });
+    for (const key of Object.keys(item) as Array<keyof BranchItem>)
+      if (!['pageId', 'title', 'fixes'].includes(key)) delete item[key];
+    Object.assign(item, { baseVersion: 0, status: 'pending' });
     run.status = 'running';
     run.processed = Math.max(0, run.processed - 1);
     this.store.save(run);
@@ -366,14 +342,32 @@ export class BranchRunner {
     return run;
   }
 
-  /** Dry-runs every page with accepted changes against Confluence. Nothing is written. */
-  public check(id: string): Promise<BranchRun> {
-    return this.eachAccepted(id, true);
+  /**
+   * Picks a page to be pushed, or puts it back. Only a page whose every change is decided, with at
+   * least one accepted, can be picked.
+   */
+  public stage(id: string, pageId: string, staged: boolean): BranchRun {
+    const run = this.get(id);
+    const item = run.items.find((i) => i.pageId === pageId);
+    if (!item) throw new HttpError(404, 'that page is not in this run');
+    if (staged && !READY.includes(item.status))
+      throw new HttpError(409, 'decide every change, accepting at least one, before staging the page');
+    item.staged = staged;
+    this.store.save(run);
+    return run;
   }
 
-  /** Writes the accepted changes of each page. A change that was not accepted is never written. */
-  public push(id: string): Promise<BranchRun> {
-    return this.eachAccepted(id, false);
+  /** Dry-runs each staged page, or the staged pages named, against Confluence. Nothing is written. */
+  public check(id: string, pageIds?: string[]): Promise<BranchRun> {
+    return this.eachStaged(id, true, pageIds);
+  }
+
+  /**
+   * Writes the accepted changes of each staged page, or of the staged pages named. A change that was
+   * not accepted, and a page that was not staged, is never written.
+   */
+  public push(id: string, pageIds?: string[]): Promise<BranchRun> {
+    return this.eachStaged(id, false, pageIds);
   }
 
   private edit(id: string, pageId: string, change: (item: BranchItem) => void): BranchRun {
@@ -385,53 +379,9 @@ export class BranchRunner {
     change(item);
     refreshChanges(item);
     item.message = undefined;
+    item.staged = false;
     this.store.save(run);
     return run;
-  }
-
-  /**
-   * The chosen pages that may be sent, each checked against the exclusion rules. A page the browser
-   * could not have been offered, because it is excluded or in another space, refuses the whole run;
-   * a page holding a secret or beyond the size limit is left out and named.
-   *
-   * @param spaceKey The space every page must be in.
-   * @param ids The chosen pages.
-   * @param budget How many characters the pages may take together.
-   * @param skipExcluded Leave out, without naming, a page excluded since it was chosen, rather than refusing.
-   */
-  private async pagesFor(
-    spaceKey: string,
-    ids: string[],
-    budget: number,
-    skipExcluded = false,
-  ): Promise<{ pages: ReviewPage[]; leftOut: string[] }> {
-    const { consider, result } = contextCollector(spaceKey, this.deps, this.deps.dataDir, budget);
-    for (const id of ids) {
-      // eslint-disable-next-line no-await-in-loop -- pages are checked in the order they were chosen
-      const gate = await gatePageForAi(id, spaceKey, this.deps);
-      if (gate.page && gate.page.spaceKey.toUpperCase() !== spaceKey)
-        throw new HttpError(400, `a chosen page is not in ${spaceKey}`);
-      if (!gate.allowed || !gate.page) {
-        if (skipExcluded && gate.page) continue;
-        throw new HttpError(403, gate.reason ?? 'A chosen page cannot be sent to an AI.');
-      }
-      consider(gate.page);
-    }
-    const page = (p: PageDetail, markdown: string): ReviewPage => ({
-      id: p.id,
-      title: p.title,
-      version: p.version,
-      lastModified: p.lastModified,
-      markdown,
-      detail: p,
-    });
-    return {
-      pages: result.pages.map((p) => page(p.page, p.markdown)),
-      leftOut: [
-        ...result.withheld.map((title) => `${title} (contains a secret)`),
-        ...result.overflow.map((title) => `${title} (over the size limit)`),
-      ],
-    };
   }
 
   /**
@@ -440,7 +390,7 @@ export class BranchRunner {
    */
   private interrupted(run: BranchRun): void {
     for (const item of run.items)
-      if (item.status === 'pending' || item.status === 'working') {
+      if (['pending', 'checking', 'working'].includes(item.status)) {
         item.status = 'failed';
         item.message = 'The app stopped while this edit was being written.';
       }
@@ -464,11 +414,17 @@ export class BranchRunner {
     // One page at a time: a section can be large, and providers limit request rates.
     for (const item of run.items.filter((i) => i.status === 'pending')) {
       if (this.cancelled.has(run.id)) break;
-      item.status = 'working';
-      this.store.save(run);
       try {
+        // eslint-disable-next-line no-await-in-loop -- one page at a time, as explained above
+        if (item.original === undefined && !(await this.freshen(run, item, signal))) {
+          run.processed++;
+          this.store.save(run);
+          continue;
+        }
+        item.status = 'working';
+        this.store.save(run);
         const prompt = applyPrompt(item.fixes ?? [], run.instructions);
-        // eslint-disable-next-line no-await-in-loop -- one request at a time, as explained above
+        // eslint-disable-next-line no-await-in-loop -- as above
         const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
           spaceKey: run.spaceKey,
           signal,
@@ -498,12 +454,57 @@ export class BranchRunner {
     this.store.save(run);
   }
 
-  private async eachAccepted(id: string, dryRun: boolean): Promise<BranchRun> {
+  /**
+   * Reads a page from Confluence before its edit is made, updates the copy on this machine when the
+   * page is newer, and asks again about each suggestion made before the page changed: one already
+   * done, or no longer relevant, is not applied (ADR-061). Returns false when nothing is left to edit.
+   */
+  private async freshen(run: BranchRun, item: BranchItem, signal: AbortSignal): Promise<boolean> {
+    item.status = 'checking';
+    this.store.save(run);
+    const page = await this.deps.client().getPageDetail(item.pageId);
+    const key = run.spaceKey;
+    if (page.spaceKey.toUpperCase() !== key) throw new Error(`this page is no longer in ${key}`);
+    if (this.deps.exclusions.isPageExcluded(page, key)) {
+      item.status = 'skipped';
+      item.message = EXCLUDED_MESSAGE;
+      return false;
+    }
+    const local = this.deps.store.readPage(key, item.pageId);
+    if (local && page.version > local.version) this.deps.store.refreshPage(key, page);
+    const now = editOf(page);
+    const changed = (f: BranchFix): boolean =>
+      f.seenVersion !== undefined ? page.version > f.seenVersion : !!local && page.version > local.version;
+    const stale = (item.fixes ?? []).filter(changed);
+    let verdicts: NonNullable<BranchItem['freshness']>['verdicts'] = [];
+    if (stale.length > 0) {
+      const before = local && page.version > local.version ? editOf(local).original : undefined;
+      const answer = await this.deps.ai.analyzeDocument(
+        now.original ?? '',
+        freshnessPrompt(stale, changedSince(before, now.original ?? '')),
+        item.title,
+        { spaceKey: key, signal },
+      );
+      verdicts = parseVerdicts(answer.text, stale);
+    }
+    const dropped = new Set(verdicts.filter((v) => v.verdict !== 'applies').map((v) => v.detail));
+    item.freshness = { version: page.version, verdicts };
+    item.fixes = (item.fixes ?? []).filter((f) => !dropped.has(f.detail));
+    Object.assign(item, { baseVersion: page.version, ...now });
+    if (item.fixes.length > 0) return true;
+    item.status = 'skipped';
+    item.message = 'Nothing left to change: the page already does what was suggested, or it no longer applies.';
+    return false;
+  }
+
+  private async eachStaged(id: string, dryRun: boolean, pageIds?: string[]): Promise<BranchRun> {
     const run = this.get(id);
-    const ready = dryRun ? ['accepted', 'checked', 'check-failed'] : ['accepted', 'checked', 'push-failed'];
+    const ready = dryRun ? ['accepted', 'checked', 'check-failed'] : READY;
+    const chosen = (i: BranchItem): boolean =>
+      !!i.staged && ready.includes(i.status) && (!pageIds || pageIds.includes(i.pageId));
     const client = this.deps.client();
     // One page at a time, each write checked against its own base version.
-    for (const item of run.items.filter((i) => ready.includes(i.status))) {
+    for (const item of run.items.filter(chosen)) {
       try {
         // eslint-disable-next-line no-await-in-loop -- one write at a time, as explained above
         const result = await writePage(client, this.deps.store, this.deps.log, {
