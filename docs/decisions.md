@@ -483,7 +483,7 @@ A proposal to bring back either feature is answered with this record.
 
 ## ADR-021 — The code budget rises to 15,000 lines because the cleanup paid for it; the test floor and dependency ceilings tighten
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-062, which raises the code budget to 16,500 lines.
 
 The roadmap's next feature phases were the outbound guard, conversations with uploaded files,
 branch actions and the page co-writer. Together they were estimated at 3,500 to 5,000 lines of code,
@@ -622,7 +622,7 @@ runs as, and each conversation can be deleted.
 
 ## ADR-024 — Branch work goes through a review queue: nothing is written that a person did not accept, page by page
 
-**Status:** accepted, 2026-10-15. Amended by ADR-041, ADR-046, ADR-047 and ADR-059.
+**Status:** accepted, 2026-10-15. Amended by ADR-041, ADR-046, ADR-047, ADR-059 and ADR-061.
 
 "Work on branch" acts on a page and everything under it (`server/src/branches/branchRuns.ts`). Each
 piece of work is a run, saved in `data/branch-runs/`. There are two kinds of run:
@@ -1438,7 +1438,7 @@ describe well.
 
 ## ADR-049 — Pages are changed from a chat's suggestions; the Improve tab and the separate review flow are removed
 
-**Status:** accepted, 2026-10-19. Amended by ADR-051. Amends ADR-046 and ADR-026.
+**Status:** accepted, 2026-10-19. Amended by ADR-051 and ADR-060. Amends ADR-046 and ADR-026.
 
 A chat reads a page, a directory (a page and everything under it), chosen pages such as those of
 one or more tags, or the whole space. Any answer can become suggestions with tick boxes: the chat's
@@ -1591,7 +1591,7 @@ on this machine under the same rule as the synced pages: nothing excluded is nam
 
 ## ADR-055 — The prose budget rises to 1,850 lines for design doc 0008
 
-**Status:** accepted, 2026-10-20. Amends ADR-034.
+**Status:** accepted, 2026-10-20. Amends ADR-034. Amended by ADR-062, which raises the prose budget to 1,950 lines.
 
 New features start as a design doc (AGENTS.md), and the work in ADR-054 is a new feature: indexing
 large spaces, thorough answers, context checks and an Observability page. The live documents stood
@@ -1692,7 +1692,7 @@ counted as missing, and the person sees each change, including any removal, befo
 
 ## ADR-059 — An edit is reviewed change by change, keeps the AI's version to reset to, and is checked as part of the push
 
-**Status:** accepted, 2026-10-20. Amends ADR-024.
+**Status:** accepted, 2026-10-20. Amends ADR-024. Amended by ADR-060, which adds staging and the chat's revisions of an open edit.
 
 A page's edit was accepted or rejected as a whole, even when it carried several suggestions. A
 person's own edits replaced the AI's version, so it could not be restored, and edits made in the
@@ -1721,3 +1721,85 @@ decision.
 **The argument against:** a page with many small changes asks for many decisions. That is accepted
 because **Accept all** and **Reject all** decide a page at once, and the north star requires that a
 person reads what changes before it is written.
+
+---
+
+## ADR-060 — Each chat owns its suggestions and edits as queues, and the chat itself changes them
+
+**Status:** accepted, 2026-10-21. Amends ADR-049 and ADR-059.
+
+A chat's suggestions were tick boxes on the answer that made them, and the edits queued from them
+were reviewed inline below that answer. With several answers, the suggestions, edits and pushes of
+one piece of work were spread down a long conversation, and the chat could not change a suggestion
+it had made: a better wording meant a new review and a new list.
+
+- **A chat keeps one review queue** (`src/ai/chatQueue.ts`, stored with the conversation). Every
+  suggestion an answer makes is added to it, and the answer says how many with a link to the queue.
+  An older chat's suggestions move into its queue the first time it is read.
+- **The chat changes its queue when asked.** Each question carries the queue's suggestions by id,
+  and the answer may end with a block that adds, rewords or removes them, which the server applies.
+  A reworded suggestion keeps its earlier wordings, and the person can go back to one; a suggestion
+  the chat removed can be brought back. An edit made from an earlier wording says so.
+- **The queues are tabs of the chat:** Chat, Review, Changes and Push, with the question box under
+  every tab. Review lists the suggestions with their state; Changes holds the edits, each shown with
+  the page and the edit side by side and decided change by change (ADR-059); Push holds the pages the
+  person staged. A space's staged pages can also be pushed together from **Ready to push**.
+- **The chat revises an open edit.** While an edit is open, a question is about that edit: its page
+  is checked against the exclusion rules and sent with the edit on that turn, and the answer may
+  propose a complete revised text, which the person accepts into the edit or dismisses.
+- **A page is staged before it is pushed.** Staging needs every change decided and at least one
+  accepted; any later change to the edit unstages it, so what is pushed is what the person looked
+  at. A push writes only the staged pages it names.
+
+Design doc 0007 declined "a separate review screen beside chat" because it split one piece of work
+across two places and could not choose a directory's or a tag's pages. These queues are not a
+separate screen: they are the chat's own tabs, and the chat still chooses what it reads. The
+maintainer asked for this change, and it reverses that refusal.
+
+**The argument against:** letting the model rewrite the suggestions the person is about to act on
+means the list can change under them. That is accepted because every change is shown on the answer
+that made it, an earlier wording is never lost, and nothing reaches Confluence until the person has
+decided each change of an edit, staged the page and confirmed the push.
+
+---
+
+## ADR-061 — An edit is made from the page as Confluence holds it now, and a suggestion made before the page changed is checked again first
+
+**Status:** accepted, 2026-10-21. Amends ADR-024.
+
+An edit was made from the copy of the page on this machine. When someone had changed the page in
+Confluence since the last sync, the edit was built on old text, and the push was refused only at the
+end, after the person had decided every change.
+
+- **Each page is read from Confluence before its edit is made.** A page newer than the copy on this
+  machine replaces that copy, and the page is checked against the exclusion rules again; one now
+  excluded is left out.
+- **A suggestion made before the page changed is checked again.** A suggestion records the version
+  of each page it names. When the page has moved on, one guarded request asks whether each such
+  suggestion still applies, is already done, or no longer makes sense, given the page now and what
+  changed since. Only those that still apply are put into the edit; the others return to the review
+  queue with the reason, and a page with nothing left to change is not edited.
+- **The push still refuses** a page that changed after its edit was made (ADR-024), which now only
+  happens when someone edits the page in the minutes between the edit and the push.
+
+**The argument against:** the check costs a request for each changed page, and the model may judge a
+suggestion done when it is not. That is accepted because the request is made only for a page that
+changed, and a suggestion judged done or not relevant is shown with the reason and can be
+recommended again.
+
+---
+
+## ADR-062 — The code budget rises to 16,500 lines and the prose budget to 1,950 lines for the chat's queues
+
+**Status:** accepted, 2026-10-21. Amends ADR-021 and ADR-055.
+
+The chat's queues (ADR-060) and the fresh read before an edit (ADR-061) are a new feature: a review
+queue the chat can change, an edit view with the page and the edit side by side, staging, a push
+queue, and a revision of an open edit through the chat. With the inline queue removed, the code
+stood at 16,008 of 15,000 lines. The limit rises to 16,500, which keeps the usual small headroom.
+The live documents stood at 1,848 of 1,850 lines, and the feature needs design doc 0010, so that
+limit rises to 1,950.
+
+**The argument against:** raising a budget each time it is reached makes it no limit. This is
+accepted because each increase is sized to the measured feature, and the next one needs its own
+record.

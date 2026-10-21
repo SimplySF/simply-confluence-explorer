@@ -41,7 +41,8 @@ refactors that keep the public surface identical (though a short doc is welcome 
 | [0006](0006-end-to-end-environment.md)         | The end-to-end suite runs against a real Data Center                           | Implemented (PR #12) |
 | [0007](0007-reviews-tags-and-space-chat.md)    | Chat as the place to work: contexts, a change queue, new pages from GitLab     | Implemented (PR #24) |
 | [0008](0008-large-spaces-and-observability.md) | Large spaces: packed indexing, context checks, thorough answers, observability | Implemented (PR #30) |
-| [0009](0009-changing-pages-with-macros.md)     | Changing pages that hold macros, change by change                              | Implemented          |
+| [0009](0009-changing-pages-with-macros.md)     | Changing pages that hold macros, change by change                              | Implemented (PR #33) |
+| [0010](0010-chat-queues.md)                    | A chat's queues: review, changes and push, from the live page                  | Implemented          |
 
 Design docs work alongside the [decision log](../decisions.md), and each has a different job. A
 design doc describes one feature: what it does, how it behaves, and why it has that shape. It is
