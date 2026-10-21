@@ -21,7 +21,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { PageDetail } from '../api/types.js';
+import type { ImageChoice, ImagesReport, PageDetail } from '../api/types.js';
+import type { ImageInput } from '../ai/guard.js';
 import { storageToBody } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -31,6 +32,9 @@ export const PAGE_ATTACHMENT_CHARS = 100_000;
 /** The largest image sent, every provider's limit, and the most images sent with one page. */
 export const IMAGE_BYTES = 5 * 1024 * 1024;
 export const PAGE_IMAGES = 10;
+/** The most images, and bytes of them, one request carries. */
+export const REQUEST_IMAGES = 20;
+export const REQUEST_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const TEXT_TYPES = new Set(['.md', '.markdown', '.txt', '.csv', '.tsv', '.json', '.yaml', '.yml', '.log', '.xml']);
 const HTML_TYPES = new Set(['.html', '.htm']);
@@ -134,4 +138,42 @@ export class AttachmentReader {
     }
     return { why: 'a PDF being read now; its text is sent from the next request' };
   }
+}
+
+/**
+ * The images a request sends with the pages it read: none unless the space chose to send them, then
+ * each page's, up to the request's limits, with what did not fit named. Either way it says how many
+ * the pages hold, so the person can be asked (ADR-066).
+ *
+ * @param of Reads a page's attachments.
+ * @param choice The space's choice about images.
+ * @param pages The pages the request reads, with their space.
+ */
+export function imagesFor(
+  of: (spaceKey: string, page: PageDetail) => PageAttachments,
+  choice: ImageChoice,
+  pages: Array<{ spaceKey: string; page: PageDetail }>,
+): { images: ImageInput[]; report: ImagesReport } {
+  const images: ImageInput[] = [];
+  const left: string[] = [];
+  let found = 0;
+  let bytes = 0;
+  for (const { spaceKey, page } of pages) {
+    const read = of(spaceKey, page);
+    found += read.images.length + read.unread.filter((u) => IMAGE_TYPES[path.extname(u.name).toLowerCase()]).length;
+    if (choice !== 'send') continue;
+    for (const image of read.images) {
+      if (images.length >= REQUEST_IMAGES || bytes + image.bytes > REQUEST_IMAGE_BYTES) {
+        left.push(image.name);
+        continue;
+      }
+      bytes += image.bytes;
+      images.push({
+        name: `${page.title} / ${image.name}`,
+        mediaType: image.mediaType,
+        data: fs.readFileSync(image.file),
+      });
+    }
+  }
+  return { images, report: { found, sent: images.length, choice, ...(left.length ? { left } : {}) } };
 }

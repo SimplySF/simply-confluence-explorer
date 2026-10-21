@@ -149,3 +149,81 @@ describe("a page's text attachments", () => {
     });
   });
 });
+
+describe("a space's images", () => {
+  const ask = async (app: TestApp, prompt = 'What does the diagram show?'): Promise<AiSessionView> => {
+    const chat = await pageChat(app, 'Architecture Overview');
+    return (await app.call<AiSessionView>('POST', `/ai/sessions/${chat.id}/messages`, { prompt })).body;
+  };
+  const choose = (app: TestApp, images: string): Promise<{ status: number }> =>
+    app.call('POST', '/space-cache/PLAT/space-settings', { images });
+
+  it('are never sent until the space chooses to, and the answer says how many it did not see', async () => {
+    await withSynced(async (app) => {
+      const answered = await ask(app);
+      expect(answered.turns.at(-1)?.images).toEqual({ found: 1, sent: 0, choice: 'ask' });
+      expect(app.sent.some((p) => p.images?.length)).toBe(false);
+      await choose(app, 'skip');
+      expect((await ask(app)).turns.at(-1)?.images).toEqual({ found: 1, sent: 0, choice: 'skip' });
+      expect(app.sent.some((p) => p.images?.length)).toBe(false);
+    });
+  });
+
+  it('are sent with the page once the space chooses, each named as unchecked by the leak guard', async () => {
+    await withSynced(async (app) => {
+      await choose(app, 'send');
+      const turn = (await ask(app)).turns.at(-1)!;
+      expect(turn.images).toEqual({ found: 1, sent: 1, choice: 'send' });
+      expect(app.sent.at(-1)?.images?.map((i) => i.name)).toEqual(['Architecture Overview / architecture-diagram.png']);
+      expect(turn.guardSummary).toContain(
+        'Sent without leak-guard checks, as images: Architecture Overview / architecture-diagram.png',
+      );
+      expect(turn.sent?.images).toBe(1);
+    });
+  });
+
+  it('go with the edit of their page and with its index run, once the space sends them', async () => {
+    await withSynced(async (app) => {
+      await choose(app, 'send');
+      const chat = await pageChat(app, 'Architecture Overview');
+      const reviewed = (await app.call<AiSessionView>('POST', `/ai/sessions/${chat.id}/suggest`, { kind: 'review' }))
+        .body;
+      const { body } = await app.call<BranchRun>('POST', `/ai/sessions/${chat.id}/suggestions/recommend`, {
+        ids: [reviewed.suggestions![0].id],
+      });
+      let run = body;
+      while (run.status === 'running')
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the edit
+        run = (await app.call<BranchRun>('GET', `/branches/runs/${body.id}`)).body;
+      expect(run.items[0].images).toEqual({ found: 1, sent: 1, choice: 'send' });
+      const before = app.sent.length;
+      await app.call(
+        'POST',
+        `/space-cache/PLAT/pages/${fake.page('PLAT', 'Architecture Overview').id}/metadata/generate`,
+        {},
+      );
+      expect(app.sent.slice(before).some((p) => p.images?.length === 1)).toBe(true);
+    });
+  });
+
+  it('are counted for the coverage line with the choice, and a choice that is not one is refused', async () => {
+    await withSynced(async (app) => {
+      const id = fake.page('PLAT', 'Architecture Overview').id;
+      const { body } = await app.call<{ images: unknown }>('POST', '/space-cache/PLAT/metadata/coverage', {
+        pageIds: [id],
+      });
+      expect(body.images).toEqual({ found: 1, choice: 'ask' });
+      expect((await choose(app, 'maybe')).status).toBe(400);
+    });
+  });
+
+  it('leave out one too large to send, and name it', async () => {
+    await withSynced(async (app) => {
+      await choose(app, 'send');
+      fs.writeFileSync(attachment(app, 'architecture-diagram.png'), Buffer.alloc(6 * 1024 * 1024));
+      const turn = (await ask(app)).turns.at(-1)!;
+      expect(turn.images).toEqual({ found: 1, sent: 0, choice: 'send' });
+      expect(app.sent.at(-1)?.images).toBeUndefined();
+    });
+  });
+});

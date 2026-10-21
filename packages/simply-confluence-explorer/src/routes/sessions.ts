@@ -20,6 +20,7 @@ import type {
   BranchItem,
   BranchRun,
   ChatQueue,
+  ImagesReport,
   PageDetail,
   SessionScope,
   SessionTurn,
@@ -45,6 +46,8 @@ import { isValidPageId, isValidSpaceKey, PARAMS } from '../http/guards.js';
 import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { pageText } from '../branches/pageChanges.js';
+import { imagesFor } from '../spaces/attachments.js';
+import { loadSpaceSettings } from '../spaces/spaceSettings.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import {
@@ -110,6 +113,17 @@ function scopeFrom(value: unknown): SessionScope {
   const pageId = idOf(scope.pageId);
   if (!isValidPageId(pageId)) throw new HttpError(400, 'a page or section scope needs a pageId');
   return { kind: kind as SessionScope['kind'], spaceKey, pageId, title };
+}
+
+/** What an answer records about how it was made, when there is anything to record. */
+function turnDetails(ctx: TurnContext, cutOff: SessionTurn['cutOff'], images: ImagesReport): Partial<SessionTurn> {
+  return {
+    ...(cutOff ? { cutOff } : {}),
+    ...(ctx.considered ? { considered: ctx.considered } : {}),
+    ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
+    ...(ctx.weak ? { weakMatch: true } : {}),
+    ...(images.found ? { images } : {}),
+  };
 }
 
 /** The edit a person has open while they ask, named by ids the server reads it by. */
@@ -437,6 +451,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
     const history = historyToSend(session.turns);
     recordHistory(ctx.manifest, session, history);
+    const seen = imagesOfTurn(session.scope.spaceKey, ctx, item);
+    ctx.manifest.includeImages(seen.images.map((i) => ({ name: i.name, bytes: i.data.length })));
     const manifest = ctx.manifest.build();
     step(session.id, 'Writing the answer');
     // A question may change the chat's review queue or revise the open edit; a request for
@@ -448,6 +464,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         prompt: prompt.sent,
         manifest,
         ...(suggestions ? {} : { system: `${CHAT_SYSTEM}\n\n${QUEUE_SYSTEM}` }),
+        ...(seen.images.length ? { images: seen.images } : {}),
       },
       { spaceKey: session.scope.spaceKey, guard, signal },
     );
@@ -471,12 +488,9 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           at: now,
           guardSummary: report.summary + ctx.note + cutOffNote(reply.cutOff),
           sent: summarise(manifest),
-          ...(reply.cutOff ? { cutOff: reply.cutOff } : {}),
           engine: ai.getEngine(),
           matchedPages: ctx.matchedPages,
-          ...(ctx.considered ? { considered: ctx.considered } : {}),
-          ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
-          ...(ctx.weak ? { weakMatch: true } : {}),
+          ...turnDetails(ctx, reply.cutOff, seen.report),
           ...(item && revised.edit
             ? { proposedEdit: { runId: focus!.runId, pageId: item.pageId, title: item.title, text: revised.edit } }
             : {}),
@@ -492,6 +506,23 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         }
         return queueBlock.lines ? applyQueueChanges(queueBlock.lines, list, turn, ctx.pages) : undefined;
       },
+    );
+  };
+
+  /**
+   * The images on the pages a turn read, and the open edit's page, sent only when the space chose to
+   * send them; either way counted, so the answer can ask about them (ADR-066).
+   */
+  const imagesOfTurn = (spaceKey: string, ctx: TurnContext, item?: BranchItem): ReturnType<typeof imagesFor> => {
+    const ids = [...new Set([...(ctx.matchedPages ?? []).map((p) => p.id), ...(item ? [item.pageId] : [])])];
+    const pages = ids.flatMap((id) => {
+      const page = store.readPage(spaceKey, id);
+      return page ? [{ spaceKey, page }] : [];
+    });
+    return imagesFor(
+      (key, page) => store.attachments.of(key, page),
+      loadSpaceSettings(dataDir, spaceKey).images,
+      pages,
     );
   };
 
