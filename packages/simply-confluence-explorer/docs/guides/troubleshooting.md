@@ -45,9 +45,10 @@ A number on the button counts problems you have not seen yet.
   trace shows the search, the sections chosen, what was sent and how long the AI took.
 
 **Trace** on an answer, **See why** on a failed index run or review, and **See logs** on an error
-message open it at the right place. The app flags a problem by itself when the server stops
-responding for over a second, when a request fails its check of what was sent, when most AI requests
-fail, and when an index run leaves pages out.
+message open it at the right place. The app flags a problem by itself when its own work blocks the
+server for over two seconds (once per freeze; a delay the computer causes, such as sleep, is only a
+number on **Now**), when a request fails its check of what was sent, when most AI requests fail, and
+when an index run leaves pages out.
 
 ![The Observability page showing running work and the server's response times](../images/observe-now.webp)
 
