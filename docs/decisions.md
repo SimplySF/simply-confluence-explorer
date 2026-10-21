@@ -531,7 +531,7 @@ second raise during this roadmap would require the shrink review the standard pr
 
 ## ADR-022 — Every AI request passes an outbound guard: secrets stop it, personal data is replaced, and nothing can be sent around it
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-066, which lets a space choose to send images, each named as unchecked.
 
 `.confluenceignore` keeps whole pages away from an AI. The outbound guard is a second layer of
 protection, for sensitive content that a page which is allowed may still contain. It runs in the
@@ -578,7 +578,7 @@ directions, so every sample must be caught and every near-miss must be let throu
 
 ## ADR-023 — Conversations live on the server, and uploaded files are context extracted to text, never Confluence content
 
-**Status:** accepted, 2026-10-15. Amended by ADR-048.
+**Status:** accepted, 2026-10-15. Amended by ADR-048 and ADR-066.
 
 A conversation (`server/src/ai/sessions.ts`) is about one page, about a page and its sub-pages
 (called a branch), or about a whole space. It is stored in `data/sessions/<id>.json` with mode
@@ -1872,3 +1872,32 @@ lines, over the 16,500 set by ADR-062. The limit rises to 17,000, keeping the us
 
 **The argument against:** a budget raised each time it is reached is no limit. This is accepted
 because the increase is sized to the measured change, and the next one needs its own record.
+
+---
+
+## ADR-066 — Page attachments are read with their page: text through the guard, images only when the space chooses to send them, each named as unchecked
+
+**Status:** accepted, 2026-10-21. Amends ADR-022 and ADR-023.
+
+A sync downloaded each page's attachments, and nothing read them again: a value held only in a JSON
+or CSV file, or a diagram, was invisible to every answer, review, edit and index run.
+
+- **Text attachments are part of their page.** JSON, YAML, CSV, logs, Markdown, XML, HTML and PDF
+  attachments are read as text (`src/spaces/attachments.ts`), up to 50,000 characters each and
+  100,000 per page, and added to the page's text as sections of their own. They therefore pass the
+  outbound guard like the page, count against the same size limits, are found by search, and are read
+  by the AI index; a secret in one withholds or blocks its page as one in the page text would. The
+  edit model and the chat's open edit read them as context and are told never to edit them. A PDF's
+  text is extracted in the background the first time its page is read, and sent from the next request.
+- **Images are sent only when the space chooses.** A space's choice is `ask` (the default), `send` or
+  `skip`, kept in `spaces/<KEY>/.confluencespace.json`. While it is `ask`, every answer, edit and index
+  run that read pages with images says how many the AI did not see and offers to send them or not;
+  with `send`, images go with their page to every provider, including the Gemini CLI, which reads them
+  from a private folder made for the request. The leak guard reads only text, so it cannot check an
+  image: every image sent is named as unchecked in the answer, the audit and the trace.
+- **Attachments of an excluded page never leave the machine**, because they are read only for a page
+  that has passed the exclusion check.
+
+**The argument against:** an image can hold what the leak guard exists to stop, such as a password in
+a screenshot. That is accepted because images are never sent until a person chooses to for the space,
+the choice is asked for where the images are, and every image sent is named so it can be checked.
