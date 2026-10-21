@@ -528,3 +528,52 @@ describe('the changes of one page', () => {
     );
   });
 });
+
+describe("a page's own record, its id, version, author and the like", () => {
+  const RECORD =
+    '---\nid: "1"\ntitle: Interview Guide\nversion: 3\nupdatedAt: 2026-10-20\nbreadcrumbs:\n  - People\n---';
+  /** An edit that echoes the title line and the record, as a model shown them might. */
+  const echo = (payload: GuardedPayload): string =>
+    textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>')
+      ? `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Said who it is for\n<<<PROPOSED_MARKDOWN>>>\n# Document Title: Interview Guide\n\n\`\`\`yaml\n${RECORD}\n\`\`\`\n\nFor interviewers. ${++edits}`
+      : answer(payload);
+
+  it('is not given to the model that writes an edit', async () => {
+    const sent: string[] = [];
+    await withApp(
+      (payload) => {
+        sent.push(textOf(payload));
+        return answer(payload);
+      },
+      async (app) => {
+        await staged(app, [1]);
+        const edit = sent.find((t) => t.includes('<<<PROPOSED_MARKDOWN>>>'))!;
+        expect(edit).not.toMatch(/^(version|updatedAt|confluenceUrl|breadcrumbs):/m);
+      },
+    );
+  });
+
+  it('is not written into the page when an edit echoes it', async () => {
+    await withApp(echo, async (app) => {
+      const run = await staged(app, [1]);
+      const item = itemOf(run, guide());
+      expect(item.proposed).toMatch(/^For interviewers\./);
+      await decideAll(app, run.id, guide(), 'accept');
+      await app.call('POST', `/branches/runs/${run.id}/push`);
+      const storage = fake.page('PEOPLE', 'Interview Guide').storage;
+      expect(storage).toContain('For interviewers.');
+      expect(storage).not.toMatch(/updatedAt|breadcrumbs|Document Title/);
+    });
+  });
+
+  it('cannot be accepted when a change writes it as a list', async () => {
+    await withApp(answer, async (app) => {
+      const run = await staged(app, [1]);
+      const list = '- **id:** 1\n- **version:** 3\n- **updatedAt:** 2026-10-20\n- **confluenceUrl:** https://wiki';
+      const edited = (await setText(app, run.id, guide(), `${list}\n\n${itemOf(run, guide()).proposed}`)).body;
+      const added = itemOf(edited, guide()).changes!.find((c) => c.after.includes('updatedAt'))!;
+      expect(added.problem).toContain("the app's record of the page");
+      expect((await decideChange(app, run.id, guide(), added.id, 'accept')).status).toBe(409);
+    });
+  });
+});

@@ -16,7 +16,7 @@
 
 import crypto from 'node:crypto';
 import type { BranchItem, PageChange, PagePart } from '../api/types.js';
-import { stripFrontmatter } from '../parser/convert.js';
+import { RECORD_FIELDS, stripFrontmatter } from '../parser/convert.js';
 import { blocksOf, diffBlocks, formBlocks, LINE_MARKER, MARKER, type EditForm } from '../parser/editForm.js';
 
 // An edit of a page is reviewed change by change (ADR-059). The changes are the runs of blocks in
@@ -106,6 +106,22 @@ const isBlock =
     parts.some((p) => p.n === n && p.kind !== 'inline');
 const markersIn = (text: string): number[] => [...text.matchAll(MARKER)].filter((m) => !m[1]).map((m) => Number(m[2]));
 
+// A line naming one of the record's fields, as YAML, a list item or a table row.
+const RECORD_LINE = new RegExp(
+  `^[ \\t]*(?:[-*][ \\t]*|\\|[ \\t]*)?\\**(${RECORD_FIELDS.join('|')})\\**[ \\t]*[:|]`,
+  'gim',
+);
+const DISTINCTIVE = new Set(['updatedat', 'confluenceurl', 'breadcrumbs']);
+
+/**
+ * Whether text holds the app's record of a page: two or more of its fields, one of them a field
+ * ordinary page text would not have, so a configuration example with an `id:` line is not caught.
+ */
+export function holdsRecord(text: string): boolean {
+  const fields = new Set([...text.matchAll(RECORD_LINE)].map((m) => m[1].toLowerCase()));
+  return fields.size >= 2 && [...fields].some((f) => DISTINCTIVE.has(f));
+}
+
 /** What a person needs to know about the parts of the page a push of a page's text keeps or loses. */
 export function partsOf(form: EditForm): { parts: PagePart[]; drops: Record<number, string[]> } {
   const { unitOf } = formBlocks(form);
@@ -160,7 +176,9 @@ export function refreshChanges(item: BranchItem): void {
         notes,
         problem: unknown.length
           ? `${unknown.map((n) => `⟦${n}⟧`).join(', ')} is not a part of this page, so this change cannot be written.`
-          : undefined,
+          : holdsRecord(now) && !holdsRecord(was)
+            ? "This adds the app's record of the page (its id, version, author and the like), which is not text for the page, so it cannot be written."
+            : undefined,
         decision: decision ?? 'pending',
       },
     ];

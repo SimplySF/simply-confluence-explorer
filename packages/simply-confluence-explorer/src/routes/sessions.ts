@@ -27,7 +27,7 @@ import { ManifestBuilder, summarise } from '../ai/manifest.js';
 import { cutOffNote } from '../ai/reply.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey } from '../http/guards.js';
-import { parseFindings, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
+import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
@@ -51,7 +51,8 @@ const CHANGES_PROMPT = `Turn what this conversation has found or agreed into con
 Reply with JSON only, in this shape:
 {"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to change"}]}
 Kinds: "incorrect", "redundant", "stale", "clarity", "depth", "structure", "operations", "placement" (move, split or merge a page) or "gap" (a page that should exist).
-Use exact page titles, and name every page a change is about. An empty list is a valid answer.`;
+Use exact page titles, and name every page a change is about. An empty list is a valid answer.
+${RECORD_NOTE}`;
 
 const idOf = (value: unknown): unknown => (typeof value === 'number' ? String(value) : value);
 

@@ -28,7 +28,7 @@ import { describe, expect, it } from 'vitest';
 import { markdownToStorage, storageToMarkdown } from '@simplysf/simply-atlassian-core';
 import { spaces, type DatasetPage } from '../../../test-env/fixtures/dataset.mjs';
 import type { PageDetail } from '../src/api/types.js';
-import { missingParts, parsePage, storageToBody, stripFrontmatter } from '../src/parser/convert.js';
+import { missingParts, parsePage, RECORD_FIELDS, storageToBody, stripFrontmatter } from '../src/parser/convert.js';
 
 const ctx = { userKey: 'admin-user-key' };
 
@@ -182,5 +182,17 @@ describe('frontmatter', () => {
   it('is stripped before a body is pushed, and a body without one is left alone', () => {
     expect(stripFrontmatter(parsePage(page).markdown)).toBe('## Steps\n\nPromote the replica.\n');
     expect(stripFrontmatter('# No frontmatter\n---\nnot yaml')).toBe('# No frontmatter\n---\nnot yaml');
+  });
+
+  it("is stripped when a model echoes it after the page's title line, in a yaml fence, or twice", () => {
+    const record = parsePage(page).markdown.split('\n## Steps')[0];
+    const body = '## Steps\n\nPromote the replica.';
+    expect(stripFrontmatter(`# Document Title: Database Failover\n\n${record}\n${body}`)).toBe(body);
+    expect(stripFrontmatter(`\`\`\`yaml\n${record.trim()}\n\`\`\`\n\n${body}`)).toBe(body);
+    expect(stripFrontmatter(`${record}${record}\n${body}`)).toBe(body);
+  });
+
+  it('names every field it writes, so a check for the record cannot miss one', () => {
+    expect(Object.keys(parsePage(page).frontmatter)).toEqual([...RECORD_FIELDS]);
   });
 });

@@ -31,7 +31,7 @@ import { GuardBlockedError } from '../ai/guard.js';
 import { applyPrompt, parseRecommendationResponse } from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
-import { frontmatterOf, stripFrontmatter } from '../parser/convert.js';
+import { stripFrontmatter } from '../parser/convert.js';
 import { toEditForm } from '../parser/editForm.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { contextCollector } from '../spaces/branchContext.js';
@@ -63,6 +63,10 @@ const ASPECTS: Record<ReviewAspect, string> = {
 };
 export const REVIEW_ASPECTS = Object.keys(ASPECTS) as ReviewAspect[];
 
+/** Says what a page's frontmatter is for, so a review never suggests writing it into the page. */
+export const RECORD_NOTE =
+  "The YAML frontmatter at the top of each page is the app's record of it (id, version, author, dates, address, breadcrumbs). Use it to judge whether a page is out of date, but never suggest putting it into a page.";
+
 /** Kinds that no edit of one existing page can fix: they are shown, never applied. */
 export const NOT_EDITABLE = new Set<BranchFinding['kind']>(['placement', 'gap']);
 
@@ -89,7 +93,8 @@ Find what a maintainer should fix, of these kinds only:
 ${kinds.join('\n')}
 Reply with JSON only, in this shape:
 {"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do"}]}
-Use exact page titles, and name every page a finding is about. Report nothing you are not confident of; an empty list is a valid answer.${instructions ? `\nAlso: ${instructions}` : ''}`;
+Use exact page titles, and name every page a finding is about. Report nothing you are not confident of; an empty list is a valid answer.
+${RECORD_NOTE}${instructions ? `\nAlso: ${instructions}` : ''}`;
 }
 
 const KINDS = new Set<string>([
@@ -506,10 +511,13 @@ export class BranchRunner {
   }
 }
 
-/** The page as the model is given it, its edit form after its frontmatter, and what its markers stand for. */
+/**
+ * The page as the model is given it, its edit form without frontmatter so the app's record of the
+ * page is never offered as text to keep, and what its markers stand for.
+ */
 function editOf(page: PageDetail): Pick<BranchItem, 'original' | 'parts' | 'drops'> {
   const form = toEditForm(page.storageXml);
-  return { original: `${frontmatterOf(page)}\n${form.markdown}\n`, ...partsOf(form) };
+  return { original: `${form.markdown}\n`, ...partsOf(form) };
 }
 
 function newRun(

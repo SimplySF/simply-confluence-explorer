@@ -39,7 +39,7 @@ ${list}
 ${userPrompt ? `Additional User Instructions: "${userPrompt}"\n` : ''}
 CRITICAL RULES:
 1. Change only what the suggestions need. Keep every other sentence, heading, list and fact exactly as it is.
-2. Preserve existing YAML frontmatter at the very top (id, title, space, version, etc.).
+2. Return only the page's body. Never add the page's id, version, author, dates, address or breadcrumbs: the app keeps those, and they are not part of the page.
 3. When a suggestion concerns another page too, change only this page's part of it.
 4. Text written ⟦3 name⟧ is a marker for a part of the page that is not text, such as a macro, an image, a link or a layout. Keep every marker exactly as written, where its part belongs. Move or remove a marker only when a suggestion asks for that part to move or go, and never write a marker the page does not already have.
 5. A marker on a line of its own with a matching ⟦/3⟧ later holds the text between the two, such as the body of a panel or a column. You may edit that text; keep both markers, in order.
@@ -53,7 +53,7 @@ CRITICAL RULES:
 - Specific change 2 made to the page
 
 <<<PROPOSED_MARKDOWN>>>
-[Put the full, complete edited Markdown page here with its frontmatter. Do NOT wrap this section in outer backticks.]`;
+[Put the full, complete edited Markdown page here. Do NOT wrap this section in outer backticks.]`;
 }
 
 export type Recommendation = {
