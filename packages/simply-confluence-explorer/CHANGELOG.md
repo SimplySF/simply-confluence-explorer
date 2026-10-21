@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.6.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.5.1...%40simplysf%2Fsimply-confluence-explorer%400.6.0) (2026-10-21)
+
+### Features
+
+- tags and the page tree load from a page catalog kept current, with progress on its first build ([#39](https://github.com/SimplySF/simply-confluence-explorer/issues/39)) ([0fb1440](https://github.com/SimplySF/simply-confluence-explorer/commit/0fb1440ad62937110040741b477d4080291bc3c4))
+
 ## [0.5.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.5.0...%40simplysf%2Fsimply-confluence-explorer%400.5.1) (2026-10-21)
 
 ### Bug Fixes
