@@ -88,22 +88,30 @@ export class SpaceStore {
     return this.spaceKeys().find((key) => fs.existsSync(this.cacheFile(key, pageId)));
   }
 
-  /** Writes a page's cached copy, its Markdown and its attachments. */
+  /**
+   * Writes a page's cached copy, its Markdown and its attachments. The attachment folder is kept in
+   * step with the page: a file the page no longer has is removed. Without `attachments`, as when a
+   * page is read again after a push, the files on disk are kept.
+   */
   public writePage(
     spaceKey: string,
     page: PageDetail,
     markdown: string,
-    attachments: Array<{ name: string; data: Buffer }>,
+    attachments?: Array<{ name: string; data: Buffer }>,
   ): void {
     const cacheFile = this.cacheFile(spaceKey, page.id);
     fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
     const mdFile = this.markdownFile(spaceKey, page);
     fs.mkdirSync(path.dirname(mdFile), { recursive: true });
     fs.writeFileSync(mdFile, markdown, 'utf8');
-    if (attachments.length > 0) {
+    if (attachments) {
       const dir = this.attachmentsDir(spaceKey, page);
-      fs.mkdirSync(dir, { recursive: true });
-      for (const a of attachments) fs.writeFileSync(within(dir, sanitizeFilename(a.name)), a.data);
+      const names = attachmentFileNames(attachments.map((a) => a.name));
+      if (fs.existsSync(dir))
+        for (const old of fs.readdirSync(dir)) if (!names.includes(old)) fs.rmSync(within(dir, old), { force: true });
+      if (attachments.length > 0) fs.mkdirSync(dir, { recursive: true });
+      attachments.forEach((a, i) => fs.writeFileSync(within(dir, names[i]), a.data));
+      if (attachments.length === 0) fs.rmSync(dir, { recursive: true, force: true });
     }
     fs.writeFileSync(cacheFile, JSON.stringify(page, null, 2), 'utf8');
     // A newer version makes the old summary, tags and embeddings stale.
@@ -115,7 +123,24 @@ export class SpaceStore {
 
   /** Replaces a synced page's copy with the page as Confluence now holds it, keeping its attachments. */
   public refreshPage(spaceKey: string, page: PageDetail): void {
-    this.writePage(spaceKey, page, parsePage(page).markdown, []);
+    this.writePage(spaceKey, page, parsePage(page).markdown);
+  }
+
+  /**
+   * A synced page's attachment files on disk, each with its title and type as Confluence gave them.
+   * Only files the page still lists are named.
+   */
+  public attachmentFiles(
+    spaceKey: string,
+    page: PageDetail,
+  ): Array<{ title: string; mediaType: string; file: string; bytes: number }> {
+    const dir = this.attachmentsDir(spaceKey, page);
+    const names = attachmentFileNames(page.attachments.map((a) => a.title));
+    return page.attachments.flatMap((a, i) => {
+      const file = within(dir, names[i]);
+      const stat = fs.statSync(file, { throwIfNoEntry: false });
+      return stat ? [{ title: a.title, mediaType: a.mediaType, file, bytes: stat.size }] : [];
+    });
   }
 
   /** The version of a page on disk, or 0 when it is not synced. */
@@ -453,4 +478,21 @@ export class SpaceStore {
   private attachmentsDir(spaceKey: string, page: Pick<PageDetail, 'title' | 'ancestors'>): string {
     return this.markdownFile(spaceKey, page).replace(/\.md$/, '_attachments');
   }
+}
+
+/**
+ * The file name each attachment is kept under: its title made safe for the disk, with a number added
+ * when two titles become the same name, so neither file overwrites the other.
+ */
+export function attachmentFileNames(titles: string[]): string[] {
+  const used = new Set<string>();
+  return titles.map((title) => {
+    const safe = sanitizeFilename(title);
+    const dot = safe.lastIndexOf('.');
+    const [stem, ext] = dot > 0 ? [safe.slice(0, dot), safe.slice(dot)] : [safe, ''];
+    let name = safe;
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${stem} (${n})${ext}`;
+    used.add(name.toLowerCase());
+    return name;
+  });
 }

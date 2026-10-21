@@ -138,7 +138,13 @@ export class ConfluenceClient {
     const content = (await call(() => this.lib().getPage(pageId, { expand: PAGE_EXPAND }))) as RestContent;
     if (typeof content !== 'object' || !content.id)
       throw new HttpError(404, `Page ${pageId} was not found in Confluence`);
-    return this.toDetail(content);
+    const detail = this.toDetail(content);
+    // An expanded list holds only the first page of a page's attachments; the rest are read here.
+    if (content.children?.attachment && linksOf(content.children.attachment).next)
+      detail.attachments = (await this.collect<RestAttachment>(`/rest/api/content/${pageId}/child/attachment`, {})).map(
+        (a) => this.toAttachment(a),
+      );
+    return detail;
   }
 
   /**

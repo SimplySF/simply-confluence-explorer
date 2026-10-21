@@ -54,6 +54,21 @@ describe('the Confluence client', () => {
     expect(page.ancestors.map((a) => a.title)).toEqual(['Platform Engineering Home']);
   });
 
+  it('reads every attachment of a page with more than one page of them, which stopped at the first 25', async () => {
+    const page = fake.page('PLAT', 'Services');
+    const saved = page.attachments;
+    page.attachments = Array.from({ length: 30 }, (_, i) => ({
+      title: `shot-${i}.png`,
+      content: Buffer.from('x'),
+      type: 'image/png',
+    }));
+    try {
+      expect((await client().getPageDetail(page.id)).attachments).toHaveLength(30);
+    } finally {
+      page.attachments = saved;
+    }
+  });
+
   it('lists every space, filters by key or name, and finds an exact key the list does not match', async () => {
     expect((await client().getSpaces()).map((s) => s.key)).toEqual(spaces.map((s) => s.key));
     expect((await client().getSpaces('operat')).map((s) => s.key)).toEqual(['OPS']);

@@ -33,7 +33,7 @@ export type FakePage = {
   spaceKey: string;
   storage: string;
   labels: string[];
-  attachments: string[];
+  attachments: Array<{ title: string; content: Buffer; type: string }>;
   ancestors: Array<{ id: string; title: string }>;
   children: string[];
   version: number;
@@ -70,7 +70,7 @@ function indexDataset(): Map<string, FakePage> {
       spaceKey,
       storage,
       labels: node.labels ?? [],
-      attachments: (node.attachments ?? []).map((a) => a.filename),
+      attachments: (node.attachments ?? []).map((a) => ({ title: a.filename, content: a.content, type: a.type })),
       ancestors,
       children: [],
       version: 1,
@@ -86,6 +86,18 @@ function indexDataset(): Map<string, FakePage> {
   return pages;
 }
 
+const ATTACHMENTS_EXPANDED = 25;
+
+function restAttachment(page: FakePage, a: FakePage['attachments'][number], i: number): Record<string, unknown> {
+  return {
+    id: `att${page.id}${i}`,
+    title: a.title,
+    metadata: { mediaType: a.type },
+    extensions: { fileSize: a.content.length },
+    _links: { download: `/download/attachments/${page.id}/${encodeURIComponent(a.title)}` },
+  };
+}
+
 function rest(page: FakePage): Record<string, unknown> {
   return {
     id: page.id,
@@ -96,15 +108,14 @@ function rest(page: FakePage): Record<string, unknown> {
     ancestors: page.ancestors,
     body: { storage: { value: page.storage, representation: 'storage' } },
     metadata: { labels: { results: page.labels.map((name) => ({ name })) } },
+    // As Confluence does, an expanded list holds the first 25, and names where the rest are.
     children: {
       attachment: {
-        results: page.attachments.map((title, i) => ({
-          id: `att${page.id}${i}`,
-          title,
-          metadata: { mediaType: 'application/octet-stream' },
-          extensions: { fileSize: 10 },
-          _links: { download: `/download/attachments/${page.id}/${title}` },
-        })),
+        results: page.attachments.slice(0, ATTACHMENTS_EXPANDED).map((a, i) => restAttachment(page, a, i)),
+        _links:
+          page.attachments.length > ATTACHMENTS_EXPANDED
+            ? { next: `/rest/api/content/${page.id}/child/attachment` }
+            : {},
       },
     },
     _links: { webui: `/pages/viewpage.action?pageId=${page.id}` },
@@ -184,6 +195,29 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       .map((p) => ({ content: { id: p.id, title: p.title }, excerpt: `@@@hl@@@${p.title}@@@endhl@@@ excerpt` }));
   };
 
+  /** Answers a page's attachment list and an attachment's download; false for any other route. */
+  const attachmentRoute = (
+    route: string,
+    res: http.ServerResponse,
+    list: (all: unknown[]) => void,
+    json: (status: number, body: unknown) => void,
+  ): boolean => {
+    let match = /^\/rest\/api\/content\/(\d+)\/child\/attachment$/.exec(route);
+    if (match) {
+      const page = pages.get(match[1]);
+      if (page) list(page.attachments.map((a, i) => restAttachment(page, a, i)));
+      else json(404, { message: 'No content found' });
+      return true;
+    }
+    match = /^\/download\/attachments\/(\d+)\/(.+)$/.exec(route);
+    if (!match) return false;
+    const title = decodeURIComponent(match[2]);
+    const found = pages.get(match[1])?.attachments.find((a) => a.title === title);
+    if (found) res.writeHead(200, { 'content-type': found.type }).end(found.content);
+    else json(404, { message: 'No attachment' });
+    return true;
+  };
+
   const handle = (req: http.IncomingMessage, res: http.ServerResponse): void => {
     const url = new URL(req.url ?? '/', 'http://fake');
     requests.push(`${req.method} ${url.pathname}${url.search}`);
@@ -245,10 +279,8 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       const page = pages.get(match[1]);
       return page ? json(200, rest(page)) : json(404, { message: `No content found with id: ${match[1]}` });
     }
-    if (route.startsWith('/download/attachments/')) {
-      res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(`attachment ${route}`);
-      return;
-    }
+    if (attachmentRoute(route, res, list, json)) return;
+
     json(404, { message: `No route for ${route}` });
   };
 
