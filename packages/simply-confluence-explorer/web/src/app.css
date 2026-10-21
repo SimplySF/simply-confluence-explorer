@@ -3235,3 +3235,38 @@ div.disclosure-body {
   border-radius: 4px;
   padding: 0.4rem;
 }
+
+/* A short explanation shown at once on hover or keyboard focus, for a control whose name says little. */
+.hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  font: inherit;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: help;
+}
+.hint-text {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 18rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: left;
+  color: var(--text-main);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+.hint:hover .hint-text,
+.hint:focus .hint-text,
+.hint:focus-within .hint-text {
+  display: block;
+}
