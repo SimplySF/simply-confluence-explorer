@@ -30,14 +30,14 @@ something is stored.
 
 These are the paths inside the data directory:
 
-| path                      | what it holds                                                                                              |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `config/connection.json`  | The Confluence URL and the token (ADR-019).                                                                |
-| `config/ai-settings.json` | The chosen AI provider and its keys (ADR-017).                                                             |
-| `spaces/<KEY>/`           | One space's synced pages, its `.confluenceignore` and `.confluenceguard` rules, and its table of contents. |
-| `data/sessions/`          | AI conversations and the files uploaded to them (ADR-023).                                                 |
-| `data/branch-runs/`       | Branch review queues (ADR-024).                                                                            |
-| `data/ai-audit.jsonl`     | A record of what was sent to which AI provider and when. It never contains the content itself (ADR-022).   |
+| path                      | what it holds                                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `config/connection.json`  | The Confluence URL and the token (ADR-019).                                                                                                            |
+| `config/ai-settings.json` | The chosen AI provider and its keys (ADR-017).                                                                                                         |
+| `spaces/<KEY>/`           | One space's synced pages, its `.confluenceignore` and `.confluenceguard` rules, its table of contents, and its page catalog (`catalog.json`, ADR-064). |
+| `data/sessions/`          | AI conversations and the files uploaded to them (ADR-023).                                                                                             |
+| `data/branch-runs/`       | Branch review queues (ADR-024).                                                                                                                        |
+| `data/ai-audit.jsonl`     | A record of what was sent to which AI provider and when. It never contains the content itself (ADR-022).                                               |
 
 - **Secrets are protected on disk.** Files holding a token or a key are written atomically, so a
   crash can never leave half a file, and with mode `0600`, so only the owning user can read them.

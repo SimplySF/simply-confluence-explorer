@@ -120,10 +120,16 @@ spaces/PLAT/
   metadata/              the AI index: summaries, topics, questions
   vectors/               section embeddings, when a provider makes them
   TOC.md, toc.json       the table of contents
+  catalog.json           each page's title, place, labels and AI tags, without its text
   manifest.json          when the space was last synced
   .confluenceignore      the space's exclusion rules
   .confluenceguard       the space's leak guard rules
 ```
+
+A page's tags are its Confluence labels with the topics the AI index gives it. The app keeps them in
+`catalog.json`, and updates it whenever it syncs a page, indexes one, or removes one, so tags and the
+page tree open at once without reading every page. A space synced before the catalog existed builds
+it the first time its tags are opened, showing its progress; this happens once.
 
 You can open the Markdown files in any editor. If you delete one, **Remove stale cached pages…**
 tidies up what the app still remembers about it.
