@@ -77,6 +77,18 @@ export const REVIEW_GUIDE = [
         check: 'When the AI proposes edits across a set of pages, only the changes the user accepted are written.',
       },
       {
+        file: `${SRC}/branches/branchRuns.ts`,
+        symbol: 'eachStaged',
+        check:
+          'Only pages the user staged, and only those a push names, are checked or written; any later change to an edit unstages it.',
+      },
+      {
+        file: `${SRC}/branches/branchRuns.ts`,
+        symbol: 'freshen',
+        check:
+          'Each page is read from Confluence before its edit, an excluded page is skipped, and a suggestion made before the page changed is applied only if the check says it still applies.',
+      },
+      {
         file: `${SRC}/branches/pageChanges.ts`,
         symbol: 'acceptedText',
         check:
@@ -212,6 +224,12 @@ export const REVIEW_GUIDE = [
         file: `${SRC}/routes/sessions.ts`,
         check:
           'Each question, with the conversation so far and its attached files, goes to the AI only through `ai.chat`, which runs the guard.',
+      },
+      {
+        file: `${SRC}/ai/chatQueue.ts`,
+        symbol: 'applyQueueChanges',
+        check:
+          'The chat changes only suggestions in its own queue, named by id; an unreadable line changes nothing, and the browser never supplies a suggestion.',
       },
     ],
   },
