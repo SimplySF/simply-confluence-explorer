@@ -1223,7 +1223,7 @@ so the person can make the change in Confluence instead.
 
 ## ADR-042 — The user guides ship inside the package and have a prose budget of their own, instead of raising the budget for the project's documents
 
-**Status:** accepted, 2026-10-16.
+**Status:** accepted, 2026-10-16. Amended by ADR-067, which raises the guide budget to 1,150 lines.
 
 The app's user documentation lives in `packages/simply-confluence-explorer/docs/`: a getting-started
 page, a guide to each part of the app, and the screenshots they show. It follows the other SimplySF
@@ -1791,7 +1791,7 @@ recommended again.
 
 ## ADR-062 — The code budget rises to 16,500 lines and the prose budget to 1,950 lines for the chat's queues
 
-**Status:** accepted, 2026-10-21. Amends ADR-021 and ADR-055. Amended by ADR-065, which raises the code budget to 17,000 lines.
+**Status:** accepted, 2026-10-21. Amends ADR-021 and ADR-055. Amended by ADR-065 and ADR-067, which raise the code budget.
 
 The chat's queues (ADR-060) and the fresh read before an edit (ADR-061) are a new feature: a review
 queue the chat can change, an edit view with the page and the edit side by side, staging, a push
@@ -1865,7 +1865,7 @@ does not match the page files on disk is built again.
 
 ## ADR-065 — The code budget rises to 17,000 lines for the page catalog
 
-**Status:** accepted, 2026-10-21. Amends ADR-062.
+**Status:** accepted, 2026-10-21. Amends ADR-062. Amended by ADR-067.
 
 The page catalog (ADR-064) and the progress shown while it is first built took the code to 16,605
 lines, over the 16,500 set by ADR-062. The limit rises to 17,000, keeping the usual small headroom.
@@ -1901,3 +1901,17 @@ or CSV file, or a diagram, was invisible to every answer, review, edit and index
 **The argument against:** an image can hold what the leak guard exists to stop, such as a password in
 a screenshot. That is accepted because images are never sent until a person chooses to for the space,
 the choice is asked for where the images are, and every image sent is named so it can be checked.
+
+---
+
+## ADR-067 — The code budget rises to 17,500 lines, prose to 2,050 and the guides to 1,150 for attachments
+
+**Status:** accepted, 2026-10-21. Amends ADR-065, ADR-062 and ADR-042.
+
+Reading attachments (ADR-066) took the code to 17,102 lines, over the 17,000 set by ADR-065; its
+design doc and guide paragraphs need room the prose (1,922 of 1,950) and the guides (1,099 of
+1,100) no longer have. The limits rise to 17,500, 2,050 and 1,150, each keeping the usual small
+headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit. This is accepted
+because each increase is sized to the measured change, and the next one needs its own record.
