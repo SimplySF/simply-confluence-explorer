@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.7.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.6.0...%40simplysf%2Fsimply-confluence-explorer%400.7.0) (2026-10-21)
+
+### Features
+
+- page attachments are read with their page, text always and images by the space's choice ([#41](https://github.com/SimplySF/simply-confluence-explorer/issues/41)) ([27d42c8](https://github.com/SimplySF/simply-confluence-explorer/commit/27d42c8169fd8dbdde234c1193d1049e7d69a0ef))
+
 # [0.6.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.5.1...%40simplysf%2Fsimply-confluence-explorer%400.6.0) (2026-10-21)
 
 ### Features
