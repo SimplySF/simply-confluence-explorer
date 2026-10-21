@@ -25,7 +25,7 @@ import type { AiSessionView, SessionTurn } from '../src/api/types.js';
 import { ConfiguredAi } from '../src/ai/engine.js';
 import { runGeminiCli } from '../src/ai/geminiService.js';
 import { OutboundGuard, type GuardedPayload } from '../src/ai/guard.js';
-import { checkPayload, ContextCheckError, ManifestBuilder, summarise } from '../src/ai/manifest.js';
+import { checkImages, checkPayload, ContextCheckError, ManifestBuilder, summarise } from '../src/ai/manifest.js';
 import { cutOffOf } from '../src/ai/providers.js';
 import { AiSettingsStore } from '../src/ai/settings.js';
 import { noTracer } from '../src/telemetry/tracer.js';
@@ -275,5 +275,16 @@ describe('every chat route', () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe('images in a request', () => {
+  it('are counted in what was sent, and a request missing one is refused', () => {
+    const m = new ManifestBuilder();
+    m.include('page', 'Runbook', 'Text.');
+    m.includeImages([{ name: 'chart.png', bytes: 10 }]);
+    expect(summarise(m.build()).images).toBe(1);
+    expect(checkImages(m.build(), 1)).toEqual([]);
+    expect(checkImages(m.build(), 0)).toEqual(['1 of its 1 images are missing']);
   });
 });

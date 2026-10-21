@@ -280,6 +280,97 @@ test('Gemini API: generateContent with the key header and the system prompt as a
   }
 });
 
+// Images a space chose to send (ADR-066), as each provider expects them.
+const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
+const withImage = (): ReturnType<OutboundGuard['inspect']> =>
+  new OutboundGuard().inspect({
+    system: 'SYSTEM',
+    prompt: '',
+    document: 'DOC',
+    images: [{ name: 'chart.png', mediaType: 'image/png', data: PNG }],
+  });
+
+test('the guard lets an image through as unchecked, names it, and checks its name like any text', () => {
+  const { payload, report } = withImage();
+  assert.deepEqual(payload.images, [{ name: 'chart.png', mediaType: 'image/png', data: PNG.toString('base64') }]);
+  assert.deepEqual(report.unchecked, ['chart.png']);
+  assert.match(report.summary, /Sent without leak-guard checks, as images: chart\.png\./);
+  const key = ['AKIA', 'IOSFODNN7', 'EXAMPLE'].join('');
+  assert.throws(
+    () =>
+      new OutboundGuard().inspect({
+        system: 'S',
+        prompt: '',
+        document: 'D',
+        images: [{ name: `${key}.png`, mediaType: 'image/png', data: PNG }],
+      }),
+    /an image name/,
+  );
+});
+
+test('Claude, ChatGPT and the Gemini API each receive an image in their own shape, with the text', async () => {
+  const claude = anthropicRequest(
+    cfg('', 'claude-opus-5-5'),
+    's',
+    withImage().payload.messages,
+    withImage().payload.images,
+  );
+  assert.deepEqual(claude.messages[0].content, [
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG.toString('base64') } },
+    { type: 'text', text: 'DOC' },
+  ]);
+  const openai = await standIn((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      JSON.stringify({ id: 'r', object: 'response', created_at: 0, status: 'completed', model: 'm', output: [] }),
+    );
+  });
+  const gemini = await standIn((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'ok' }] } }] }));
+  });
+  try {
+    await complete('openai', cfg(`${openai.url}/v1`, 'm'), withImage().payload);
+    assert.deepEqual(openai.seen[0].body.input, [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'DOC' },
+          { type: 'input_image', image_url: `data:image/png;base64,${PNG.toString('base64')}`, detail: 'auto' },
+        ],
+      },
+    ]);
+    await complete('gemini', cfg(gemini.url, 'gemini-pro-latest'), withImage().payload);
+    assert.match(JSON.stringify(gemini.seen[0].body), /"inlineData":\{"mimeType":"image\/png","data":"iVBORw0KGgo="\}/);
+  } finally {
+    openai.close();
+    gemini.close();
+  }
+});
+
+test('the Gemini CLI reads images from a private folder made for the request, removed when it ends', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  // A stand-in that reports its working folder, the files in it, and its instruction.
+  fs.writeFileSync(
+    script,
+    `import fs from 'node:fs';
+process.stdin.resume();
+process.stdin.on('end', () => {
+  const at = process.argv.indexOf('-p');
+  process.stdout.write(JSON.stringify({ cwd: process.cwd(), files: fs.readdirSync('.'), p: process.argv[at + 1] }));
+});`,
+  );
+  const reply = JSON.parse((await runGeminiCli(script, withImage().payload, {})).text) as {
+    cwd: string;
+    files: string[];
+    p: string;
+  };
+  assert.deepEqual(reply.files, ['img-1.png']);
+  assert.match(reply.p, /@img-1\.png$/);
+  assert.match(path.basename(reply.cwd), /^cexp-images-/);
+  assert.equal(fs.existsSync(reply.cwd), false, 'the folder is removed once the CLI ends');
+});
+
 test('no key or no model fails before anything is sent', async () => {
   await assert.rejects(complete('anthropic', { ...cfg('', 'm'), apiKey: '' }, guarded('s', 'u')), /no API key/);
   await assert.rejects(complete('openai', cfg('', ''), guarded('s', 'u')), /no model/);

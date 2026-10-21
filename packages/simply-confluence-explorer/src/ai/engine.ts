@@ -19,8 +19,15 @@ import path from 'node:path';
 import { errorMessage } from '../util/errors.js';
 import { noTracer, type Attrs, type Tracer } from '../telemetry/tracer.js';
 import { resolveGeminiCli, runGeminiCli, systemCliLookup } from './geminiService.js';
-import { loadGuardRules, OutboundGuard, type ChatTurn, type GuardedPayload, type GuardReport } from './guard.js';
-import { checkPayload, ContextCheckError, summarise, type ContextManifest } from './manifest.js';
+import {
+  loadGuardRules,
+  OutboundGuard,
+  type ChatTurn,
+  type GuardedPayload,
+  type GuardReport,
+  type ImageInput,
+} from './guard.js';
+import { checkImages, checkPayload, ContextCheckError, summarise, type ContextManifest } from './manifest.js';
 import { complete, embed, EMBEDDING_MODELS, listModels } from './providers.js';
 import type { Reply } from './reply.js';
 import type { AiSettingsStore, ApiProvider } from './settings.js';
@@ -50,6 +57,8 @@ export type AiContext = {
   signal?: AbortSignal;
   /** Told the answer so far while it is written, where the provider streams it, so progress can be shown. */
   onText?: (text: string) => void;
+  /** Images the space chose to send with the document, which the guard records as unchecked (ADR-066). */
+  images?: ImageInput[];
 };
 
 /** A request the person stopped. Nothing may act on its answer, even one that arrives afterwards. */
@@ -84,6 +93,8 @@ export type ChatParts = {
   prompt: string;
   system?: string;
   manifest?: ContextManifest;
+  /** Images the space chose to send with the context (ADR-066). */
+  images?: ImageInput[];
 };
 
 /** Sends a guarded payload and returns the reply. The real one calls a provider or the CLI. */
@@ -168,6 +179,7 @@ export class ConfiguredAi implements AiEngine {
       system: ANALYZE_SYSTEM,
       prompt,
       document: `# Document Title: ${pageTitle ?? 'Confluence Document'}\n\n${markdown}\n`,
+      images: ctx.images,
     });
     return this.deliver(payload, report, guard, ctx);
   }
@@ -177,7 +189,10 @@ export class ConfiguredAi implements AiEngine {
     if (!parts.manifest) return this.deliver(payload, report, ctx.guard, ctx);
     // The context must reach the model whole: a request missing part of what it was built to carry is
     // refused, and raised as a problem, rather than sent.
-    const problems = checkPayload(parts.manifest, payload.messages.map((m) => m.content).join('\n'));
+    const problems = [
+      ...checkPayload(parts.manifest, payload.messages.map((m) => m.content).join('\n')),
+      ...checkImages(parts.manifest, payload.images?.length ?? 0),
+    ];
     const tracer = this.options.tracer ?? noTracer;
     if (problems.length > 0) {
       tracer.problem('context', `A request was refused because it was missing context: ${problems[0]}.`);
@@ -296,6 +311,10 @@ export class ConfiguredAi implements AiEngine {
       chars,
       turns: payload.messages.length,
       redacted: report.redacted,
+      // Images are counted and sized, never recorded, and each is named as unchecked in the answer.
+      ...(payload.images?.length
+        ? { images: payload.images.length, imageBytes: payload.images.reduce((n, i) => n + (i.data.length * 3) / 4, 0) }
+        : {}),
     };
     let reply: Reply;
     try {

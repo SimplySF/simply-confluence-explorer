@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import type { MetadataProgress, PageDetail, PageMetadata } from '../api/types.js';
+import type { ImageChoice, MetadataProgress, PageDetail, PageMetadata } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
+import type { ImageInput } from '../ai/guard.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
@@ -23,6 +24,7 @@ import { errorMessage } from '../util/errors.js';
 import { mapChunked, pause } from '../util/pause.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
+import { imagesFor } from './attachments.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
@@ -75,14 +77,17 @@ export async function generateMetadata(
   page: PageDetail,
   ai: AiEngine,
   vocabulary: string[] = [],
+  markdownOf: (page: PageDetail) => string = (p) => parsePage(p).markdown,
+  images: ImageInput[] = [],
 ): Promise<PageMetadata> {
-  const { markdown } = parsePage(page);
+  const markdown = markdownOf(page);
   const headings = splitSections(page.id, markdown)
     .slice(0, SUMMARISED_SECTIONS)
     .map((s) => sectionName(page.title, s));
   const reply = (
     await ai.analyzeDocument(markdown, metadataPrompt(vocabulary.slice(0, VOCABULARY), headings), page.title, {
       spaceKey: page.spaceKey,
+      ...(images.length ? { images } : {}),
     })
   ).text;
   const json = /\{[\s\S]*\}/.exec(reply);
@@ -133,7 +138,7 @@ export class MetadataPipeline {
     log: (message: string) => void,
     private readonly vectors?: VectorIndex,
     private readonly tracer: Tracer = noTracer,
-    private readonly options: { retryDelayMs?: number } = {},
+    private readonly options: { retryDelayMs?: number; imageChoice?: (spaceKey: string) => ImageChoice } = {},
   ) {
     this.jobs = new JobRunner<MetadataProgress>(
       'meta',
@@ -264,10 +269,19 @@ export class MetadataPipeline {
     const tags: string[] = [];
     const failed: Array<{ page: PageDetail; error: string }> = [];
     const needed = pack.filter((p) => !isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)));
+    // Each page is indexed with its text attachments, and its images when the space sends them (ADR-066).
+    const markdownOf = (page: PageDetail): string => this.store.readableMarkdown(spaceKey, page);
+    const choice = this.options.imageChoice?.(spaceKey) ?? 'ask';
+    const imagesOf = (pages: PageDetail[]): ImageInput[] =>
+      imagesFor(
+        (key, p) => this.store.attachments.of(key, p),
+        choice,
+        pages.map((page) => ({ spaceKey, page })),
+      ).images;
     const retry = <T>(fn: () => Promise<T>): Promise<T> => withRetry(fn, this.options.retryDelayMs ?? 2000, stopped);
     const results =
       needed.length > 1
-        ? await retry(() => generateMetadataPack(needed, ai, vocabulary)).catch(
+        ? await retry(() => generateMetadataPack(needed, ai, vocabulary, markdownOf, imagesOf(needed))).catch(
             // The pack request itself failed: each page is asked for on its own instead.
             (error: unknown) => new Map(needed.map((p) => [p.id, new Error(errorMessage(error))])),
           )
@@ -279,7 +293,7 @@ export class MetadataPipeline {
         if (result && !(result instanceof Error)) this.store.writeMetadata(spaceKey, result);
       } else {
         // eslint-disable-next-line no-await-in-loop -- a page left out of its pack is asked for alone, in turn
-        result = await retry(() => generateMetadata(page, ai, vocabulary)).catch(
+        result = await retry(() => generateMetadata(page, ai, vocabulary, markdownOf, imagesOf([page]))).catch(
           (error: unknown) => new Error(errorMessage(error)),
         );
         if (result instanceof Error) failed.push({ page, error: result.message });
@@ -309,7 +323,9 @@ export class MetadataPipeline {
     const todo = pages.filter((p) => !this.vectors!.has(p, model));
     if (todo.length === 0) return;
     const texts = todo.map((page) =>
-      splitSections(page.id, parsePage(page).markdown).map((s) => `${sectionName(page.title, s)}\n\n${s.text}`),
+      splitSections(page.id, this.store.readableMarkdown(spaceKey, page)).map(
+        (s) => `${sectionName(page.title, s)}\n\n${s.text}`,
+      ),
     );
     try {
       const vectors = await ai.embed(texts.flat(), { spaceKey });

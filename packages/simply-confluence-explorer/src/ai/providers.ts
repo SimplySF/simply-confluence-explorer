@@ -21,7 +21,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import type { GuardedPayload } from './guard.js';
+import type { GuardedImage, GuardedPayload } from './guard.js';
 import type { Reply } from './reply.js';
 import type { ApiProvider, ResolvedApi } from './settings.js';
 
@@ -62,21 +62,33 @@ export function cutOffOf(provider: ApiProvider, response: unknown): Reply['cutOf
  * @param cfg The provider settings.
  * @param system The system prompt.
  * @param messages The guarded conversation.
+ * @param images Images the space chose to send, which go with the first message (ADR-066).
  */
 /* eslint-disable camelcase -- the field names are the Claude API's own */
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the SDK's own parameter type is inferred here
-export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Messages) {
+export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Messages, images: Images = []) {
+  const pictures = images.map((im) => ({
+    type: 'image' as const,
+    source: { type: 'base64' as const, media_type: im.mediaType as ImageType, data: im.data },
+  }));
   return {
     model: cfg.model,
     max_tokens: 64000,
     system,
     // In a conversation the first message carries the page and file context, which is the same on
-    // every turn, so it is marked for prompt caching.
+    // every turn, so it is marked for prompt caching, with any images ahead of it.
     messages: messages.map((m, i) =>
-      i === 0 && messages.length > 1
+      i === 0 && (messages.length > 1 || pictures.length > 0)
         ? {
             role: m.role,
-            content: [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }],
+            content: [
+              ...pictures,
+              {
+                type: 'text' as const,
+                text: m.content,
+                ...(messages.length > 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
+              },
+            ],
           }
         : { role: m.role, content: m.content },
     ),
@@ -90,17 +102,21 @@ export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Mes
 
 const withCutOff = (text: string, cutOff: Reply['cutOff']): Reply => (cutOff ? { text, cutOff } : { text });
 
+type Images = readonly GuardedImage[];
+type ImageType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
 async function anthropic(
   cfg: ResolvedApi,
   system: string,
   messages: Messages,
+  images: Images,
   signal?: AbortSignal,
   onText?: (text: string) => void,
 ): Promise<Reply> {
   const client = new Anthropic({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
   // Streamed, because page context can be long, and a long request that is not streamed can time out;
   // the text so far is passed on as it arrives.
-  const stream = client.beta.messages.stream(anthropicRequest(cfg, system, messages), { signal });
+  const stream = client.beta.messages.stream(anthropicRequest(cfg, system, messages, images), { signal });
   if (onText) stream.on('text', (_delta: string, snapshot: string) => onText(snapshot));
   const message = await stream.finalMessage();
   if (message.stop_reason === 'refusal') {
@@ -114,10 +130,28 @@ async function anthropic(
   return withCutOff(text, cutOffOf('anthropic', message));
 }
 
-async function openai(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<Reply> {
+async function openai(
+  cfg: ResolvedApi,
+  system: string,
+  messages: Messages,
+  images: Images,
+  signal?: AbortSignal,
+): Promise<Reply> {
   const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
+  const pictures = images.map((im) => ({
+    type: 'input_image' as const,
+    // eslint-disable-next-line camelcase -- the OpenAI API's own field name
+    image_url: `data:${im.mediaType};base64,${im.data}`,
+    detail: 'auto' as const,
+  }));
   const input =
-    messages.length === 1 ? messages[0].content : messages.map((m) => ({ role: m.role, content: m.content }));
+    messages.length === 1 && pictures.length === 0
+      ? messages[0].content
+      : messages.map((m, i) =>
+          i === 0 && pictures.length > 0
+            ? { role: 'user' as const, content: [{ type: 'input_text' as const, text: m.content }, ...pictures] }
+            : { role: m.role, content: m.content },
+        );
   const response = await client.responses.create({ model: cfg.model, instructions: system, input }, { signal });
   return withCutOff(response.output_text.trim(), cutOffOf('openai', response));
 }
@@ -126,11 +160,21 @@ function geminiClient(cfg: ResolvedApi): GoogleGenAI {
   return new GoogleGenAI({ apiKey: cfg.apiKey, httpOptions: cfg.baseUrl ? { baseUrl: cfg.baseUrl } : undefined });
 }
 
-async function gemini(cfg: ResolvedApi, system: string, messages: Messages, signal?: AbortSignal): Promise<Reply> {
+async function gemini(
+  cfg: ResolvedApi,
+  system: string,
+  messages: Messages,
+  images: Images,
+  signal?: AbortSignal,
+): Promise<Reply> {
+  const pictures = images.map((im) => ({ inlineData: { mimeType: im.mediaType, data: im.data } }));
   const contents =
-    messages.length === 1
+    messages.length === 1 && pictures.length === 0
       ? messages[0].content
-      : messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+      : messages.map((m, i) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }, ...(i === 0 ? pictures : [])],
+        }));
   const response = await geminiClient(cfg).models.generateContent({
     model: cfg.model,
     contents,
@@ -152,9 +196,10 @@ export async function complete(
 ): Promise<Reply> {
   if (!cfg.apiKey) throw new Error(`no API key is set for ${provider}`);
   if (!cfg.model) throw new Error(`no model is chosen for ${provider}`);
-  if (provider === 'anthropic') return anthropic(cfg, payload.system, payload.messages, signal, onText);
+  const images = payload.images ?? [];
+  if (provider === 'anthropic') return anthropic(cfg, payload.system, payload.messages, images, signal, onText);
   const run = { openai, gemini }[provider];
-  return run(cfg, payload.system, payload.messages, signal);
+  return run(cfg, payload.system, payload.messages, images, signal);
 }
 
 /**

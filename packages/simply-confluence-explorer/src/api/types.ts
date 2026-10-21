@@ -332,6 +332,8 @@ export type SessionTurn = {
   proposedEdit?: { runId: string; pageId: string; title: string; text: string };
   /** The author accepted or dismissed this answer's proposal, so it is not offered again. */
   proposalClosed?: boolean;
+  /** The images on the pages this answer read: how many, how many were sent, and the space's choice. */
+  images?: ImagesReport;
   /** On an answer that changed the chat's suggestions: how many it added, updated and removed. */
   queued?: { added: number; updated: number; removed: number };
 };
@@ -554,6 +556,8 @@ export type BranchItem = {
   refined?: string;
   /** What happened to the page's edit so far, each step with when it began, for the person to follow. */
   steps?: Array<{ at: string; text: string }>;
+  /** The images on the page, and whether they were sent with the request for its edit (ADR-066). */
+  images?: ImagesReport;
   /** While the edit is written, and the provider streams it: how long the answer is, and its end. */
   writing?: { chars: number; tail: string };
   /** Picked to be pushed; any later change to the edit unpicks it, so what is pushed was looked at. */
@@ -603,6 +607,11 @@ export type SeriesPage = {
 
 /** The GitLab connection, as a browser may see it: never the token (ADR-050). */
 export type GitLabView = { baseUrl: string; tokenSet: boolean };
+
+/** Whether a space's images go to the AI: ask whenever pages with images are read, send, or skip (ADR-066). */
+export type ImageChoice = 'ask' | 'send' | 'skip';
+/** What a request did with the images on the pages it read. */
+export type ImagesReport = { found: number; sent: number; choice: ImageChoice; left?: string[] };
 
 /** A space's tags, or, while its page catalog is first built, how far that has got (ADR-064). */
 export type TagsResponse = { tags: TaggedPages[]; building?: { done: number; total: number } };

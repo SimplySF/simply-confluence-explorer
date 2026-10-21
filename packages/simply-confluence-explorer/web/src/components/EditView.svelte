@@ -14,6 +14,7 @@
   import type { BranchItem, BranchRun } from '../../../src/api/types.js';
   import { bodyOf } from '../support/markdown.js';
   import ChangeCard from './ChangeCard.svelte';
+  import ImagesNote from './ImagesNote.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
   import Diff from './ui/Diff.svelte';
   import Markdown from './ui/Markdown.svelte';
@@ -248,6 +249,7 @@
     <aside class="edit-side">
       <h5>The AI's recommendation</h5>
       {#if item.guardSummary}<div class="guard-note"><ShieldCheck size={12} /> {item.guardSummary}</div>{/if}
+      {#if item.images}<ImagesNote spaceKey={run.spaceKey} report={item.images} />{/if}
       {#if item.fixes?.length}
         <p class="branch-note">Suggestions this edit applies:</p>
         <ul class="branch-critique">

@@ -312,8 +312,9 @@ describe('downloading an attachment', () => {
     await expect(client.downloadAttachment('https://attacker.example/download/x')).rejects.toMatchObject({
       status: 400,
     });
-    expect((await client.downloadAttachment(`${fake.url}/download/attachments/1/a.txt`)).toString()).toContain(
-      'attachment',
-    );
+    const page = fake.page('PLAT', 'Architecture Overview');
+    expect(
+      (await client.downloadAttachment(`${fake.url}/download/attachments/${page.id}/capacity-notes.txt`)).toString(),
+    ).toBe('Capacity planning notes for 2026.\n');
   });
 });

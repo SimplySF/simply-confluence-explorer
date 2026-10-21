@@ -79,6 +79,11 @@ value keeps the same placeholder for the whole conversation.
 Under each answer, a short line says what the guard did, such as "Leak guard: nothing needed
 removing."
 
+**Images are not checked.** The guard reads text, so it cannot see a password in a screenshot. A
+page's images are sent only for a space you chose to send them for (**Space → Exclusions and leak
+guard… → Images on pages**), and every answer names the images it sent unchecked. Text attachments
+are checked like the page.
+
 ### Your own guard rules
 
 The second box in the same dialog holds rules for things only your organisation knows about:

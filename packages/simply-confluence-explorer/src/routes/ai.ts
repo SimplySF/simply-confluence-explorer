@@ -16,19 +16,20 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AiSettingsView, AnalyzeResponse, MetadataProgress } from '../api/types.js';
+import type { AiSettingsView, AnalyzeResponse, ImageChoice, MetadataProgress, PageDetail } from '../api/types.js';
 import { listModels } from '../ai/engine.js';
 import { guardRulesPath, parseGuardRules, withWithheld } from '../ai/guard.js';
 import { API_PROVIDERS, type ApiProvider, type SettingsUpdate } from '../ai/settings.js';
 import { isValidPageId } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
-import { parsePage } from '../parser/convert.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
+import { IMAGE_TYPES, imagesFor } from '../spaces/attachments.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
 import { corpusSize, retrieveContext } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { generateMetadata } from '../spaces/metadata.js';
+import { isImageChoice, loadSpaceSettings, saveSpaceSettings } from '../spaces/spaceSettings.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
 import { tagIndex } from '../spaces/tags.js';
 import { errorMessage } from '../util/errors.js';
@@ -112,6 +113,14 @@ const requiredPrompt = (body: unknown): string => {
 export function addAiRoutes(router: Router, services: Services): Router {
   const { ai, store, exclusions, metadata, dataDir, index } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
+  /** How many images the pages hold, and the space's choice about them, for the coverage line. */
+  const imagesOnPages = (spaceKey: string, pages: PageDetail[]): { found: number; choice: ImageChoice } => ({
+    found: pages.reduce(
+      (n, p) => n + p.attachments.filter((a) => IMAGE_TYPES[path.extname(a.title).toLowerCase()]).length,
+      0,
+    ),
+    choice: loadSpaceSettings(dataDir, spaceKey).images,
+  });
   const settingsView = (): AiSettingsView => ({ ...ai.settings.publicView(), geminiCliFound: ai.cliPath() });
   const gate = async (
     pageId: string,
@@ -176,7 +185,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
           // page, or from before a rule changed, can never go out under this page's name.
           const checked = await gate(pageId, spaceKey);
           spaceKey = checked.spaceKey;
-          markdown = parsePage(checked.page).markdown;
+          markdown = store.readableMarkdown(checked.spaceKey, checked.page);
           pageTitle = checked.page.title;
           // A page with no body of its own, such as a folder page, is answered from the pages below it.
           const ownBody = markdown.replace(/^---[\s\S]*?---\s*/m, '').trim();
@@ -226,6 +235,10 @@ export function addAiRoutes(router: Router, services: Services): Router {
           page,
           ai,
           (await tagIndex(store, spaceKey)).map((t) => t.tag),
+          (p) => store.readableMarkdown(spaceKey, p),
+          imagesFor((key, p) => store.attachments.of(key, p), loadSpaceSettings(dataDir, spaceKey).images, [
+            { spaceKey, page },
+          ]).images,
         );
         if (store.readPage(spaceKey, page.id)) store.writeMetadata(spaceKey, result);
         return { metadata: result };
@@ -259,8 +272,14 @@ export function addAiRoutes(router: Router, services: Services): Router {
             indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 },
           };
         }
-        const size = corpusSize(key, await metadata.allowedPages(key, rootPageId, ids), index);
-        return { ...(await metadata.coverage(key, rootPageId, ids)), fits: size <= services.contextChars };
+        const allowed = await metadata.allowedPages(key, rootPageId, ids);
+        const size = corpusSize(key, allowed, index);
+        const images = imagesOnPages(key, allowed);
+        return {
+          ...(await metadata.coverage(key, rootPageId, ids)),
+          fits: size <= services.contextChars,
+          ...(images.found ? { images } : {}),
+        };
       })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);
@@ -276,6 +295,15 @@ export function addAiRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/space-cache/:spaceKey/metadata/cancel-active', ({ params }) => {
         const job = metadata.activeFor(params.spaceKey);
         return { cancelled: job ? metadata.cancel(job.jobId) : false };
+      })
+      // Whether the space's images go to the AI (ADR-066); anything but a known choice is refused.
+      .add('GET', '/api/space-cache/:spaceKey/space-settings', ({ params }) =>
+        loadSpaceSettings(dataDir, params.spaceKey),
+      )
+      .add('POST', '/api/space-cache/:spaceKey/space-settings', ({ params, body }) => {
+        const images = fieldsOf(body).images;
+        if (!isImageChoice(images)) throw new HttpError(400, 'images must be ask, send or skip');
+        return saveSpaceSettings(dataDir, params.spaceKey, { images });
       })
       .add('GET', '/api/space-cache/:spaceKey/guard', ({ params }) => {
         const file = guardRulesPath(dataDir, params.spaceKey);

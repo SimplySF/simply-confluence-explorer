@@ -29,6 +29,7 @@ import type {
   ConnectionUpdate,
   ConnectionView,
   GitLabView,
+  ImageChoice,
   IgnoreRules,
   MetadataProgress,
   PageMetadata,
@@ -106,6 +107,8 @@ export type Coverage = {
   requests?: number;
   fits?: boolean;
   indexing?: { done: number; total: number };
+  /** How many images the pages hold, and the space's choice about sending them (ADR-066). */
+  images?: { found: number; choice: ImageChoice };
 };
 export type DraftSummary = AiSessionView & { turnCount: number };
 
@@ -177,6 +180,10 @@ export const api = {
   askSpace: (spaceKey: string, prompt: string) =>
     call<AnalyzeResponse>(`/space-cache/${key(spaceKey)}/ai/ask`, 'POST', { prompt }),
 
+  /** Whether a space's images go to the AI (ADR-066). */
+  spaceSettings: (spaceKey: string) => call<{ images: ImageChoice }>(`/space-cache/${key(spaceKey)}/space-settings`),
+  saveSpaceSettings: (spaceKey: string, images: ImageChoice) =>
+    call<{ images: ImageChoice }>(`/space-cache/${key(spaceKey)}/space-settings`, 'POST', { images }),
   /** A space's tags, or how far its page catalog has got while it is first built (ADR-064). */
   tags: (spaceKey: string) => call<TagsResponse>(`/space-cache/${key(spaceKey)}/tags`),
   /** The staged pages of every chat in a space, for its push queue. */

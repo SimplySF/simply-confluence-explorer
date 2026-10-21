@@ -16,7 +16,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { frontmatterOf, parsePage } from '../parser/convert.js';
+import { frontmatterOf } from '../parser/convert.js';
 import type { PageDetail, PageMetadata } from '../api/types.js';
 import { mapChunked } from '../util/pause.js';
 import { splitSections, type Section } from './sections.js';
@@ -239,10 +239,12 @@ export class SearchIndex {
     const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}`;
     let cached = this.pages.get(id);
     if (cached?.stamp !== pageStamp) {
-      const splitStamp = `${page.version}|${page.storageXml.length}`;
+      const attached = page.attachments.map((a) => `${a.title}:${a.fileSize}`).join(',');
+      const splitStamp = `${page.version}|${page.storageXml.length}|${attached}`;
       let split = this.split.get(id);
       if (split?.stamp !== splitStamp) {
-        split = { stamp: splitStamp, sections: splitSections(page.id, parsePage(page).markdown) };
+        // Text attachments are sections of their page, so a question finds a value only they hold.
+        split = { stamp: splitStamp, sections: splitSections(page.id, this.store.readableMarkdown(key, page)) };
         this.split.set(id, split);
       }
       // About how many characters the page takes when read in full: its frontmatter and each section with its heading.

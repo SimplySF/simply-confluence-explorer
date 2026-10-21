@@ -159,6 +159,12 @@ export const REVIEW_GUIDE = [
           'It accepts only a `GuardedPayload`, the type the outbound guard produces, so unchecked text cannot be sent.',
       },
       {
+        file: `${SRC}/spaces/attachments.ts`,
+        symbol: 'imagesFor',
+        check:
+          "A page's images are read and sent only when the space's choice is send; otherwise none is, and the answer only counts them.",
+      },
+      {
         file: `${SRC}/ai/providers.ts`,
         symbol: 'embed',
         check:
@@ -192,6 +198,17 @@ export const REVIEW_GUIDE = [
         file: `${SRC}/ai/guard.ts`,
         check:
           'Secrets such as keys and passwords stop the request; personal data such as email addresses and card numbers is replaced with placeholders.',
+      },
+      {
+        file: `${SRC}/ai/guard.ts`,
+        symbol: 'scanNames',
+        check:
+          "An image's name is checked like any text, and every image sent is named in the report as unchecked, because its contents cannot be read.",
+      },
+      {
+        file: `${SRC}/spaces/spaceSettings.ts`,
+        symbol: 'loadSpaceSettings',
+        check: 'A space with no choice saved, or one that cannot be read, sends no image.',
       },
       {
         file: `${SRC}/ai/guard.ts`,

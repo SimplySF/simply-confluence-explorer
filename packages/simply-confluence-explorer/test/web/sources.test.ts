@@ -72,4 +72,10 @@ describe('what an answer sent', () => {
       leftOut: ['Deploy Notes: holds a secret', "2 pages: excluded by the space's rules"],
     });
   });
+
+  it('counts the images sent with the text, which the leak guard could not check', () => {
+    expect(sentLines({ pages: 2, sections: 0, files: 0, turns: 0, images: 3, chars: 900, leftOut: [] }).summary).toBe(
+      'Sent 2 pages, 3 images · 900 characters',
+    );
+  });
 });

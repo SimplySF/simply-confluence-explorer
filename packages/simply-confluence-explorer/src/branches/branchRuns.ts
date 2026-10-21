@@ -34,6 +34,8 @@ import { HttpError } from '../http/router.js';
 import { stripFrontmatter } from '../parser/convert.js';
 import { toEditForm } from '../parser/editForm.js';
 import { EXCLUDED_MESSAGE, gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
+import { imagesFor } from '../spaces/attachments.js';
+import { loadSpaceSettings } from '../spaces/spaceSettings.js';
 import { errorMessage } from '../util/errors.js';
 import { pause } from '../util/pause.js';
 import { within } from '../util/paths.js';
@@ -450,10 +452,13 @@ export class BranchRunner {
       item.status = 'working';
       step(item, `Writing the edit, applying ${plural(item.fixes?.length ?? 0, 'suggestion')}`);
       this.store.save(run);
-      const prompt = applyPrompt(item.fixes ?? [], run.instructions);
+      const prompt = applyPrompt(item.fixes ?? [], run.instructions) + this.attachmentsNote(run.spaceKey, item.pageId);
+      const seen = this.imagesOf(run.spaceKey, item.pageId);
+      if (seen.report.found) item.images = seen.report;
       const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
         spaceKey: run.spaceKey,
         signal,
+        ...(seen.images.length ? { images: seen.images } : {}),
         // Kept in memory only, for the screen to show while the edit is written.
         onText: (text) => (item.writing = { chars: text.length, tail: text.slice(-WRITING_TAIL) }),
       });
@@ -482,6 +487,22 @@ export class BranchRunner {
     delete item.writing;
     run.processed++;
     this.store.save(run);
+  }
+
+  /** The page's images, sent with its edit request only when the space chose to send them (ADR-066). */
+  private imagesOf(spaceKey: string, pageId: string): ReturnType<typeof imagesFor> {
+    const page = this.deps.store.readPage(spaceKey, pageId);
+    const choice = loadSpaceSettings(this.deps.dataDir, spaceKey).images;
+    return imagesFor((key, p) => this.deps.store.attachments.of(key, p), choice, page ? [{ spaceKey, page }] : []);
+  }
+
+  /** The page's text attachments, for the edit model to read but never edit (ADR-066). */
+  private attachmentsNote(spaceKey: string, pageId: string): string {
+    const page = this.deps.store.readPage(spaceKey, pageId);
+    const text = page ? this.deps.store.attachments.of(spaceKey, page).text : '';
+    return text
+      ? `\n\nThe page's attachments, to read for context only; never edit them or copy them into the page:${text}`
+      : '';
   }
 
   /**

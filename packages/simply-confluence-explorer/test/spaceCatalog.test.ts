@@ -179,3 +179,45 @@ describe("a space's catalog", () => {
     expect(store.catalog.progress('PLAT')).toBeUndefined();
   });
 });
+
+describe("a synced page's attachment files", () => {
+  const files = (store: SpaceStore, p: PageDetail): string[] =>
+    store.attachmentFiles('PLAT', p).map((f) => path.basename(f.file));
+  const withAttachments = (titles: string[]): PageDetail =>
+    page('9', 'Shots', {
+      attachments: titles.map((title, i) => ({
+        id: `a${i}`,
+        title,
+        mediaType: 'image/png',
+        fileSize: 1,
+        downloadUrl: '',
+      })),
+    });
+
+  it('keep two whose names become the same on disk apart, where one overwrote the other', () => {
+    const { store } = open();
+    const p = withAttachments(['a/b.png', 'a:b.png']);
+    store.writePage('PLAT', p, '', [
+      { name: 'a/b.png', data: Buffer.from('one') },
+      { name: 'a:b.png', data: Buffer.from('two') },
+    ]);
+    const kept = store.attachmentFiles('PLAT', p).map((f) => fs.readFileSync(f.file, 'utf8'));
+    expect(kept).toEqual(['one', 'two']);
+    expect(new Set(files(store, p)).size).toBe(2);
+  });
+
+  it('lose a file deleted in Confluence at the next sync, which stayed on disk for good', () => {
+    const { store } = open();
+    store.writePage('PLAT', withAttachments(['one.png', 'two.png']), '', [
+      { name: 'one.png', data: Buffer.from('1') },
+      { name: 'two.png', data: Buffer.from('2') },
+    ]);
+    const after = withAttachments(['one.png']);
+    store.writePage('PLAT', after, '', [{ name: 'one.png', data: Buffer.from('1') }]);
+    const dir = path.dirname(store.attachmentFiles('PLAT', after)[0].file);
+    expect(fs.readdirSync(dir)).toEqual(['one.png']);
+    // A page read again after a push keeps its files: nothing was downloaded to replace them.
+    store.refreshPage('PLAT', after);
+    expect(fs.readdirSync(dir)).toEqual(['one.png']);
+  });
+});

@@ -36,7 +36,12 @@ export type GuardReport = {
   redacted: Record<string, number>;
   /** One sentence for the UI: what was removed, or that nothing was. */
   summary: string;
+  /** Images sent without any check, because the guard reads only text (ADR-066). */
+  unchecked?: string[];
 };
+
+/** An image a space chose to send with a page (ADR-066). */
+export type ImageInput = { name: string; mediaType: string; data: Buffer };
 
 type Detector = {
   type: string;
@@ -196,10 +201,13 @@ export type GuardedMessage = {
   readonly role: 'user' | 'assistant';
   readonly content: string;
 };
-/** Text that has passed the guard. Only `OutboundGuard` makes one. */
+/** An image the guard let through unchecked, as base64, named in the report. */
+export type GuardedImage = { readonly name: string; readonly mediaType: string; readonly data: string };
+/** Text that has passed the guard, and any images it recorded as unchecked. Only `OutboundGuard` makes one. */
 export type GuardedPayload = {
   readonly system: string;
   readonly messages: readonly GuardedMessage[];
+  readonly images?: readonly GuardedImage[];
   readonly [guarded]: true;
 };
 
@@ -253,7 +261,7 @@ export class OutboundGuard {
   }
 
   /** The payload to send, or a GuardBlockedError naming what was found. */
-  public inspect(parts: { system: string; prompt: string; document: string }): {
+  public inspect(parts: { system: string; prompt: string; document: string; images?: ImageInput[] }): {
     payload: GuardedPayload;
     report: GuardReport;
   } {
@@ -261,11 +269,13 @@ export class OutboundGuard {
     const redacted: Record<string, number> = {};
     const prompt = this.scan('your request', parts.prompt, blocked, redacted);
     const document = this.scan('page content', parts.document, blocked, redacted);
+    this.scanNames(parts.images, blocked);
     if (blocked.length) throw new GuardBlockedError(blocked);
     return this.finish(
       parts.system.replace('{{PROMPT}}', () => prompt),
       [{ role: 'user', content: document }],
       redacted,
+      parts.images,
     );
   }
 
@@ -274,7 +284,13 @@ export class OutboundGuard {
    * message and stays byte-identical across turns, so providers can cache it;
    * earlier turns follow, then the new request. Every part is scanned.
    */
-  public inspectChat(parts: { system: string; context: string; history: ChatTurn[]; prompt: string }): {
+  public inspectChat(parts: {
+    system: string;
+    context: string;
+    history: ChatTurn[];
+    prompt: string;
+    images?: ImageInput[];
+  }): {
     payload: GuardedPayload;
     report: GuardReport;
   } {
@@ -286,13 +302,14 @@ export class OutboundGuard {
       content: this.scan('earlier in the conversation', t.text, blocked, redacted),
     }));
     const prompt = this.scan('your request', parts.prompt, blocked, redacted);
+    this.scanNames(parts.images, blocked);
     if (blocked.length) throw new GuardBlockedError(blocked);
     const turns = [...history, { role: 'user' as const, content: prompt }];
     const messages: GuardedMessage[] = [
       { role: 'user', content: `${context}\n\n---\n\n${turns[0].content}` },
       ...turns.slice(1),
     ];
-    return this.finish(parts.system, messages, redacted);
+    return this.finish(parts.system, messages, redacted, parts.images);
   }
 
   /**
@@ -380,21 +397,36 @@ export class OutboundGuard {
     return out;
   }
 
+  /** An image's contents cannot be read, but its name is text, and is checked like any. */
+  private scanNames(images: ImageInput[] | undefined, blocked: Finding[]): void {
+    if (images?.length) this.scan('an image name', images.map((i) => i.name).join('\n'), blocked, {});
+  }
+
   private finish(
     system: string,
     messages: GuardedMessage[],
     redacted: Record<string, number>,
+    images: ImageInput[] = [],
   ): { payload: GuardedPayload; report: GuardReport } {
     const counts = Object.entries(redacted);
     const usesPlaceholders = this.placeholders.size > 0;
     const note = usesPlaceholders
       ? '\n\nSome values were replaced with placeholders such as [EMAIL-1] before you saw them. Keep each placeholder exactly as written; do not guess what it stands for.'
       : '';
-    const payload = { system: `${system}${note}`, messages } as unknown as GuardedPayload;
-    const summary = counts.length
+    const sent = images.map((i) => ({ name: i.name, mediaType: i.mediaType, data: i.data.toString('base64') }));
+    const payload = {
+      system: `${system}${note}`,
+      messages,
+      ...(sent.length ? { images: sent } : {}),
+    } as unknown as GuardedPayload;
+    const removed = counts.length
       ? `Leak guard: ${counts.map(([t, n]) => `${n} ${t}${n > 1 ? 's' : ''}`).join(', ')} replaced before sending.`
       : 'Leak guard: nothing needed removing.';
-    return { payload, report: { blocked: [], redacted, summary } };
+    const unchecked = images.map((i) => i.name);
+    const summary = unchecked.length
+      ? `${removed} Sent without leak-guard checks, as images: ${unchecked.join(', ')}.`
+      : removed;
+    return { payload, report: { blocked: [], redacted, summary, ...(unchecked.length ? { unchecked } : {}) } };
   }
 }
 

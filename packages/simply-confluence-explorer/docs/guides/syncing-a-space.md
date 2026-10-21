@@ -115,7 +115,7 @@ you chose another with `--data-dir`), beside `telemetry/`, the app's own logs an
 ```
 spaces/PLAT/
   pages/                 one Markdown file per page, in folders that follow the tree
-  pages/.../Title_attachments/   each page's attachments
+  pages/.../Title_attachments/   each page's attachments, kept in step with Confluence at each sync
   pages_cache/           each page as Confluence sent it
   metadata/              the AI index: summaries, topics, questions
   vectors/               section embeddings, when a provider makes them

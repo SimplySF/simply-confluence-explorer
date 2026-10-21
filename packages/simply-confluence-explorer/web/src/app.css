@@ -3270,3 +3270,13 @@ div.disclosure-body {
 .hint:focus-within .hint-text {
   display: block;
 }
+
+/* What a request did with the images on its pages (ADR-066). */
+.images-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  margin: 0.3rem 0;
+}

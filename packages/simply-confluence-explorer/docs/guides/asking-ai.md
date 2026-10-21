@@ -137,6 +137,18 @@ on. A batch whose reply comes back empty twice has its pages named in the answer
 are its Confluence labels together with its topics from the AI index. Excluded pages are never
 listed, found or read, and a page holding a secret is left out and named.
 
+## Attachments
+
+A page's text attachments are read with it: JSON, YAML, CSV, logs, Markdown, XML, HTML and PDF, up
+to 50,000 characters each. They are checked by the leak guard like the page, found by search, and
+used by the AI index and by edits. A PDF is read the first time its page is, and sent from the next
+question.
+
+Images are sent only if you choose for the space, because the leak guard cannot check them. Until
+you choose, an answer that read pages with images says how many the AI did not see, with **Send
+images for PLAT** and **Not for PLAT**. Change it later under **Space → Exclusions and leak
+guard…** → **Images on pages**.
+
 ## The AI index: summaries, topics and embeddings
 
 Chats find more in pages that are in the **AI index**. Indexing a page asks the AI what the page is

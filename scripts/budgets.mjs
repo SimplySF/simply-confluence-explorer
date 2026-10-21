@@ -13,10 +13,10 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const MAX_CODE_LINES = 17000; // ADR-021, ADR-062, ADR-065: package src/ and web/src/, tests excluded
+const MAX_CODE_LINES = 17500; // ADR-021, ADR-062, ADR-065, ADR-067: package src/ and web/src/, tests excluded
 const MAX_COMMENT_RATIO = 25; // ADR-014: a hard ceiling; when it is exceeded, a comment is removed and the limit stays
-const MAX_DOC_LINES = 1950; // ADR-034, ADR-055, ADR-062: every tracked .md except the decision log, history, review and the code of conduct
-const MAX_GUIDE_LINES = 1100; // ADR-042: the user guides in packages/*/docs/, which ship in the package
+const MAX_DOC_LINES = 2050; // ADR-034, ADR-055, ADR-062, ADR-067: every tracked .md except the decision log, history, review and the code of conduct
+const MAX_GUIDE_LINES = 1150; // ADR-042, ADR-067: the user guides in packages/*/docs/, which ship in the package
 const MAX_RUNTIME_DEPS = 7; // ADR-031: direct dependencies across every package.json
 const MAX_DEV_DEPS = 29; // ADR-031: direct devDependencies across every package.json
 const MAX_SITE_DEPS = 4; // ADR-043: the documentation site's dependencies, which never ship in the package

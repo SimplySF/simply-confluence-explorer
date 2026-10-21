@@ -2,6 +2,7 @@
   import { Sparkles } from '@lucide/svelte';
   import { api, type Chosen, type Coverage } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
+  import ImagesNote from './ImagesNote.svelte';
 
   // One line in a chat when some of the pages it reads are not in the AI index, which every part of
   // the chat leans on: finding sections, finding pages by tag, and answering. It offers to index them.
@@ -42,6 +43,9 @@
   const running = $derived(jobs.list.some((j) => j.kind === 'summaries' && j.spaceKey === spaceKey));
 </script>
 
+{#if counts?.images}
+  <ImagesNote {spaceKey} report={{ found: counts.images.found, sent: 0, choice: counts.images.choice }} />
+{/if}
 {#if counts && counts.missing > 0}
   <div class="summary-coverage">
     <Sparkles size={12} />

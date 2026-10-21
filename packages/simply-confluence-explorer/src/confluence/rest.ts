@@ -58,7 +58,7 @@ export type RestContent = {
   ancestors?: Array<{ id: string; title: string }>;
   body?: { storage?: { value: string } };
   metadata?: { labels?: { results: Array<{ name: string }> } };
-  children?: { attachment?: { results: RestAttachment[] } };
+  children?: { attachment?: { results: RestAttachment[]; _links?: { next?: string } } };
   _links?: { webui?: string };
 };
 

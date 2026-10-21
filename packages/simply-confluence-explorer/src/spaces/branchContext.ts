@@ -16,7 +16,6 @@
 
 import type { PageDetail, PageTreeNode } from '../api/types.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
-import { parsePage } from '../parser/convert.js';
 import { runLimited } from '../util/runLimited.js';
 import type { ManifestBuilder } from '../ai/manifest.js';
 import type { GateDeps } from './aiGate.js';
@@ -50,7 +49,7 @@ export type BranchContext = {
  */
 export function contextCollector(
   spaceKey: string,
-  deps: Pick<GateDeps, 'exclusions'>,
+  deps: Pick<GateDeps, 'exclusions'> & { store: Pick<GateDeps['store'], 'readableMarkdown'> },
   dataDir: string,
   budget = CONTEXT_CHAR_LIMIT,
 ): { consider: (page: PageDetail) => void; result: BranchContext } {
@@ -62,7 +61,8 @@ export function contextCollector(
       result.excluded++;
       return;
     }
-    const { markdown } = parsePage(page);
+    // The page with its text attachments, so the guard and the size limit see both (ADR-066).
+    const markdown = deps.store.readableMarkdown(spaceKey || page.spaceKey, page);
     if (screen.secretsIn(markdown).length > 0) result.withheld.push(page.title);
     else if (used + markdown.length > budget) result.overflow.push(page.title);
     else {

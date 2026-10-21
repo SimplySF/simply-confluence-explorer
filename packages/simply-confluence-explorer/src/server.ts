@@ -38,6 +38,8 @@ import { tagsOf } from './spaces/tags.js';
 import { Telemetry } from './telemetry/telemetry.js';
 import { VectorIndex } from './spaces/vectors.js';
 import { GitLabStore } from './gitlab/client.js';
+import type { ImageChoice } from './api/types.js';
+import { loadSpaceSettings } from './spaces/spaceSettings.js';
 import { SpaceStore } from './spaces/spaceStore.js';
 import { SpaceSync } from './spaces/sync.js';
 import { resolveDataDir } from './util/dataDir.js';
@@ -144,11 +146,13 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const sync = new SpaceSync(store, exclusions, client, telemetry.sink('sync'), telemetry);
   const metadata = new MetadataPipeline(store, exclusions, () => ai, telemetry.sink('index'), vectors, telemetry, {
     retryDelayMs: options.indexRetryMs,
+    imageChoice: (key): ImageChoice => loadSpaceSettings(dataDir, key).images,
   });
   const reviews = new CorpusReviews({
     ai,
     sessions,
     exclusions,
+    store,
     readMetadataTopics: (key, page): string[] => tagsOf(page, store.readMetadata(key, page.id)),
     pageSize: (key, page): number => corpusSize(key, [page], index),
     dataDir,

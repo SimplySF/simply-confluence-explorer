@@ -53,6 +53,7 @@ export function sentLines(sent: ManifestSummary): { summary: string; leftOut: st
     sent.pages && plural(sent.pages, 'page'),
     sent.sections && plural(sent.sections, 'section'),
     sent.files && plural(sent.files, 'file'),
+    sent.images && plural(sent.images, 'image'),
     sent.turns && plural(sent.turns, 'earlier message'),
   ].filter(Boolean);
   const excluded = sent.leftOut.filter((l) => l.reason === 'excluded').length;
