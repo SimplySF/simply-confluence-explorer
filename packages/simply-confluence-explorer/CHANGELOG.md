@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.5.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.4.0...%40simplysf%2Fsimply-confluence-explorer%400.5.0) (2026-10-21)
+
+### Features
+
+- each chat keeps its suggestions, edits and staged pages as queues, and edits start from the live page ([#35](https://github.com/SimplySF/simply-confluence-explorer/issues/35)) ([6ce8cf5](https://github.com/SimplySF/simply-confluence-explorer/commit/6ce8cf5e4f7cf860ad3d7a93925ac9a5b1aaf472))
+
 # [0.4.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.3.0...%40simplysf%2Fsimply-confluence-explorer%400.4.0) (2026-10-21)
 
 ### Features
