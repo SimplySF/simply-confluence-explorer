@@ -64,7 +64,12 @@ const answer = (payload: GuardedPayload): string => {
 };
 
 async function withApp(
-  reply: (payload: GuardedPayload, n: number, signal?: AbortSignal) => string | Promise<string>,
+  reply: (
+    payload: GuardedPayload,
+    n: number,
+    signal?: AbortSignal,
+    onText?: (text: string) => void,
+  ) => string | Promise<string>,
   run: (app: TestApp) => Promise<void>,
 ): Promise<void> {
   const app = await startTestApp(fake, reply);
@@ -625,6 +630,121 @@ describe('a run the app stopped while it was writing edits', () => {
       });
       await app.call('POST', `/branches/runs/${run.id}/items/${guide()}/redo`);
       expect(itemOf(await settled(app, run.id), guide()).status).toBe('proposed');
+    });
+  });
+});
+
+describe('a stopped run', () => {
+  it('can make a failed page again with Redo, without stopping at once', async () => {
+    // The provider refuses the Interviews edit until it is made again.
+    let failing = true;
+    const reply = (payload: GuardedPayload, _n: number, signal?: AbortSignal): string | Promise<string> => {
+      const text = textOf(payload);
+      if (text.includes('<<<PROPOSED_MARKDOWN>>>') && text.includes('# Document Title: Interviews\n') && failing)
+        throw new Error('the provider failed this edit');
+      if (text.includes('<<<PROPOSED_MARKDOWN>>>') && text.includes('# Document Title: Interview Guide') && failing)
+        return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('stopped'))));
+      return answer(payload);
+    };
+    await withApp(reply, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const { body: started } = await recommend(app, c.id, [0]);
+      for (let run = started; !run.items.some((i) => i.status === 'failed');) {
+        // eslint-disable-next-line no-await-in-loop -- waiting for the first page to fail
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        // eslint-disable-next-line no-await-in-loop -- as above
+        run = (await app.call<BranchRun>('GET', `/branches/runs/${started.id}`)).body;
+      }
+      await app.call('POST', `/branches/runs/${started.id}/cancel`);
+      await settled(app, started.id);
+      failing = false;
+      await app.call('POST', `/branches/runs/${started.id}/items/${interviews()}/redo`);
+      const again = await settled(app, started.id);
+      expect(itemOf(again, interviews()).status).toBe('proposed');
+    });
+  });
+});
+
+describe('edits written for several pages', () => {
+  it('are written at once, up to the requests the AI may take, and each records its steps', async () => {
+    let inFlight = 0;
+    let most = 0;
+    const reply = async (payload: GuardedPayload): Promise<string> => {
+      if (!textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      most = Math.max(most, ++inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      inFlight--;
+      return answer(payload);
+    };
+    await withApp(reply, async (app) => {
+      const run = await staged(app, [0]);
+      expect(most).toBe(2);
+      const item = itemOf(run, guide());
+      expect(item.steps?.map((s) => s.text)).toEqual([
+        'Reading the page from Confluence',
+        'Writing the edit, applying 1 suggestion',
+        `Ready to decide: ${item.changes?.length} changes`,
+      ]);
+    });
+  });
+
+  it('show the answer so far while it is written, and drop it once the edit is ready', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const reply = async (
+      payload: GuardedPayload,
+      _n: number,
+      _signal?: AbortSignal,
+      onText?: (text: string) => void,
+    ): Promise<string> => {
+      if (!textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      onText?.('<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Said who it is for');
+      await held;
+      return answer(payload);
+    };
+    await withApp(reply, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const { body: started } = await recommend(app, c.id, [1]);
+      let item: BranchItem | undefined;
+      while (!item?.writing) {
+        // eslint-disable-next-line no-await-in-loop -- waiting for the answer to start
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        // eslint-disable-next-line no-await-in-loop -- as above
+        item = itemOf((await app.call<BranchRun>('GET', `/branches/runs/${started.id}`)).body, guide());
+      }
+      expect(item.writing).toMatchObject({ tail: expect.stringContaining('Said who it is for') });
+      release();
+      expect(itemOf(await settled(app, started.id), guide()).writing).toBeUndefined();
+    });
+  });
+});
+
+describe('a run stopped while its first page is written, one request at a time', () => {
+  it('takes no new page once stopped', async () => {
+    const asked: string[] = [];
+    const reply = (payload: GuardedPayload, _n: number, signal?: AbortSignal): string | Promise<string> => {
+      const text = textOf(payload);
+      if (!text.includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      asked.push(/^# Document Title: (.+)$/m.exec(text)?.[1] ?? '');
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('stopped'))));
+    };
+    await withApp(reply, async (app) => {
+      await app.call('PUT', '/ai/settings', { parallel: 1 });
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const { body: started } = await recommend(app, c.id, [0]);
+      while (asked.length === 0)
+        // eslint-disable-next-line no-await-in-loop -- waiting for the first page's request
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      await app.call('POST', `/branches/runs/${started.id}/cancel`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(asked).toHaveLength(1);
+      const run = await settled(app, started.id);
+      expect(run.items.every((i) => i.status === 'pending')).toBe(true);
+      // The page the stop came before was never even read from Confluence.
+      expect(run.items.filter((i) => i.steps?.length)).toHaveLength(1);
     });
   });
 });

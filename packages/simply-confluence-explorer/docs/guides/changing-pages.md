@@ -28,7 +28,11 @@ and the header shows its progress; **Stop** ends it with nothing kept.
 Ask the chat in your own words, for example "make the first one more specific" or "drop the one
 about the pager". It rewords, adds or removes suggestions, and the answer says what it changed. A
 reworded suggestion keeps its earlier wordings under **Reworded**, and **Use this** puts one back.
-**Dismiss** hides a suggestion and **Show dismissed** brings it back.
+
+Review is in three parts: **To recommend**, **In progress** (an edit being written, to decide,
+staged, or failed) and **Closed** (pushed, already done, no longer relevant, dismissed). A suggestion
+with an edit under way is not ticked again; **Recommend again** offers it once its edit failed, or
+the chat reworded it.
 
 ![The Review tab, grouped by page, with a reworded suggestion](../images/review-queue.webp)
 
@@ -37,15 +41,18 @@ that should exist and does not, **Write a new page** opens [Writing a new page](
 
 ## Recommend changes
 
-Tick the suggestions you want and click **Recommend changes**. Each page they name gets one edit
-that carries out only those suggestions. Before the edit is written, the page is read from
+Tick the suggestions you want and click **Recommend changes**. The bar counts the pages they name,
+such as "3 suggestions → 5 pages", and each page gets one edit carrying out only those suggestions.
+Several pages are written at once, as many as Settings → AI provider → requests at once allows. Before the edit is written, the page is read from
 Confluence. If someone changed it since the suggestion was made, the copy on your computer is
 updated, and the AI first checks each suggestion against the page as it is now: one that is already
 done, or no longer makes sense, is not applied and goes back to Review with the reason.
 
 ## Decide each change, side by side
 
-The **Changes** tab lists the edits. Open one to see the page as it is now on the left and the edit
+The **Changes** tab lists the edits, grouped by each time you recommended changes. A page being
+written shows its current step and how long it has taken; open it to follow every step and the
+answer so far, where the AI streams it, until it turns into the edit. Open one to see the page as it is now on the left and the edit
 on the right. Each change sits between them with **Accept** and **Reject**, and **Undo** to change
 your mind; **Accept all** and **Reject all** decide the page at once. Beside it is the AI's
 recommendation: the suggestions applied, what it says it changed, and anything it did not apply.

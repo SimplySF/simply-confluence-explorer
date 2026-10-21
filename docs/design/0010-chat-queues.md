@@ -29,6 +29,10 @@ each edit starts from the page as Confluence holds it now (ADR-061).
   Accept, Reject or Undo between them, and the AI's recommendation beside them. **Work on this edit
   in the chat** makes the next question about that edit; the chat's revised text is accepted into the
   edit or dismissed. **Stage** is enabled once every change is decided.
+- **Several pages are written at once**, as many as the AI may take requests (the setting the AI
+  index uses). Each page records its steps, and where the provider streams, the answer so far;
+  Changes groups pages by the run that made them and shows each page's step, and Review splits its
+  suggestions into To recommend, In progress and Closed.
 - **Push** lists the staged pages. **Check and push** checks the chosen pages, then asks, and writes
   only those. **Ready to push** in the sidebar shows every staged page in the space.
 

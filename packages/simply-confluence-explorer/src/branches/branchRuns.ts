@@ -35,6 +35,7 @@ import { stripFrontmatter } from '../parser/convert.js';
 import { toEditForm } from '../parser/editForm.js';
 import { EXCLUDED_MESSAGE, gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { errorMessage } from '../util/errors.js';
+import { pause } from '../util/pause.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
 import { acceptedText, changedSince, partsOf, refreshChanges } from './pageChanges.js';
@@ -391,6 +392,7 @@ export class BranchRunner {
   private interrupted(run: BranchRun): void {
     for (const item of run.items)
       if (['pending', 'checking', 'working'].includes(item.status)) {
+        delete item.writing;
         item.status = 'failed';
         item.message = 'The app stopped while this edit was being written.';
       }
@@ -408,49 +410,77 @@ export class BranchRunner {
   private end(run: BranchRun): void {
     this.live.delete(run.id);
     this.stoppers.delete(run.id);
+    // A stopped run can be started again by Redo, which must not find it still stopped.
+    this.cancelled.delete(run.id);
   }
 
+  /**
+   * Writes the pending pages' edits, as many at once as the AI may take requests (`ai.parallel`, the
+   * setting the AI index uses too). Stop ends every request in flight, and each worker takes no new
+   * page once the run is stopped.
+   */
   private async propose(run: BranchRun, signal: AbortSignal): Promise<void> {
-    // One page at a time: a section can be large, and providers limit request rates.
-    for (const item of run.items.filter((i) => i.status === 'pending')) {
-      if (this.cancelled.has(run.id)) break;
-      try {
-        // eslint-disable-next-line no-await-in-loop -- one page at a time, as explained above
-        if (item.original === undefined && !(await this.freshen(run, item, signal))) {
-          run.processed++;
-          this.store.save(run);
-          continue;
-        }
-        item.status = 'working';
-        this.store.save(run);
-        const prompt = applyPrompt(item.fixes ?? [], run.instructions);
-        // eslint-disable-next-line no-await-in-loop -- as above
-        const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
-          spaceKey: run.spaceKey,
-          signal,
-        });
-        const parsed = parseRecommendationResponse(answer.text);
-        const edit = stripFrontmatter(parsed.improvedMarkdown).trim();
-        Object.assign(item, {
-          suggested: edit,
-          proposed: edit,
-          critique: parsed.critique,
-          changelog: parsed.changelog,
-          guardSummary: answer.guard.summary,
-        });
-        refreshChanges(item);
-      } catch (error) {
-        if (error instanceof AiStopped) {
-          item.status = 'pending';
-          break;
-        }
-        item.status = error instanceof GuardBlockedError ? 'skipped' : 'failed';
-        item.message = errorMessage(error);
+    const pending = run.items.filter((i) => i.status === 'pending');
+    const stopped = (): boolean => this.cancelled.has(run.id) || signal.aborted;
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < pending.length && !stopped()) {
+        const item = pending[next++];
+        // eslint-disable-next-line no-await-in-loop -- each worker writes one page at a time
+        await this.proposeOne(run, item, signal);
+        // eslint-disable-next-line no-await-in-loop -- lets other work run between pages
+        await pause();
       }
-      run.processed++;
-      this.store.save(run);
-    }
+    };
+    const workers = Math.max(1, Math.min(this.deps.ai.parallel?.() ?? 1, pending.length));
+    await Promise.all(Array.from({ length: workers }, worker));
     run.status = this.cancelled.has(run.id) ? 'cancelled' : 'ready';
+    this.store.save(run);
+  }
+
+  /** Writes one page's edit, recording each step it takes so the person can follow it. */
+  private async proposeOne(run: BranchRun, item: BranchItem, signal: AbortSignal): Promise<void> {
+    try {
+      if (item.original === undefined && !(await this.freshen(run, item, signal))) {
+        step(item, item.message ?? 'Not edited.');
+        run.processed++;
+        this.store.save(run);
+        return;
+      }
+      item.status = 'working';
+      step(item, `Writing the edit, applying ${plural(item.fixes?.length ?? 0, 'suggestion')}`);
+      this.store.save(run);
+      const prompt = applyPrompt(item.fixes ?? [], run.instructions);
+      const answer = await this.deps.ai.analyzeDocument(item.original ?? '', prompt, item.title, {
+        spaceKey: run.spaceKey,
+        signal,
+        // Kept in memory only, for the screen to show while the edit is written.
+        onText: (text) => (item.writing = { chars: text.length, tail: text.slice(-WRITING_TAIL) }),
+      });
+      const parsed = parseRecommendationResponse(answer.text);
+      const edit = stripFrontmatter(parsed.improvedMarkdown).trim();
+      Object.assign(item, {
+        suggested: edit,
+        proposed: edit,
+        critique: parsed.critique,
+        changelog: parsed.changelog,
+        guardSummary: answer.guard.summary,
+      });
+      refreshChanges(item);
+      step(item, `Ready to decide: ${plural(item.changes?.length ?? 0, 'change')}`);
+    } catch (error) {
+      delete item.writing;
+      if (error instanceof AiStopped) {
+        item.status = 'pending';
+        step(item, 'Stopped');
+        return;
+      }
+      item.status = error instanceof GuardBlockedError ? 'skipped' : 'failed';
+      item.message = errorMessage(error);
+      step(item, `${item.status === 'skipped' ? 'Not sent' : 'Failed'}: ${item.message}`);
+    }
+    delete item.writing;
+    run.processed++;
     this.store.save(run);
   }
 
@@ -461,6 +491,7 @@ export class BranchRunner {
    */
   private async freshen(run: BranchRun, item: BranchItem, signal: AbortSignal): Promise<boolean> {
     item.status = 'checking';
+    step(item, 'Reading the page from Confluence');
     this.store.save(run);
     const page = await this.deps.client().getPageDetail(item.pageId);
     const key = run.spaceKey;
@@ -478,6 +509,8 @@ export class BranchRunner {
     const stale = (item.fixes ?? []).filter(changed);
     let verdicts: NonNullable<BranchItem['freshness']>['verdicts'] = [];
     if (stale.length > 0) {
+      step(item, `The page changed since it was suggested: checking ${plural(stale.length, 'suggestion')} still apply`);
+      this.store.save(run);
       const before = local && page.version > local.version ? editOf(local).original : undefined;
       const answer = await this.deps.ai.analyzeDocument(
         now.original ?? '',
@@ -486,10 +519,12 @@ export class BranchRunner {
         { spaceKey: key, signal },
       );
       verdicts = parseVerdicts(answer.text, stale);
+      for (const v of verdicts) step(item, `${VERDICT[v.verdict]}: ${v.detail}${v.why ? ` (${v.why})` : ''}`);
     }
-    const dropped = new Set(verdicts.filter((v) => v.verdict !== 'applies').map((v) => v.detail));
+    // Matched by position among the suggestions asked about, so two worded alike are judged apart.
+    const dropped = new Set(stale.filter((_, i) => verdicts[i]?.verdict !== 'applies'));
     item.freshness = { version: page.version, verdicts };
-    item.fixes = (item.fixes ?? []).filter((f) => !dropped.has(f.detail));
+    item.fixes = (item.fixes ?? []).filter((f) => !dropped.has(f));
     Object.assign(item, { baseVersion: page.version, ...now });
     if (item.fixes.length > 0) return true;
     item.status = 'skipped';
@@ -525,6 +560,16 @@ export class BranchRunner {
     }
     return run;
   }
+}
+
+/** How much of an answer being written is kept to show, the end of it, where the model is now. */
+const WRITING_TAIL = 1500;
+const VERDICT = { applies: 'Still applies', done: 'Already done', 'not-relevant': 'No longer relevant' } as const;
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Records a step of a page's edit, with when it began. */
+function step(item: BranchItem, text: string): void {
+  item.steps = [...(item.steps ?? []), { at: new Date().toISOString(), text }];
 }
 
 /**

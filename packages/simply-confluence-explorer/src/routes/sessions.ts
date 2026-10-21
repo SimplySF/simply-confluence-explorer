@@ -31,6 +31,7 @@ import {
   QUEUE_SYSTEM,
   queueChangesOf,
   queueContext,
+  pickable,
   SUGGESTION_ID,
   suggestionViews,
   toSuggestions,
@@ -653,8 +654,12 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/ai/sessions/:sessionId/suggestions/recommend', async ({ params, body }) => {
         const session = chat(params.sessionId);
         const ids = suggestionIdsFrom(fieldsOf(body).ids);
-        const picked = ids.map((id) => session.suggestions?.find((s) => s.id === id && !s.dismissed));
+        const views = queueOf(session).suggestions;
+        const picked = ids.map((id) => views.find((s) => s.id === id && s.state !== 'dismissed'));
         if (picked.some((s) => !s)) throw new HttpError(404, "a picked suggestion is not in this chat's queue");
+        const busy = picked.find((s) => s && !pickable(s));
+        if (busy)
+          throw new HttpError(409, `An edit for "${busy.detail}" is already being written or waits to be decided.`);
         const run = await branches.recommend({
           spaceKey: session.scope.spaceKey,
           rootPageId: session.scope.pageId ?? '',

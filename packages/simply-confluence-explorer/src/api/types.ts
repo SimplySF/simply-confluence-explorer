@@ -355,10 +355,23 @@ export type QueuedSuggestion = BranchFinding & {
 
 /** A queued suggestion with the state the chat's runs give it. */
 export type SuggestionView = QueuedSuggestion & {
-  state: 'open' | 'dismissed' | 'editing' | 'edited' | 'done' | 'not-relevant' | 'skipped';
+  state:
+    | 'open'
+    | 'writing'
+    | 'to-decide'
+    | 'staged'
+    | 'pushed'
+    | 'failed'
+    | 'rejected'
+    | 'skipped'
+    | 'done'
+    | 'not-relevant'
+    | 'dismissed';
   /** Why it is done, not relevant or skipped, from the check against the page as it is now. */
   why?: string;
   runId?: string;
+  /** The pages its edits are on, in that run. */
+  editPageIds?: string[];
   /** Its edit was made from an earlier wording of it. */
   outdated?: boolean;
 };
@@ -539,6 +552,10 @@ export type BranchItem = {
   fixes?: BranchFix[];
   /** The last revision the chat proposed and the person accepted, which counts as the AI's. */
   refined?: string;
+  /** What happened to the page's edit so far, each step with when it began, for the person to follow. */
+  steps?: Array<{ at: string; text: string }>;
+  /** While the edit is written, and the provider streams it: how long the answer is, and its end. */
+  writing?: { chars: number; tail: string };
   /** Picked to be pushed; any later change to the edit unpicks it, so what is pushed was looked at. */
   staged?: boolean;
   /**

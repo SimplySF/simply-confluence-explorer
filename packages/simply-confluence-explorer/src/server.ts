@@ -76,6 +76,8 @@ export type ServerOptions = {
    * sent can be checked and nothing leaves the machine.
    */
   aiTransport?: Transport;
+  /** How long after starting the server builds the search index of every synced space. */
+  startupIndexMs?: number;
   /** Embeds texts in place of the configured provider, for the same reason. */
   embedTransport?: EmbedTransport;
   /**
@@ -102,6 +104,9 @@ const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
 };
+
+/** How long after starting the server waits before indexing every synced space. */
+const STARTUP_INDEX_MS = 10_000;
 
 /**
  * Creates (but does not start) the explorer's HTTP server: JSON routes under `/api/`, and the built
@@ -161,13 +166,15 @@ export function createServer(options: ServerOptions = {}): http.Server {
       total: b.total,
     })),
   );
-  // Synced spaces are indexed as soon as the server starts, so the first question does not wait for it.
-  setImmediate(() => {
+  // Synced spaces are indexed soon after the server starts, so the first question does not wait for it,
+  // but not at once: the browser's first requests (the tree, the spaces) read the same files, and on a
+  // slow disk they would wait behind the index. A question asked sooner builds the index itself.
+  setTimeout(() => {
     store.listSynced().then(
       (spaces) => spaces.forEach((space) => void index.ready(space.spaceKey)),
       (error: unknown) => log(`could not list the synced spaces to index them: ${errorMessage(error)}`),
     );
-  });
+  }, options.startupIndexMs ?? STARTUP_INDEX_MS).unref();
   const api = createApi({
     version,
     dataDir,

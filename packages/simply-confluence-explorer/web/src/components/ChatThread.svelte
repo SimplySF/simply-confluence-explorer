@@ -15,6 +15,7 @@
     Clock,
     Code2,
     Copy,
+    Info,
     Layers,
     ListChecks,
     Paperclip,
@@ -468,12 +469,17 @@
     </button>
   {:else}
     {#if canBeThorough}
-      <label
-        class="chat-thorough"
-        title="Read up to 150 sections over several requests and combine what each found. Slower, for broad questions."
-      >
-        <input type="checkbox" bind:checked={thorough} disabled={blocked || !!batch} /> Thorough
+      <label class="chat-thorough">
+        <input type="checkbox" bind:checked={thorough} disabled={blocked || !!batch} aria-describedby="thorough-hint" />
+        Thorough
       </label>
+      <button type="button" class="hint" aria-label="What Thorough does" aria-describedby="thorough-hint">
+        <Info size={13} />
+        <span class="hint-text" id="thorough-hint" role="tooltip">
+          Reads up to 150 sections over several requests and combines what each found, instead of the dozen the question
+          matches best. Slower; for broad questions across many pages.
+        </span>
+      </button>
     {/if}
     <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked || (thorough && !!batch)}>
       <Send size={15} /> Send

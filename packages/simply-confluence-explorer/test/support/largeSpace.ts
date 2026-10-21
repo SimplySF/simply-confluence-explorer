@@ -72,7 +72,7 @@ export type LargeSpace = {
   close: () => Promise<void>;
 };
 
-export async function startLargeSpace(): Promise<LargeSpace> {
+export async function startLargeSpace(options: { startupIndexMs?: number } = {}): Promise<LargeSpace> {
   const dataDir = generatedSpace();
   let indexRequests = 0;
   const server: http.Server = createServer({
@@ -90,6 +90,7 @@ export async function startLargeSpace(): Promise<LargeSpace> {
       return Promise.resolve(metadataReply(payload, { summary: 'A page about operations.', tags: ['ops'] }));
     },
     telemetryTimers: false,
+    startupIndexMs: options.startupIndexMs,
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {

@@ -123,7 +123,7 @@ There is no limit on how many pages a chat reads from:
   incident. When even the best sections share few words with the question, the answer warns that
   it may rest on weak matches.
 
-For a broad question, tick **Thorough** beside **Send**, or click **Answer this thoroughly** under an
+For a broad question, tick **Thorough** beside **Send** (its ⓘ says what it does), or click **Answer this thoroughly** under an
 answer. The question then reads up to 150 sections over as many requests as they need: each batch
 is asked for notes with the page and section they came from, and one last request combines the
 notes into the answer. It runs in the background with **Stop**, and the header shows the batch it is

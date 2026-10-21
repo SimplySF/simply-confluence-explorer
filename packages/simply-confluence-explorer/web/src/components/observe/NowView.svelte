@@ -28,7 +28,7 @@
   });
 
   const STOP_KIND: Record<string, JobKind> = { index: 'summaries', sync: 'sync', batch: 'batch' };
-  const lagState = (ms: number): string => (ms >= 1000 ? 'frozen' : ms >= 200 ? 'slow' : 'answering');
+  const lagState = (ms: number): string => (ms >= 2000 ? 'frozen' : ms >= 200 ? 'slow' : 'answering');
   const series = (
     name: string,
     color: string,

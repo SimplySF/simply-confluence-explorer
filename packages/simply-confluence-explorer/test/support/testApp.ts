@@ -75,7 +75,12 @@ const echo = (payload: GuardedPayload, n: number): string => {
 
 export async function startTestApp(
   fake: FakeConfluence,
-  reply: (payload: GuardedPayload, n: number, signal?: AbortSignal) => string | Promise<string> = echo,
+  reply: (
+    payload: GuardedPayload,
+    n: number,
+    signal?: AbortSignal,
+    onText?: (text: string) => void,
+  ) => string | Promise<string> = echo,
   env: NodeJS.ProcessEnv = {},
   options: { embeddings?: boolean; contextChars?: number } = {},
 ): Promise<TestApp> {
@@ -93,9 +98,9 @@ export async function startTestApp(
       AI_PROVIDER: 'anthropic',
       ...env,
     },
-    aiTransport: (payload, signal) => {
+    aiTransport: (payload, signal, onText) => {
       sent.push(payload);
-      return Promise.resolve(reply(payload, sent.length, signal));
+      return Promise.resolve(reply(payload, sent.length, signal, onText));
     },
     contextChars: options.contextChars,
     // Records are written at once, so a test can read them back straight after an action.

@@ -1559,7 +1559,7 @@ its declared stakes; it records this as a time-limited exception that ends at 1.
 
 ## ADR-054 — Large spaces are indexed in packs of pages, context is checked on its way to the model, and the app keeps its own traces instead of console lines
 
-**Status:** accepted, 2026-10-20.
+**Status:** accepted, 2026-10-20. Amended by ADR-063, which reports a freeze only when the server was blocked.
 
 The space the app was built for has about 3,200 pages and uses the Gemini CLI, which has no
 embeddings and starts a process for every request. Measured on a generated space of that size, the
@@ -1803,3 +1803,30 @@ limit rises to 1,950.
 **The argument against:** raising a budget each time it is reached makes it no limit. This is
 accepted because each increase is sized to the measured feature, and the next one needs its own
 record.
+
+---
+
+## ADR-063 — A freeze is reported only when the server was blocked for over two seconds, once per freeze, not whenever a timer ran late
+
+**Status:** accepted, 2026-10-21. Amends ADR-054.
+
+The Observability page raised "The server could not answer anything for 1.x s" many times a day.
+The check behind it raised a problem whenever a 5-second check ran more than a second late, for any
+reason. On macOS a process in the background has its timers held back to save power, and a laptop
+waking from sleep runs them late too, so most of those problems described the operating system, not
+the app. Each late check also added a problem of its own, so one slow spell filled the list.
+
+- **A freeze is the server blocked by its own work.** A check that ran more than 2 seconds late
+  counts only when Node's event loop was busy for at least 80% of the wait, which separates work
+  that held the server from a timer the system delayed. Shorter waits are still recorded, as the
+  `lagMaxMs` number on the Now view.
+- **One problem per freeze.** Checks in a row that found the server blocked are counted into one
+  problem, "for up to 2.4 s, 3 times between 10:02 and 10:03", written once the server answers
+  again.
+- **The Logs view no longer causes freezes of its own.** Records are read from the end of each
+  day's file, a piece at a time, so a view that stops after the newest records no longer reads a
+  whole large day while the server waits.
+
+**The argument against:** a real freeze of between one and two seconds is no longer reported as a
+problem. That is accepted because such a wait is still visible as a number on the Now view, and a
+problem should mean something a person needs to act on.

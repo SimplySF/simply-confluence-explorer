@@ -96,7 +96,27 @@
 
   const runs = $derived([...(queue?.runs ?? [])].reverse());
   const items = $derived(runs.flatMap((run) => run.items.map((item) => ({ run, item }))));
-  const changes = $derived(items.filter(({ item }) => item.status !== 'pushed' && !item.staged));
+  // What needs the person: edits being written or waiting to be decided, not yet staged.
+  const NEEDS = ['pending', 'checking', 'working', 'proposed', 'accepted', 'failed', 'check-failed', 'push-failed'];
+  const changes = $derived(items.filter(({ item }) => NEEDS.includes(item.status) && !item.staged));
+  // A run still holding work is shown open; one whose pages are all pushed, staged or closed folds away.
+  const current = (run: BranchRun): boolean =>
+    run.status === 'running' || run.items.some((i) => NEEDS.includes(i.status) && !i.staged);
+  const suggestionsIn = (run: BranchRun): number =>
+    new Set(run.items.flatMap((i) => [...(i.fixes ?? []), ...(i.freshness?.verdicts ?? [])].map((f) => f.suggestionId)))
+      .size;
+  // A clock for how long each page has been on its step, ticking only while edits are written.
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!runs.some((r) => r.status === 'running')) return;
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
+  const since = (at?: string): string => {
+    if (!at) return '';
+    const sec = Math.max(0, Math.round((now - Date.parse(at)) / 1000));
+    return sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  };
   const staged = $derived(items.filter(({ item }) => item.staged && item.status !== 'pushed'));
   const openRun = $derived(open ? queue?.runs.find((r) => r.id === open!.runId) : undefined);
   const openItem = $derived(openRun?.items.find((i) => i.pageId === open!.pageId));
@@ -203,6 +223,7 @@
     checked: 'Checked',
     'check-failed': 'Check found a problem',
     'push-failed': 'Push refused',
+    pushed: 'Pushed',
   };
 </script>
 
@@ -245,38 +266,75 @@
       onRefine={() => (focus = { runId: openRun.id, pageId: openItem.pageId, title: openItem.title })}
       {lastAnswer}
     />
-  {:else if changes.length === 0 && !runs.some((r) => r.status === 'running')}
+  {:else if runs.length === 0}
     <div class="empty-state">
       <FileText size={28} />
-      <strong>No edits to decide</strong>
+      <strong>No edits yet</strong>
       <p>Tick suggestions under Review and choose Recommend changes. Each page they name gets an edit here.</p>
     </div>
   {:else}
-    {#each runs.filter((r) => r.status === 'running') as r (r.id)}
-      <JobProgress
-        processed={r.processed}
-        total={r.total}
-        current={r.items.find((i) => ['checking', 'working'].includes(i.status))?.title}
-        onStop={() => void act('stop', () => branches.cancel(r.id))}
-      />
-    {/each}
+    {#each runs.filter(current) as r (r.id)}{@render runGroup(r)}{/each}
+    {#if runs.some((r) => !current(r))}
+      <details class="queue-closed">
+        <summary class="queue-section">Earlier runs ({runs.filter((r) => !current(r)).length})</summary>
+        {#each runs.filter((r) => !current(r)) as r (r.id)}{@render runGroup(r)}{/each}
+      </details>
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet runGroup(r: BranchRun)}
+  {@const done = r.items.filter((i) => ['skipped', 'rejected'].includes(i.status))}
+  <section class="run-group">
+    <div class="run-head">
+      <strong
+        >{suggestionsIn(r)} suggestion{suggestionsIn(r) === 1 ? '' : 's'} · {r.items.length} page{r.items.length === 1
+          ? ''
+          : 's'}</strong
+      >
+      <span class="branch-note"
+        >{new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span
+      >
+      {#if r.status === 'running'}
+        <JobProgress
+          processed={r.processed}
+          total={r.total}
+          onStop={() => void act('stop', () => branches.cancel(r.id))}
+        />
+      {/if}
+    </div>
     <ul class="change-list">
-      {#each changes as { run, item } (`${run.id}/${item.pageId}`)}
+      {#each r.items.filter((i) => !done.includes(i)) as item (item.pageId)}
+        {@const last = item.steps?.at(-1)}
         <li>
-          <button type="button" class="branch-item-button" onclick={() => openEdit(run, item)}>
+          <button type="button" class="branch-item-button" onclick={() => openEdit(r, item)}>
             <span>{item.title}</span>
-            <span class="branch-note">
-              {item.changes?.length ?? 0} change{item.changes?.length === 1 ? '' : 's'} · {item.fixes?.length ?? 0} suggestion{item
-                .fixes?.length === 1
-                ? ''
-                : 's'}
-            </span>
-            <span class="branch-status status-{item.status}">{STATE[item.status]}</span>
+            {#if ['pending', 'checking', 'working'].includes(item.status) && r.status === 'running'}
+              <span class="branch-note run-step"
+                >{item.status === 'pending' ? 'Waiting for a free request' : last?.text}{item.status !== 'pending'
+                  ? ` · ${since(last?.at)}`
+                  : ''}{item.writing ? ` · ${item.writing.chars.toLocaleString()} characters so far` : ''}</span
+              >
+            {:else}
+              <span class="branch-note">
+                {item.changes?.length ?? 0} change{item.changes?.length === 1 ? '' : 's'} · {item.fixes?.length ?? 0}
+                suggestion{item.fixes?.length === 1 ? '' : 's'}
+              </span>
+            {/if}
+            <span class="branch-status status-{item.status}">{item.staged ? 'Staged' : STATE[item.status]}</span>
           </button>
         </li>
       {/each}
     </ul>
-  {/if}
+    {#if done.length}
+      <details class="run-not-edited">
+        <summary class="branch-note">Not edited ({done.length})</summary>
+        <ul>
+          {#each done as item (item.pageId)}<li>{item.title}: {item.message ?? 'every change was rejected'}</li>{/each}
+        </ul>
+      </details>
+    {/if}
+  </section>
 {/snippet}
 
 {#snippet pushTab()}

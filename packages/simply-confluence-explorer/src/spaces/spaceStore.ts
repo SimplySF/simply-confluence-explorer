@@ -48,6 +48,8 @@ export class SpaceStore {
   // A count of the changes made to each space through this store, so the search index can tell it is
   // out of date without looking at every file in a space of thousands of pages.
   private readonly revisions = new Map<string, number>();
+  // Metadata already read, by file, with the file time it was read at (readMetadata).
+  private readonly metadataRead = new Map<string, { mtimeMs: number; metadata: PageMetadata }>();
 
   public constructor(
     dataDir: string,
@@ -281,6 +283,7 @@ export class SpaceStore {
     const file = this.metadataFile(spaceKey, metadata.pageId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(metadata, null, 2), 'utf8');
+    this.metadataRead.set(file, { mtimeMs: fs.statSync(file).mtimeMs, metadata });
     // A summary changes what the search finds but not the page tree, which an index run would
     // otherwise rebuild after every page.
     this.bump(spaceKey);
@@ -309,9 +312,22 @@ export class SpaceStore {
     return this.revisions.get(spaceKey.toUpperCase()) ?? 0;
   }
 
+  /**
+   * A page's AI metadata. Whole-space views read every page's, so each is kept once read and read
+   * again only when its file changes, which a cheap check of the file's time tells.
+   */
   public readMetadata(spaceKey: string, pageId: string): PageMetadata | undefined {
     const file = this.metadataFile(spaceKey, pageId);
-    return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as PageMetadata) : undefined;
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    if (!stat) {
+      this.metadataRead.delete(file);
+      return undefined;
+    }
+    const kept = this.metadataRead.get(file);
+    if (kept?.mtimeMs === stat.mtimeMs) return kept.metadata;
+    const metadata = JSON.parse(fs.readFileSync(file, 'utf8')) as PageMetadata;
+    this.metadataRead.set(file, { mtimeMs: stat.mtimeMs, metadata });
+    return metadata;
   }
 
   /**
