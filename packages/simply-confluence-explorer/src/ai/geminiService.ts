@@ -135,7 +135,15 @@ export function runGeminiCli(
   const instruction = images.length
     ? `${STDIN_INSTRUCTION} Also look at these images from the pages: ${names.map((n) => `@${n}`).join(' ')}`
     : STDIN_INSTRUCTION;
-  const tidy = (): void => fs.rmSync(folder, { recursive: true, force: true });
+  // Removed once the process has closed: Windows refuses to remove a folder a process still runs in.
+  const tidy = (): void => {
+    try {
+      fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    } catch {
+      // A folder the system still holds is left in its temporary folder, private to this account;
+      // failing the request over it would hide the answer, or why there was none.
+    }
+  };
   return new Promise<Reply>((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, '--skip-trust', '-p', instruction, '-o', 'text'], {
       cwd: folder,
@@ -160,15 +168,18 @@ export function runGeminiCli(
       onText(soFar);
     });
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.on('error', (err) =>
+    child.on('error', (err) => {
+      // A process that never started never closes, so its folder is removed here.
+      if (child.pid === undefined) tidy();
       reject(
         new Error(
           err.name === 'AbortError' ? 'the Gemini CLI was stopped' : `Failed to spawn Gemini CLI: ${err.message}`,
         ),
-      ),
-    );
+      );
+    });
 
     child.on('close', (code) => {
+      tidy();
       const stderrData = Buffer.concat(stderr).toString('utf8');
       const cleanOutput = Buffer.concat(stdout)
         .toString('utf8')
@@ -192,5 +203,5 @@ export function runGeminiCli(
         resolve(code === 0 ? { text: cleanOutput } : { text: cleanOutput, cutOff: 'length' });
       }
     });
-  }).finally(tidy);
+  });
 }
