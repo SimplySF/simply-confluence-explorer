@@ -432,6 +432,54 @@ describe('the changes of one page', () => {
     );
   });
 
+  it('change a chart drawn from a large table of numbers and text, written back inside the chart', async () => {
+    const NOTES = [
+      'Steady after the cache change, with no paging overnight.',
+      'Peak during the billing run & the month-end report.',
+      'Latency stayed <200 ms for 99% of requests.',
+      'Owner "platform" asked for a review; see the runbook.',
+      'Quiet week, one deploy, nothing to report.',
+    ];
+    const rows = Array.from({ length: 80 }, (_, i) => [`Week ${i + 1}`, String(100 + ((i * 37) % 250)), NOTES[i % 5]]);
+    const cell = (tag: string, v: string): string =>
+      `<${tag}><p>${v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')}</p></${tag}>`;
+    const chart = (list: string[][]): string =>
+      '<p>Load by week.</p><ac:structured-macro ac:name="chart"><ac:parameter ac:name="type">line</ac:parameter>' +
+      '<ac:parameter ac:name="title">Weekly load</ac:parameter><ac:rich-text-body><table><tbody>' +
+      `<tr>${['Week', 'Requests', 'Notes'].map((h) => cell('th', h)).join('')}</tr>` +
+      list.map((r) => `<tr>${r.map((v) => cell('td', v)).join('')}</tr>`).join('') +
+      '</tbody></table></ac:rich-text-body></ac:structured-macro><p>Reviewed monthly.</p>';
+    const spike = 'Spike from the retry storm; fixed by the backoff change & a new alert.';
+    // Rewrites one row in the middle and adds a row at the end, in the Markdown the edit is given.
+    const reply = (payload: GuardedPayload): string => {
+      if (!textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      const page = payload.messages[0].content.replace(/^# Document Title: [^\n]*\n\n/, '');
+      const edited = page
+        .replace(/^\| Week 41 \|.*$/m, `| Week 41 | 999 | ${spike} |`)
+        .replace(/^(\| Week 80 \|.*)$/m, '$1\n| Week 81 | 140 | Back to normal <150 ms. |');
+      return `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Updated the chart\n<<<PROPOSED_MARKDOWN>>>\n${edited}`;
+    };
+    const page = fake.page('PEOPLE', 'Interview Guide');
+    const saved = page.storage;
+    page.storage = chart(rows);
+    try {
+      await withApp(reply, async (app) => {
+        const run = await staged(app, [1]);
+        const item = itemOf(run, guide());
+        expect(item.parts?.map((p) => p.label)).toEqual(['chart: Weekly load']);
+        expect(item.changes?.length).toBeGreaterThan(0);
+        await decideAll(app, run.id, guide(), 'accept');
+        expect((await push(app, run.id)).status).toBe(200);
+        const expected = rows.map((r) => [...r]);
+        expected[40] = ['Week 41', '999', spike];
+        expected.push(['Week 81', '140', 'Back to normal <150 ms.']);
+        expect(page.storage).toBe(chart(expected));
+      });
+    } finally {
+      page.storage = saved;
+    }
+  });
+
   it("keep a decision when the person edits elsewhere, ask again about a change they edit, and reset to the AI's edit", async () => {
     await withRichGuide(() =>
       withApp(rewrite, async (app) => {
