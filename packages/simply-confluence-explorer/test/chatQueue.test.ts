@@ -21,8 +21,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AiSessionView, BranchFinding, BranchRun, ChatQueue, StagedPage } from '../src/api/types.js';
+import type {
+  AiSessionView,
+  BranchFinding,
+  BranchRun,
+  ChatQueue,
+  QueuedSuggestion,
+  StagedPage,
+} from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
+import { applyQueueChanges, toSuggestions } from '../src/ai/chatQueue.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -437,5 +445,44 @@ describe('staged pages', () => {
       await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: [`id:${guide()}`], purge: false });
       expect((await listed()).map((p) => p.title)).toEqual(['Interviews']);
     });
+  });
+});
+
+describe('the pages a suggestion names', () => {
+  const pages = [
+    { id: '1', title: 'Interview Guide', version: 3 },
+    { id: '2', title: 'Candidate’s first day – checklist', version: 1 },
+  ];
+  const named = (...titles: string[]): QueuedSuggestion =>
+    toSuggestions([{ kind: 'clarity', pages: titles, detail: 'Vague' }], pages, 0)[0];
+
+  it('are found when the model changes capitals, spaces or quotes, which left the suggestion with no checkbox', () => {
+    const s = named('interview  guide', "Candidate's first day - checklist");
+    expect(s.pages).toEqual(['Interview Guide', 'Candidate’s first day – checklist']);
+    expect(s.pageIds).toEqual({ 'Interview Guide': '1', 'Candidate’s first day – checklist': '2' });
+    expect(s.seenVersions).toEqual({ '1': 3, '2': 1 });
+  });
+
+  it('are not found when the words differ, and keep the name the model gave', () => {
+    const s = named('Interview Guides', 'Offers');
+    expect(s.pages).toEqual(['Interview Guides', 'Offers']);
+    expect(s.pageIds).toEqual({});
+  });
+});
+
+describe('a suggestion the chat adds to its queue', () => {
+  it('keeps the work only a person can do, and nothing the model added beside the fields a suggestion has', () => {
+    const list: QueuedSuggestion[] = [];
+    const line = JSON.stringify({
+      kind: 'stale',
+      pages: ['Interview Guide'],
+      detail: 'Old diagram',
+      byHand: 'Redraw loop.png',
+      byHandOnly: true,
+      extra: 'kept nowhere',
+    });
+    applyQueueChanges([`add ${line}`], list, 1, [{ id: '1', title: 'Interview Guide' }]);
+    expect(list[0]).toMatchObject({ byHand: 'Redraw loop.png', byHandOnly: true, pageIds: { 'Interview Guide': '1' } });
+    expect(list[0]).not.toHaveProperty('extra');
   });
 });

@@ -493,6 +493,8 @@ export type BranchFix = {
   detail: string;
   suggestion?: string;
   otherPages: string[];
+  /** The part a person must do in Confluence, which the edit leaves alone (ADR-068). */
+  byHand?: string;
   /** The chat suggestion it came from, worded as it was when the edit was made. */
   suggestionId?: string;
   /** The page's version when it was suggested. */
@@ -500,7 +502,13 @@ export type BranchFix = {
 };
 
 /** A part of a page the text stands in for with a marker, such as a macro or an image (ADR-058). */
-export type PagePart = { n: number; label: string; kind: 'inline' | 'block' | 'container' };
+export type PagePart = {
+  n: number;
+  label: string;
+  kind: 'inline' | 'block' | 'container';
+  /** Its picture's place in the page's attachments, an image or a diagram's preview (ADR-068). */
+  picture?: number;
+};
 
 /** One change in an edit of a page, decided on its own (ADR-059). */
 export type PageChange = {
@@ -594,6 +602,10 @@ export type BranchFinding = {
   pages: string[];
   detail: string;
   suggestion?: string;
+  /** What a person must change in Confluence, such as redrawing a diagram, which no edit can (ADR-068). */
+  byHand?: string;
+  /** Set when that is all of it, so there is nothing for an edit to do. */
+  byHandOnly?: boolean;
 };
 
 /** One page of a series written with the co-writer: its title, its Markdown, and once created, its id. */

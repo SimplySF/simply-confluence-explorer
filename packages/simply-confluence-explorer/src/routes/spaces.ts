@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import archiver from 'archiver';
 import type { PurgeResult, SpaceTocNode, SyncProgress, TagsResponse } from '../api/types.js';
+import { IMAGE_TYPES } from '../spaces/attachments.js';
 import { tagIndex } from '../spaces/tags.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
@@ -78,6 +81,25 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
       .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/exclusion-status', ({ params }) => {
         const page = store.readPage(params.spaceKey, params.pageId);
         return { pageId: params.pageId, isExcluded: page ? exclusions.isPageExcluded(page, params.spaceKey) : false };
+      })
+      // One image attached to a synced page, by its place in the page's list, so the edit view can
+      // show what a marker stands for (ADR-068). Only image types are served, and no path is read
+      // from the request.
+      .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/attachments/:attachment', ({ params, res }) => {
+        const page = store.readPage(params.spaceKey, params.pageId);
+        if (!page || exclusions.isPageExcluded(page, params.spaceKey))
+          throw new HttpError(404, 'that page is not synced on this machine');
+        const title = page.attachments[Number(params.attachment)]?.title;
+        const type = title ? IMAGE_TYPES[path.extname(title).toLowerCase()] : undefined;
+        const found = type && store.attachmentFiles(params.spaceKey, page).find((f) => f.title === title);
+        if (!found) throw new HttpError(404, 'that page has no such image on this machine');
+        res.writeHead(200, {
+          'Content-Type': type,
+          'Content-Length': found.bytes,
+          'Cache-Control': 'private, no-cache',
+        });
+        res.end(fs.readFileSync(found.file));
+        return undefined;
       })
       .add('POST', '/api/space-cache/:spaceKey/pages/:pageId/purge', ({ params, body }) =>
         store.purgePage(params.spaceKey, params.pageId, {

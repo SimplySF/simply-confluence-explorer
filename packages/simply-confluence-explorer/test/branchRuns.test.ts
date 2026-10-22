@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AiSessionView, BranchFinding, BranchItem, BranchRun } from '../src/api/types.js';
+import type { AiSessionView, BranchFinding, BranchItem, BranchRun, ChatQueue } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
 import { parseFindings, reviewPrompt } from '../src/branches/branchRuns.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -432,6 +432,54 @@ describe('the changes of one page', () => {
     );
   });
 
+  it('change a chart drawn from a large table of numbers and text, written back inside the chart', async () => {
+    const NOTES = [
+      'Steady after the cache change, with no paging overnight.',
+      'Peak during the billing run & the month-end report.',
+      'Latency stayed <200 ms for 99% of requests.',
+      'Owner "platform" asked for a review; see the runbook.',
+      'Quiet week, one deploy, nothing to report.',
+    ];
+    const rows = Array.from({ length: 80 }, (_, i) => [`Week ${i + 1}`, String(100 + ((i * 37) % 250)), NOTES[i % 5]]);
+    const cell = (tag: string, v: string): string =>
+      `<${tag}><p>${v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')}</p></${tag}>`;
+    const chart = (list: string[][]): string =>
+      '<p>Load by week.</p><ac:structured-macro ac:name="chart"><ac:parameter ac:name="type">line</ac:parameter>' +
+      '<ac:parameter ac:name="title">Weekly load</ac:parameter><ac:rich-text-body><table><tbody>' +
+      `<tr>${['Week', 'Requests', 'Notes'].map((h) => cell('th', h)).join('')}</tr>` +
+      list.map((r) => `<tr>${r.map((v) => cell('td', v)).join('')}</tr>`).join('') +
+      '</tbody></table></ac:rich-text-body></ac:structured-macro><p>Reviewed monthly.</p>';
+    const spike = 'Spike from the retry storm; fixed by the backoff change & a new alert.';
+    // Rewrites one row in the middle and adds a row at the end, in the Markdown the edit is given.
+    const reply = (payload: GuardedPayload): string => {
+      if (!textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      const page = payload.messages[0].content.replace(/^# Document Title: [^\n]*\n\n/, '');
+      const edited = page
+        .replace(/^\| Week 41 \|.*$/m, `| Week 41 | 999 | ${spike} |`)
+        .replace(/^(\| Week 80 \|.*)$/m, '$1\n| Week 81 | 140 | Back to normal <150 ms. |');
+      return `<<<CRITIQUE>>>\n- None\n<<<CHANGELOG>>>\n- Updated the chart\n<<<PROPOSED_MARKDOWN>>>\n${edited}`;
+    };
+    const page = fake.page('PEOPLE', 'Interview Guide');
+    const saved = page.storage;
+    page.storage = chart(rows);
+    try {
+      await withApp(reply, async (app) => {
+        const run = await staged(app, [1]);
+        const item = itemOf(run, guide());
+        expect(item.parts?.map((p) => p.label)).toEqual(['chart: Weekly load']);
+        expect(item.changes?.length).toBeGreaterThan(0);
+        await decideAll(app, run.id, guide(), 'accept');
+        expect((await push(app, run.id)).status).toBe(200);
+        const expected = rows.map((r) => [...r]);
+        expected[40] = ['Week 41', '999', spike];
+        expected.push(['Week 81', '140', 'Back to normal <150 ms.']);
+        expect(page.storage).toBe(chart(expected));
+      });
+    } finally {
+      page.storage = saved;
+    }
+  });
+
   it("keep a decision when the person edits elsewhere, ask again about a change they edit, and reset to the AI's edit", async () => {
     await withRichGuide(() =>
       withApp(rewrite, async (app) => {
@@ -662,6 +710,84 @@ describe('a stopped run', () => {
       await app.call('POST', `/branches/runs/${started.id}/items/${interviews()}/redo`);
       const again = await settled(app, started.id);
       expect(itemOf(again, interviews()).status).toBe('proposed');
+    });
+  });
+});
+
+describe('work only a person can do in Confluence', () => {
+  const HAND: BranchFinding[] = [
+    {
+      kind: 'stale',
+      pages: ['Interview Guide'],
+      detail: 'The flow diagram shows the old loop',
+      byHand: 'Redraw loop.png without the phone screen',
+      byHandOnly: true,
+    },
+    {
+      kind: 'stale',
+      pages: ['Interview Guide'],
+      detail: 'The loop changed',
+      suggestion: 'Describe the new loop',
+      byHand: 'Redraw loop.png to match',
+    },
+  ];
+
+  it('is read from a review, and a wrong value is ignored rather than trusted', () => {
+    expect(parseFindings(JSON.stringify({ findings: HAND }))).toEqual(HAND);
+    expect(
+      parseFindings(
+        '{"findings":[{"kind":"stale","detail":"x","byHand":3,"byHandOnly":true},{"kind":"stale","detail":"y","byHand":"z","byHandOnly":"yes"}]}',
+      ),
+    ).toEqual([
+      { kind: 'stale', pages: [], detail: 'x' },
+      { kind: 'stale', pages: [], detail: 'y', byHand: 'z' },
+    ]);
+    expect(reviewPrompt(['staleness'], 1)).toContain('"byHandOnly"');
+    // A chart drawn from a table, or a diagram drawn with characters, is text an edit can change.
+    expect(reviewPrompt(['staleness'], 1)).toContain("a chart's data table (the chart is drawn from it");
+    expect(reviewPrompt(['staleness'], 1)).toContain('diagrams drawn with characters');
+  });
+
+  it('cannot be recommended when it is all of a suggestion, and is left out of the edit when it is part', async () => {
+    const prompts: string[] = [];
+    const reply = (payload: GuardedPayload): string => {
+      const text = textOf(payload);
+      if (payload.messages.at(-1)?.content.includes('"findings"')) return JSON.stringify({ findings: HAND });
+      if (text.includes('<<<PROPOSED_MARKDOWN>>>')) prompts.push(text);
+      return answer(payload);
+    };
+    await withApp(reply, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      expect((await recommend(app, c.id, [0])).status).toBe(400);
+      const res = await recommend(app, c.id, [1]);
+      const item = itemOf(await settled(app, res.body.id), guide());
+      expect(item.fixes?.[0].byHand).toBe('Redraw loop.png to match');
+      expect(prompts.join('\n')).toContain(
+        'A person will do this part in Confluence, so leave it: Redraw loop.png to match',
+      );
+    });
+  });
+});
+
+describe('an edit that changes nothing', () => {
+  it('was left at To decide forever with nothing to press, and is now not edited, with the AI’s reason', async () => {
+    const unchanged = (payload: GuardedPayload): string => {
+      const text = textOf(payload);
+      if (!text.includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      const page = /<<<PROPOSED_MARKDOWN>>>[\s\S]*?\n\n([\s\S]*)$/.exec(text)?.[1] ?? '';
+      return `<<<CRITIQUE>>>\n- The order is shown in a diagram, which only a person can redraw\n<<<CHANGELOG>>>\n<<<PROPOSED_MARKDOWN>>>\n${page}`;
+    };
+    await withApp(unchanged, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const res = await recommend(app, c.id, [1]);
+      const item = itemOf(await settled(app, res.body.id), guide());
+      expect(item.changes).toEqual([]);
+      expect(item.status).toBe('skipped');
+      expect(item.message).toBe('No change written: The order is shown in a diagram, which only a person can redraw');
+      const queue = (await app.call<ChatQueue>('GET', `/ai/sessions/${c.id}/queue`)).body;
+      expect(queue.suggestions[1]).toMatchObject({ state: 'skipped', why: item.message });
     });
   });
 });

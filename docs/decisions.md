@@ -1915,3 +1915,38 @@ headroom.
 
 **The argument against:** a budget raised each time it is reached is no limit. This is accepted
 because each increase is sized to the measured change, and the next one needs its own record.
+
+---
+
+## ADR-068 — The AI does not redraw images or diagrams: a suggestion about one names the work left for a person, instead of an edit that cannot carry it
+
+**Status:** accepted, 2026-10-22.
+
+Since ADR-066 the AI reads a page's images, so a review can see that a diagram is out of date. An
+edit can only change a page's text: an image or a draw.io or Gliffy diagram is a marker the edit
+may keep, move or remove, never change (ADR-058), and the app does not upload attachments. A chart
+is text, because Confluence draws it from the table inside it, so an edit changes a chart by
+changing that table, as it does a diagram drawn with characters; only a chart's type and colours are
+settings it cannot change. A suggestion about a picture produced an edit with nothing in it, and
+nothing said why.
+
+- **A suggestion names the part only a person can do.** The review and the chat's queue ask the model
+  to say, for each suggestion, what must be changed by hand in Confluence (`byHand`) and whether that
+  is all of it (`byHandOnly`). Review shows that work beside the suggestion; one that is all hand work
+  has no checkbox and cannot be recommended, as a missing page or a move cannot. The edit model is
+  told the hand-work part, so it changes only the text, and the edit lists what is left to do.
+- **An edit that still changes nothing is not edited,** with the model's reason, rather than waiting
+  to be decided.
+- **The edit view shows the page's pictures.** A synced page's image attachments, and the preview
+  images Confluence keeps for draw.io and Gliffy diagrams, are served to the browser by
+  `GET /api/space-cache/:key/pages/:pageId/attachments/:index`, so a reviewer sees what each marker
+  stands for. Only image types are served, by their place in the page's list, so no path comes from
+  the request.
+
+**Declined: uploading a new image or diagram.** It would need an attachment write path beside the one
+page write (ADR-058), a model able to draw, and a way for a person to review a picture change; none
+exists, and a wrong diagram pushed silently is worse than one named as out of date.
+
+**The argument against:** the model decides what is hand work, and can be wrong in either direction.
+That is accepted because an edit that changes nothing is still caught and explained, and a suggestion
+marked as hand work only can still be dismissed or asked about again in the chat.

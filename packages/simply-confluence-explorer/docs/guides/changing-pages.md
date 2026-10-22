@@ -29,15 +29,25 @@ Ask the chat in your own words, for example "make the first one more specific" o
 about the pager". It rewords, adds or removes suggestions, and the answer says what it changed. A
 reworded suggestion keeps its earlier wordings under **Reworded**, and **Use this** puts one back.
 
-Review is in three parts: **To recommend**, **In progress** (an edit being written, to decide,
-staged, or failed) and **Closed** (pushed, already done, no longer relevant, dismissed). A suggestion
+Review is in four parts: **To recommend**, **In progress** (an edit being written, to decide,
+staged, or failed), **Not edited** (an edit that changed nothing or was not sent, with why) and
+**Closed** (pushed, already done, no longer relevant, dismissed). A suggestion
 with an edit under way is not ticked again; **Recommend again** offers it once its edit failed, or
 the chat reworded it.
 
 ![The Review tab, grouped by page, with a reworded suggestion](../images/review-queue.webp)
 
-A suggestion to move, split or merge a page is done in Confluence, so it cannot be ticked. For a page
-that should exist and does not, **Write a new page** opens [Writing a new page](/guides/new-pages/).
+Every suggestion that cannot be ticked says why:
+
+- **Moving, splitting or merging a page** is done in Confluence. For a page that should exist and
+  does not, **Write a new page** opens [Writing a new page](/guides/new-pages/).
+- **Redrawing an image, a diagram or a chart's look, or changing a macro's settings**, is work only
+  a person can do: an edit changes only text. Such a suggestion says "The AI cannot make this
+  change" and what to change in Confluence. When only part of a suggestion is like that, it can
+  still be ticked, says which part is yours, and its edit lists it under **To do in Confluence**.
+  A chart's numbers are the table inside it, and a diagram drawn with characters such as `|` is
+  text, so the AI edits both.
+- **A page the chat did not read** is named, with a reminder to ask about that page to edit it.
 
 ## Recommend changes
 
@@ -66,7 +76,8 @@ lets you change the page yourself, **Reset to the AI's edit** brings back the fi
 will be written** shows the page with only the accepted changes.
 
 Parts of a page that Markdown cannot hold, such as a table of contents, a status, a panel, an image
-or a page link, appear as markers like ⟦1 toc⟧ and are written back exactly as they were. A change
+or a page link, appear as markers like ⟦1 toc⟧ and are written back exactly as they were. An image
+attached to a synced page, and a draw.io or Gliffy diagram's preview, is shown above its marker. A change
 that removes one says so, and the part is removed only if you accept that change. A page's own
 details, such as its id, version and author, are never written into it.
 
@@ -100,6 +111,8 @@ applied, that the chat's revision is accepted or dismissed and its page is check
 that only staged pages are pushed, never an excluded one. `test/branchRuns.test.ts` checks that each
 edit carries only its own suggestions, that only accepted changes are written with a table of
 contents kept, that a page changed by someone else is refused, and that a page's own details are
-never written. `test/editForm.test.ts` checks that every test page is written back exactly when
+never written, that an edit that changes nothing is not edited and says why, and that a suggestion
+only a person can do cannot be recommended. `test/attachments.test.ts` checks that an edit's images
+are served only as images of a synced page that is not excluded. `test/editForm.test.ts` checks that every test page is written back exactly when
 nothing changes. `test/e2e/branches.e2e.ts` makes, stages and pushes an edit from a page a colleague
 changed, and `test/e2e/push.e2e.ts` changes a page with a panel, against a real Confluence Data Center.

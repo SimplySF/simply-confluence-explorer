@@ -1108,6 +1108,23 @@ body {
   color: var(--text-muted);
   text-decoration: none;
 }
+/* A part shown as its picture, so a reviewer sees the image or diagram its marker stands for. */
+.part-picture {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  max-width: 100%;
+  vertical-align: top;
+}
+.part-picture img {
+  max-width: min(100%, 520px);
+  max-height: 320px;
+  object-fit: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-panel-secondary);
+}
 @media (max-width: 760px) {
   .branch-queue {
     grid-template-columns: 1fr;

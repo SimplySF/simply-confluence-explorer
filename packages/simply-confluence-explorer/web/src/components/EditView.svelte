@@ -12,7 +12,7 @@
     X,
   } from '@lucide/svelte';
   import type { BranchItem, BranchRun } from '../../../src/api/types.js';
-  import { bodyOf } from '../support/markdown.js';
+  import { bodyOf, partPictures } from '../support/markdown.js';
   import ChangeCard from './ChangeCard.svelte';
   import ImagesNote from './ImagesNote.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
@@ -83,6 +83,7 @@
   let confirmReset = $state(false);
   const changes = $derived(item.changes ?? []);
   const byId = $derived(new Map(changes.map((c) => [c.id, c])));
+  const pictures = $derived(partPictures(run.spaceKey, item.pageId, item.parts));
   const pending = $derived(changes.filter((c) => c.decision === 'pending').length);
   const editable = $derived(
     item.proposed !== undefined && !['pushed', 'pending', 'checking', 'working'].includes(item.status),
@@ -218,19 +219,25 @@
               {#each item.rows as row, n (n)}
                 {#if 'same' in row}
                   <div class="side-same">
-                    <Markdown source={row.same} extraClass="markdown-preview side-cell" />
+                    <Markdown source={row.same} extraClass="markdown-preview side-cell" {pictures} />
                     <span></span>
-                    <Markdown source={row.same} extraClass="markdown-preview side-cell" />
+                    <Markdown source={row.same} extraClass="markdown-preview side-cell" {pictures} />
                   </div>
                 {:else if byId.get(row.change)}
                   {@const c = byId.get(row.change)!}
-                  <ChangeCard columns change={c} busy={!!busy || !editable} onDecide={(d) => void onChange(c.id, d)} />
+                  <ChangeCard
+                    columns
+                    change={c}
+                    {pictures}
+                    busy={!!busy || !editable}
+                    onDecide={(d) => void onChange(c.id, d)}
+                  />
                 {/if}
               {/each}
             </div>
           {:else}
             {#each changes as c (c.id)}
-              <ChangeCard change={c} busy={!!busy || !editable} onDecide={(d) => void onChange(c.id, d)} />
+              <ChangeCard change={c} {pictures} busy={!!busy || !editable} onDecide={(d) => void onChange(c.id, d)} />
             {/each}
           {/if}
         {:else if view === 'edit'}
@@ -241,7 +248,7 @@
           </p>
         {:else}
           <p class="branch-note">The page as a push would leave it, with only the accepted changes.</p>
-          <Markdown source={bodyOf(item.result ?? '')} extraClass="markdown-preview improve-preview" />
+          <Markdown source={bodyOf(item.result ?? '')} extraClass="markdown-preview improve-preview" {pictures} />
         {/if}
       {/if}
     </div>
@@ -254,6 +261,12 @@
         <p class="branch-note">Suggestions this edit applies:</p>
         <ul class="branch-critique">
           {#each item.fixes as f, n (n)}<li>{f.detail}{f.suggestion ? ` → ${f.suggestion}` : ''}</li>{/each}
+        </ul>
+      {/if}
+      {#if item.fixes?.some((f) => f.byHand)}
+        <p class="branch-note">To do in Confluence, which no edit can change:</p>
+        <ul class="branch-critique">
+          {#each item.fixes.filter((f) => f.byHand) as f, n (n)}<li>{f.byHand}</li>{/each}
         </ul>
       {/if}
       {#if dropped.length}

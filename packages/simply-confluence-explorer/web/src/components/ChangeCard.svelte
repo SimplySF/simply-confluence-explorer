@@ -2,7 +2,7 @@
   import { AlertTriangle, Ban, Check, RotateCcw } from '@lucide/svelte';
   import type { PageChange } from '../../../src/api/types.js';
   import { wordDiff, type WordPiece } from '../support/lineDiff.js';
-  import { partPieces } from '../support/markdown.js';
+  import { partPieces, type Pictures } from '../support/markdown.js';
 
   // One change of a page's edit: the text it replaces and the text it puts there, with the words that
   // differ marked, what else accepting it does, and the person's decision on it (ADR-059). Side by
@@ -12,9 +12,11 @@
     busy: boolean;
     onDecide: (decision: 'accept' | 'reject' | 'undo') => void;
     columns?: boolean;
+    pictures?: Pictures;
   };
 
-  let { change, busy, onDecide, columns = false }: Props = $props();
+  let { change, busy, onDecide, columns = false, pictures = {} }: Props = $props();
+  const pictureOf = (marker: string): string | undefined => pictures[Number(/^⟦(\d+)/.exec(marker)?.[1])];
   const words = $derived(wordDiff(change.before, change.after));
   const kind = $derived(!change.before ? 'Adds' : !change.after ? 'Removes' : 'Changes');
   const wordClass = (w: WordPiece): string | undefined => (w.kind === 'changed' ? 'word-changed' : undefined);
@@ -22,9 +24,14 @@
 
 {#snippet side(pieces: WordPiece[], cls: string)}
   <div class="change-text {cls}">
-    {#each pieces as w, n (n)}{#each partPieces(w.text) as p, k (k)}{#if p.part}<span class="part-chip"
-            >{p.text.slice(1, -1)}</span
-          >{:else}<span class={wordClass(w)}>{p.text}</span>{/if}{/each}{/each}
+    {#each pieces as w, n (n)}{#each partPieces(w.text) as p, k (k)}{#if p.part}{#if pictureOf(p.text)}<span
+              class="part-picture"
+              ><img src={pictureOf(p.text)} alt={p.text.slice(1, -1)} loading="lazy" /><span class="part-chip"
+                >{p.text.slice(1, -1)}</span
+              ></span
+            >{:else}<span class="part-chip">{p.text.slice(1, -1)}</span>{/if}{:else}<span class={wordClass(w)}
+            >{p.text}</span
+          >{/if}{/each}{/each}
   </div>
 {/snippet}
 

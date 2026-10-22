@@ -34,18 +34,59 @@ const marked = new Marked({
   },
 });
 
+/** The address of each part's picture, by its marker's number (ADR-068). */
+export type Pictures = Record<number, string>;
+
 /**
- * Renders Markdown for display, with raw HTML escaped and unsafe link targets removed.
+ * Where the pictures of an edit's parts are served from: a synced page's image attachments and its
+ * diagrams' previews, by their place in the page's list.
+ *
+ * @param spaceKey The page's space.
+ * @param pageId The page.
+ * @param parts The edit's parts, each with the place of its picture when it has one.
+ */
+export function partPictures(
+  spaceKey: string,
+  pageId: string,
+  parts: ReadonlyArray<{ n: number; picture?: number }> = [],
+): Pictures {
+  return Object.fromEntries(
+    parts.flatMap((p) =>
+      p.picture === undefined
+        ? []
+        : [
+            [
+              p.n,
+              `/api/space-cache/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(pageId)}/attachments/${p.picture}`,
+            ],
+          ],
+    ),
+  );
+}
+
+/** A part shown as its picture, with its marker's words beneath, or as those words alone. */
+export function partHtml(n: number, label: string, pictures: Pictures = {}): string {
+  const chip = `<span class="part-chip" title="A part of the page that is kept as it is">${n} ${label}</span>`;
+  const src = pictures[n];
+  return src
+    ? `<span class="part-picture"><img src="${escape(src)}" alt="${label.replace(/"/g, '&quot;')}" loading="lazy" />${chip}</span>`
+    : chip;
+}
+
+/**
+ * Renders Markdown for display, with raw HTML escaped and unsafe link targets removed. A marker for
+ * a part of the page is shown as a chip, or as its picture when it has one.
  *
  * @param markdown The Markdown to render.
+ * @param pictures The parts' pictures, by marker number.
  */
-export function renderMarkdown(markdown: string): string {
+export function renderMarkdown(markdown: string, pictures: Pictures = {}): string {
   return marked
     .parse(markdown, { async: false })
-    .replace(
-      /⟦(\/?)(\d+)(?: ([^⟧<\n]*))?⟧/g,
-      (_m, close: string, n: string, label?: string) =>
-        `<span class="part-chip" title="A part of the page that is kept as it is">${close ? `end of ${n}` : `${n} ${label ?? ''}`}</span>`,
+    .replace(/⟦(\/?)(\d+)(?: ([^⟧<\n]*))?⟧/g, (_m, close: string, n: string, label?: string) =>
+      close
+        ? `<span class="part-chip" title="A part of the page that is kept as it is">end of ${n}</span>`
+        : partHtml(Number(n), label ?? '', pictures),
     );
 }
 

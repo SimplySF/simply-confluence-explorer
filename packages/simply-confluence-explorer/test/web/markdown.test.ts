@@ -18,7 +18,7 @@
 // a model writes must never become markup or script there.
 
 import { describe, expect, it } from 'vitest';
-import { bodyOf, renderMarkdown } from '../../web/src/support/markdown.js';
+import { bodyOf, partPictures, renderMarkdown } from '../../web/src/support/markdown.js';
 
 describe('rendering Markdown', () => {
   it('shows raw HTML in a page as text', () => {
@@ -48,5 +48,20 @@ describe('rendering Markdown', () => {
   it('leaves the frontmatter block out of what a page says', () => {
     expect(bodyOf('---\ntitle: X\npageId: "1"\n---\n\n# X\n\nBody')).toBe('# X\n\nBody');
     expect(bodyOf('# No frontmatter\n\n---\n\nrule')).toBe('# No frontmatter\n\n---\n\nrule');
+  });
+});
+
+describe("an edit's pictures", () => {
+  const pictures = partPictures('PLAT', '42', [{ n: 1 }, { n: 2, picture: 0 }]);
+
+  it('are served from the synced page, by their place in its attachments', () => {
+    expect(pictures).toEqual({ 2: '/api/space-cache/PLAT/pages/42/attachments/0' });
+  });
+
+  it('show an image or diagram where its marker was only a chip, and leave other markers as chips', () => {
+    const html = renderMarkdown('See ⟦2 image: loop"x.png⟧ and ⟦1 toc⟧.', pictures);
+    expect(html).toContain('<img src="/api/space-cache/PLAT/pages/42/attachments/0" alt="image: loop&quot;x.png"');
+    expect(html).toMatch(/<span class="part-chip"[^>]*>1 toc<\/span>/);
+    expect(html.match(/<img/g)).toHaveLength(1);
   });
 });

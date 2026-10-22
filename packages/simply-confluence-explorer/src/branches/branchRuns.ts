@@ -26,13 +26,20 @@ import type {
   QueuedSuggestion,
   ReviewAspect,
 } from '../api/types.js';
+import { HAND_WORK_NOTE, readFinding } from '../ai/chatQueue.js';
 import { AiStopped, type AiEngine } from '../ai/engine.js';
 import { GuardBlockedError } from '../ai/guard.js';
-import { applyPrompt, freshnessPrompt, parseRecommendationResponse, parseVerdicts } from '../ai/improve.js';
+import {
+  applyPrompt,
+  freshnessPrompt,
+  parseRecommendationResponse,
+  parseVerdicts,
+  unappliedOf,
+} from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
 import { stripFrontmatter } from '../parser/convert.js';
-import { toEditForm } from '../parser/editForm.js';
+import { pictureOf, toEditForm } from '../parser/editForm.js';
 import { EXCLUDED_MESSAGE, gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { imagesFor } from '../spaces/attachments.js';
 import { loadSpaceSettings } from '../spaces/spaceSettings.js';
@@ -94,22 +101,12 @@ export function reviewPrompt(aspects: ReviewAspect[], pageCount: number, instruc
 Find what a maintainer should fix, of these kinds only:
 ${kinds.join('\n')}
 Reply with JSON only, in this shape:
-{"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do"}]}
+{"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do","byHand":"only when a person must do part of it","byHandOnly":false}]}
 Use exact page titles, and name every page a finding is about. Report nothing you are not confident of; an empty list is a valid answer.
+${HAND_WORK_NOTE}
 ${RECORD_NOTE}${instructions ? `\nAlso: ${instructions}` : ''}`;
 }
 
-const KINDS = new Set<string>([
-  'incorrect',
-  'redundant',
-  'stale',
-  'clarity',
-  'depth',
-  'structure',
-  'operations',
-  'placement',
-  'gap',
-]);
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIDABLE = new Set(['proposed', 'accepted', 'rejected', 'checked', 'check-failed', 'push-failed']);
 /** A page whose edit can be made again from the page as Confluence holds it now. */
@@ -131,16 +128,8 @@ export function parseFindings(text: string): BranchFinding[] | null {
     const raw = (JSON.parse(json[0]) as { findings?: unknown }).findings;
     if (!Array.isArray(raw)) return null;
     return raw.flatMap((f: unknown): BranchFinding[] => {
-      const finding = (f ?? {}) as { kind?: unknown; pages?: unknown; detail?: unknown; suggestion?: unknown };
-      if (typeof finding.kind !== 'string' || !KINDS.has(finding.kind) || typeof finding.detail !== 'string') return [];
-      return [
-        {
-          kind: finding.kind as BranchFinding['kind'],
-          pages: Array.isArray(finding.pages) ? finding.pages.filter((p): p is string => typeof p === 'string') : [],
-          detail: finding.detail,
-          suggestion: typeof finding.suggestion === 'string' ? finding.suggestion : undefined,
-        },
-      ];
+      const finding = readFinding(f);
+      return finding ? [finding] : [];
     });
   } catch {
     // Not JSON after all: the caller keeps the answer as text.
@@ -219,6 +208,8 @@ export class BranchRunner {
     if (picked.length === 0) throw new HttpError(400, 'choose suggestions from the list');
     if (picked.some((f) => NOT_EDITABLE.has(f.kind)))
       throw new HttpError(400, 'a suggestion to move, split, merge or write a page cannot be applied as an edit');
+    if (picked.some((f) => f.byHandOnly))
+      throw new HttpError(400, 'a suggestion only a person can carry out in Confluence cannot be applied as an edit');
     const fixesFor = new Map<string, { title: string; fixes: BranchFix[] }>();
     for (const f of picked) {
       for (const title of f.pages) {
@@ -229,6 +220,7 @@ export class BranchRunner {
           detail: f.detail,
           suggestion: f.suggestion,
           otherPages: f.pages.filter((p) => p !== title),
+          ...(f.byHand ? { byHand: f.byHand } : {}),
           suggestionId: f.id,
           seenVersion: f.seenVersions[id],
         };
@@ -472,7 +464,12 @@ export class BranchRunner {
         guardSummary: answer.guard.summary,
       });
       refreshChanges(item);
-      step(item, `Ready to decide: ${plural(item.changes?.length ?? 0, 'change')}`);
+      if (item.changes?.length === 0) {
+        // An edit that changes nothing has nothing to decide or push, so it is not left waiting.
+        item.status = 'skipped';
+        item.message = `No change written: ${unappliedOf(parsed.critique) ?? 'the AI found nothing it could change in the page’s text.'}`;
+        step(item, item.message);
+      } else step(item, `Ready to decide: ${plural(item.changes?.length ?? 0, 'change')}`);
     } catch (error) {
       delete item.writing;
       if (error instanceof AiStopped) {
@@ -599,7 +596,14 @@ function step(item: BranchItem, text: string): void {
  */
 function editOf(page: PageDetail): Pick<BranchItem, 'original' | 'parts' | 'drops'> {
   const form = toEditForm(page.storageXml);
-  return { original: `${form.markdown}\n`, ...partsOf(form) };
+  const { parts, drops } = partsOf(form);
+  const titles = page.attachments.map((a) => a.title);
+  const pictured = parts.map((p) => {
+    const file = form.parts.find((f) => f.n === p.n);
+    const at = file ? titles.indexOf(pictureOf(file) ?? '') : -1;
+    return at >= 0 ? { ...p, picture: at } : p;
+  });
+  return { original: `${form.markdown}\n`, parts: pictured, drops };
 }
 
 function newRun(

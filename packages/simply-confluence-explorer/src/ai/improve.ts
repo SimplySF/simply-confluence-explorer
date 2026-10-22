@@ -30,7 +30,8 @@ export function applyPrompt(fixes: BranchFix[], userPrompt?: string): string {
   const list = fixes
     .map((f, i) => {
       const also = f.otherPages.length ? ` (also concerns: ${f.otherPages.join(', ')})` : '';
-      return `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}${also}`;
+      const left = f.byHand ? ` A person will do this part in Confluence, so leave it: ${f.byHand}` : '';
+      return `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}${also}${left}`;
     })
     .join('\n');
   return `You are an expert technical documentation editor.
@@ -42,7 +43,7 @@ CRITICAL RULES:
 2. Return only the page's body. Never add the page's id, version, author, dates, address or breadcrumbs: the app keeps those, and they are not part of the page.
 3. When a suggestion concerns another page too, change only this page's part of it.
 4. Text written ⟦3 name⟧ is a marker for a part of the page that is not text, such as a macro, an image, a link or a layout. Keep every marker exactly as written, where its part belongs. Move or remove a marker only when a suggestion asks for that part to move or go, and never write a marker the page does not already have.
-5. A marker on a line of its own with a matching ⟦/3⟧ later holds the text between the two, such as the body of a panel or a column. You may edit that text; keep both markers, in order.
+5. A marker on a line of its own with a matching ⟦/3⟧ later holds the text between the two, such as the body of a panel or a column. You may edit that text; keep both markers, in order. A chart is drawn from the table between its markers, so to change a chart, change that table.
 6. Output pure Markdown using the exact delimiter tags below. Do NOT output JSON!
 
 <<<CRITIQUE>>>
@@ -100,8 +101,8 @@ export function parseRecommendationResponse(raw: string): Recommendation {
     const changelog = /<<<CHANGELOG>>>([\s\S]*?)(?=<<<PROPOSED_MARKDOWN>>>|$)/i.exec(text)?.[1];
     const markdown = /<<<PROPOSED_MARKDOWN>>>([\s\S]*)$/i.exec(text)?.[1];
     return {
-      critique: critique ? bullets(critique) : ['Reviewed document against technical standards.'],
-      changelog: changelog ? bullets(changelog) : ['Refined documentation structure, prerequisites, and clarity.'],
+      critique: critique ? bullets(critique) : [],
+      changelog: changelog ? bullets(changelog) : [],
       improvedMarkdown: unfence(markdown ?? text),
     };
   }
@@ -122,19 +123,21 @@ export function parseRecommendationResponse(raw: string): Recommendation {
       // JSON with unescaped quotes or newlines inside it: the proposal is pulled out by pattern.
       const recovered = recoverMarkdown(text);
       if (recovered !== undefined) {
-        return {
-          critique: ['Extracted improved documentation from response.'],
-          changelog: ['Enhanced formatting, section headers, and clarity.'],
-          improvedMarkdown: recovered,
-        };
+        return { critique: [], changelog: [], improvedMarkdown: recovered };
       }
     }
   }
-  return {
-    critique: ['Reviewed document against technical standards.'],
-    changelog: ['Enhanced formatting, section headers, and clarity.'],
-    improvedMarkdown: unfence(text) || text,
-  };
+  return { critique: [], changelog: [], improvedMarkdown: unfence(text) || text };
+}
+
+/**
+ * What the model said it could not apply, or nothing when it said "None" or said nothing.
+ *
+ * @param critique The edit's critique, as `parseRecommendationResponse` reads it.
+ */
+export function unappliedOf(critique: string[]): string | undefined {
+  const said = critique.filter((c) => !/^none\.?$/i.test(c));
+  return said.length ? said.join(' ') : undefined;
 }
 
 /**

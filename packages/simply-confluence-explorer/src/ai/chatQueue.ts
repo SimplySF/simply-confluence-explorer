@@ -47,9 +47,25 @@ export const SUGGESTION_ID = /^[0-9a-f]{12}$/;
 
 type PageRef = { id: string; title: string; version?: number };
 
-/** New suggestions from an answer's findings, each with the version of the pages it names. */
+/** A title as compared: a model often changes its capitals, spacing, quotes or dashes. */
+const titleKey = (title: string): string =>
+  title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[‘’`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[‐-―−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * New suggestions from an answer's findings, each with the version of the pages it names. A page
+ * named a little differently from its title is matched and named by its title.
+ */
 export function toSuggestions(findings: BranchFinding[], pages: PageRef[], fromTurn: number): QueuedSuggestion[] {
-  return findings.map((f) => {
+  const byKey = new Map(pages.map((p) => [titleKey(p.title), p]));
+  return findings.map((raw) => {
+    const f = { ...raw, pages: raw.pages.map((name) => byKey.get(titleKey(name))?.title ?? name) };
     const named = pages.filter((p) => f.pages.includes(p.title));
     return {
       ...f,
@@ -106,17 +122,24 @@ export function queueList(suggestions: QueuedSuggestion[]): string {
 }
 
 /**
+ * What the model that suggests changes is told about the parts of a page an edit cannot change, so it
+ * names that work for a person instead of suggesting an edit that cannot carry it (ADR-068).
+ */
+export const HAND_WORK_NOTE = `Anything on a page written as text can be edited, wherever it is: paragraphs, lists, tables, a chart's data table (the chart is drawn from it, so changing the table changes the chart), code blocks, and diagrams drawn with characters such as | and -. Never mark those as work for a person. Only a picture cannot be edited: an image, a draw.io or Gliffy diagram, a chart's type or colours, a macro's settings, or a block the page shows as a marker kept as it is. When a suggestion needs one of those changed, say in "byHand" what a person must change in Confluence and where, such as "Redraw flow.png: it still shows the old approval step", and set "byHandOnly" to true when nothing else is left for an edit to do.`;
+
+/**
  * What a chat's model is told about its review queue and the open edit. It is the same on every turn,
  * so it never stops the conversation's earlier requests from being reused from the provider's cache.
  */
 export const QUEUE_SYSTEM = `This chat keeps a review queue of suggestions for the pages it reads; the context lists it when it has any.
 When the person asks you to add, reword or remove suggestions, do it, and end your answer with:
 <<<SUGGESTIONS>>>
-add {"kind":"clarity","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to change"}
+add {"kind":"clarity","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to change","byHand":"only when a person must do part of it","byHandOnly":false}
 update #<id> {"detail":"the new wording","suggestion":"the new fix"}
 remove #<id>
 <<<END SUGGESTIONS>>>
 Use one line per change, the kinds incorrect, redundant, stale, clarity, depth, structure, operations, placement or gap, and exact page titles. Leave the block out when the queue does not change.
+${HAND_WORK_NOTE}
 When the context holds an edit the person is working on and they ask you to change it, answer briefly, then give the complete revised text of the page between <<<EDIT>>> and <<<END EDIT>>>. Change only what they ask. Keep every ⟦n name⟧ marker exactly as written, where its part belongs, and keep each ⟦/n⟧ after its opening marker. Never write a marker the page does not have, and never add the page's id, version, author, dates, address or breadcrumbs.`;
 
 /** The chat's review queue as context, so the model can name each suggestion by its id. */
@@ -161,8 +184,9 @@ export function applyQueueChanges(
     const [, verb, id, json] = op;
     const fields = readJson(json);
     const target = suggestions.find((s) => s.id === id && !s.dismissed);
-    if (verb.toLowerCase() === 'add' && fields && isFinding(fields)) {
-      suggestions.push(...toSuggestions([fields], pages, turn));
+    const finding = verb.toLowerCase() === 'add' ? readFinding(fields) : undefined;
+    if (finding) {
+      suggestions.push(...toSuggestions([finding], pages, turn));
       counts.added++;
     } else if (verb.toLowerCase() === 'update' && target && fields && typeof fields.detail === 'string') {
       target.history = [...(target.history ?? []), { detail: target.detail, suggestion: target.suggestion, turn }];
@@ -187,14 +211,24 @@ function readJson(json?: string): Record<string, unknown> | undefined {
   }
 }
 
-function isFinding(f: Record<string, unknown>): f is BranchFinding & Record<string, unknown> {
-  return (
-    typeof f.kind === 'string' &&
-    KINDS.has(f.kind) &&
-    typeof f.detail === 'string' &&
-    Array.isArray(f.pages) &&
-    f.pages.every((p) => typeof p === 'string')
-  );
+/**
+ * A finding as the model wrote it, with only the fields a finding has, or nothing when its kind,
+ * detail or pages are not what the prompt asked for.
+ *
+ * @param raw One finding from the model's answer.
+ */
+export function readFinding(raw: unknown): BranchFinding | undefined {
+  const f = (raw ?? {}) as Record<string, unknown>;
+  if (typeof f.kind !== 'string' || !KINDS.has(f.kind) || typeof f.detail !== 'string') return undefined;
+  const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const byHand = text(f.byHand);
+  return {
+    kind: f.kind as BranchFinding['kind'],
+    pages: Array.isArray(f.pages) ? f.pages.filter((p): p is string => typeof p === 'string') : [],
+    detail: f.detail,
+    suggestion: text(f.suggestion),
+    ...(byHand ? { byHand, ...(f.byHandOnly === true ? { byHandOnly: true } : {}) } : {}),
+  };
 }
 
 type State = SuggestionView['state'];
