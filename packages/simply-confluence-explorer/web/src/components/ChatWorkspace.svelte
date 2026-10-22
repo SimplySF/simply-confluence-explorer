@@ -100,8 +100,9 @@
   const NEEDS = ['pending', 'checking', 'working', 'proposed', 'accepted', 'failed', 'check-failed', 'push-failed'];
   const changes = $derived(items.filter(({ item }) => NEEDS.includes(item.status) && !item.staged));
   // A run still holding work is shown open; one whose pages are all pushed, staged or closed folds away.
+  // The newest run stays open too, so what it could not edit, and why, is seen.
   const current = (run: BranchRun): boolean =>
-    run.status === 'running' || run.items.some((i) => NEEDS.includes(i.status) && !i.staged);
+    run === runs[0] || run.status === 'running' || run.items.some((i) => NEEDS.includes(i.status) && !i.staged);
   const suggestionsIn = (run: BranchRun): number =>
     new Set(run.items.flatMap((i) => [...(i.fixes ?? []), ...(i.freshness?.verdicts ?? [])].map((f) => f.suggestionId)))
       .size;
@@ -327,7 +328,7 @@
       {/each}
     </ul>
     {#if done.length}
-      <details class="run-not-edited">
+      <details class="run-not-edited" open={r === runs[0]}>
         <summary class="branch-note">Not edited ({done.length})</summary>
         <ul>
           {#each done as item (item.pageId)}<li>{item.title}: {item.message ?? 'every change was rejected'}</li>{/each}

@@ -53,7 +53,11 @@
     (!!s.outdated || ['failed', 'rejected', 'skipped', 'done', 'not-relevant'].includes(s.state));
   const open = $derived(suggestions.filter((s) => s.state === 'open'));
   const inProgress = $derived(suggestions.filter((s) => IN_PROGRESS.has(s.state)));
-  const closed = $derived(suggestions.filter((s) => s.state !== 'open' && !IN_PROGRESS.has(s.state)));
+  // An edit that changed nothing, or could not be made, is shown with why rather than folded away.
+  const notEdited = $derived(suggestions.filter((s) => s.state === 'skipped'));
+  const closed = $derived(
+    suggestions.filter((s) => s.state !== 'open' && s.state !== 'skipped' && !IN_PROGRESS.has(s.state)),
+  );
   const picked = $derived(open.filter((s) => chosen.has(s.id) && canEdit(s)));
   const pages = $derived([...new Set(picked.flatMap((s) => Object.keys(s.pageIds)))]);
 
@@ -191,6 +195,10 @@
   {#if inProgress.length}
     <h4 class="queue-section">In progress ({inProgress.length})</h4>
     {@render group(inProgress)}
+  {/if}
+  {#if notEdited.length}
+    <h4 class="queue-section">Not edited ({notEdited.length})</h4>
+    {@render group(notEdited)}
   {/if}
   {#if closed.length}
     <details class="queue-closed">
