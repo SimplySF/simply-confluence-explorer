@@ -148,7 +148,7 @@ describe('other common formats', () => {
     const ics =
       'BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Failover drill\nDTSTART:20261101T090000Z\nDESCRIPTION:Bring the\\nrunbook\nEND:VEVENT\nEND:VCALENDAR';
     expect(text('drill.ics', ics)).toBe('### Failover drill\nStarts: 20261101T090000Z\nBring the\nrunbook');
-    // eslint-disable-next-line camelcase -- a notebook's own field names
+    /* eslint-disable camelcase -- a notebook's own field names */
     const notebook = {
       metadata: { language_info: { name: 'python' } },
       cells: [
@@ -156,6 +156,7 @@ describe('other common formats', () => {
         { cell_type: 'code', source: 'print(4200)', outputs: [{ text: 'hidden' }] },
       ],
     };
+    /* eslint-enable camelcase */
     expect(text('load.ipynb', JSON.stringify(notebook))).toBe('# Load\n\n```python\nprint(4200)\n```');
   });
 
