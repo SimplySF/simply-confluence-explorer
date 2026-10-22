@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.7.2](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.7.1...%40simplysf%2Fsimply-confluence-explorer%400.7.2) (2026-10-22)
+
+### Bug Fixes
+
+- the gemini cli runs in a private folder of its own, and says why when it gives no answer ([#45](https://github.com/SimplySF/simply-confluence-explorer/issues/45)) ([dd7c4a2](https://github.com/SimplySF/simply-confluence-explorer/commit/dd7c4a28f5c1007d406b2b9416a8ba5b385b2527))
+
 ## [0.7.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.7.0...%40simplysf%2Fsimply-confluence-explorer%400.7.1) (2026-10-22)
 
 ### Bug Fixes
