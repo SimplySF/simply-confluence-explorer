@@ -123,22 +123,22 @@ export function runGeminiCli(
     payload.messages.length === 1
       ? payload.messages[0].content
       : payload.messages.map((m) => `${m.role === 'user' ? 'USER' : 'ASSISTANT'}:\n${m.content}`).join('\n\n');
-  // Images the space chose to send are written to a folder made for this request, readable only by
-  // this account, and named in the fixed instruction with the CLI's @ syntax; page text never goes in
-  // the instruction, so no text on a page can make the CLI read a file (ADR-066).
+  // The CLI can search and read the files in its working folder, so every request runs in an empty
+  // folder made for it, readable only by this account and removed when it ends; a shared folder such
+  // as the system's temporary one would let it read other programs' files. Images the space chose to
+  // send are written there and named in the fixed instruction with the CLI's @ syntax; page text never
+  // goes in the instruction, so no text on a page can make the CLI read a file (ADR-066).
   const images = payload.images ?? [];
-  const folder = images.length > 0 ? fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-images-')) : undefined;
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-gemini-'));
   const names = images.map((im, i) => `img-${i + 1}${EXTENSIONS[im.mediaType] ?? '.png'}`);
-  if (folder) images.forEach((im, i) => fs.writeFileSync(path.join(folder, names[i]), Buffer.from(im.data, 'base64')));
-  const instruction = folder
+  images.forEach((im, i) => fs.writeFileSync(path.join(folder, names[i]), Buffer.from(im.data, 'base64')));
+  const instruction = images.length
     ? `${STDIN_INSTRUCTION} Also look at these images from the pages: ${names.map((n) => `@${n}`).join(' ')}`
     : STDIN_INSTRUCTION;
-  const tidy = (): void => {
-    if (folder) fs.rmSync(folder, { recursive: true, force: true });
-  };
+  const tidy = (): void => fs.rmSync(folder, { recursive: true, force: true });
   return new Promise<Reply>((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, '--skip-trust', '-p', instruction, '-o', 'text'], {
-      cwd: folder ?? os.tmpdir(),
+      cwd: folder,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...env, NO_COLOR: '1' },
       signal,
