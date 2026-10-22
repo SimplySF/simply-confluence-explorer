@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.8.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.7.2...%40simplysf%2Fsimply-confluence-explorer%400.8.0) (2026-10-22)
+
+### Features
+
+- every attachment of a chat's pages is read or named with why, in many more formats ([#47](https://github.com/SimplySF/simply-confluence-explorer/issues/47)) ([4e5e67d](https://github.com/SimplySF/simply-confluence-explorer/commit/4e5e67dd7ca997e53ac4498958ed1c16b95afa0e))
+
 ## [0.7.2](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.7.1...%40simplysf%2Fsimply-confluence-explorer%400.7.2) (2026-10-22)
 
 ### Bug Fixes
