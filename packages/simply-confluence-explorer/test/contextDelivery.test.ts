@@ -23,7 +23,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AiSessionView, SessionTurn } from '../src/api/types.js';
 import { ConfiguredAi } from '../src/ai/engine.js';
-import { runGeminiCli } from '../src/ai/geminiService.js';
+import { cliError, runGeminiCli } from '../src/ai/geminiService.js';
 import { OutboundGuard, type GuardedPayload } from '../src/ai/guard.js';
 import { checkImages, checkPayload, ContextCheckError, ManifestBuilder, summarise } from '../src/ai/manifest.js';
 import { cutOffOf } from '../src/ai/providers.js';
@@ -174,6 +174,29 @@ process.stdin.on('end', async () => {
     fs.writeFileSync(empty, "process.stdin.resume(); process.stdin.on('end', () => process.exit(0));");
     await expect(runGeminiCli(empty, payload('doc'), process.env)).rejects.toThrow('the Gemini CLI gave no answer');
     expect(await runGeminiCli(standIn('partial', 1), payload('doc'), process.env)).toMatchObject({ cutOff: 'length' });
+  });
+
+  it('says why it gave no answer when it ends with success and only an error message, which was hidden', async () => {
+    const quiet = path.join(tmp(), 'quiet.mjs');
+    fs.writeFileSync(
+      quiet,
+      "process.stdin.resume(); process.stdin.on('end', () => { process.stderr.write('Quota exceeded for this model.\\n'); process.exit(0); });",
+    );
+    await expect(runGeminiCli(quiet, payload('doc'), process.env)).rejects.toThrow(
+      'the Gemini CLI gave no answer: Quota exceeded for this model.',
+    );
+  });
+
+  it('shows the reason from its error output without the start-up timings and stack frames around it', () => {
+    const stderr = [
+      "[STARTUP] Phase 'cleanup_ops' was started but never ended. Skipping metrics.",
+      'Error when talking to Gemini API: The model is overloaded.',
+      '    at throwErrorIfNotOK (file:///cli/bundle/chunk.js:1:1)',
+      '    at async Turn.run (file:///cli/bundle/chunk.js:2:2) {',
+      '  status: 503',
+      '}',
+    ].join('\n');
+    expect(cliError(stderr)).toBe('Error when talking to Gemini API: The model is overloaded.\n  status: 503\n}');
   });
 });
 

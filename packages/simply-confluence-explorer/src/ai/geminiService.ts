@@ -94,6 +94,18 @@ const STDIN_INSTRUCTION =
   'Follow the instructions at the start of the input below, applying them to the document that follows.';
 
 /**
+ * What the CLI said on its error output, without its start-up timings and stack frames, which bury
+ * the reason, such as a quota or an overloaded model.
+ */
+export function cliError(stderr: string): string {
+  return stderr
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.startsWith('[STARTUP]') && !/^\s+at /.test(line))
+    .join('\n')
+    .slice(-1500);
+}
+
+/**
  * Runs one guarded prompt with the document on standard input, in a scratch working directory.
  * Aborting `signal` ends the process.
  */
@@ -164,11 +176,14 @@ export function runGeminiCli(
         .replace(/YOLO mode is enabled[^\r\n]*\r?\n?/gi, '')
         .trim();
       if (!cleanOutput) {
+        // The CLI can end without an answer yet report success, saying why only on its error output.
+        const said = cliError(stderrData) || 'it printed no error';
+        const sent = images.length ? ` It was sent ${images.length} image${images.length === 1 ? '' : 's'}.` : '';
         reject(
           new Error(
             code === 0
-              ? 'the Gemini CLI gave no answer'
-              : `the Gemini CLI exited with code ${code ?? 'unknown'}: ${stderrData.slice(-2000) || 'it printed no error'}`,
+              ? `the Gemini CLI gave no answer: ${said}${sent}`
+              : `the Gemini CLI exited with code ${code ?? 'unknown'}: ${said}${sent}`,
           ),
         );
       } else {
