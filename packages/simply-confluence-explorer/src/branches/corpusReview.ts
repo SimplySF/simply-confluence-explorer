@@ -14,16 +14,24 @@
  * limitations under the License.
  */
 
-import type { BatchProgress, BranchFinding, PageDetail, SessionTurn } from '../api/types.js';
+import type {
+  AttachmentsReport,
+  BatchProgress,
+  BranchFinding,
+  ImageChoice,
+  PageDetail,
+  SessionTurn,
+} from '../api/types.js';
 import type { AiAnswer, AiEngine } from '../ai/engine.js';
 import { AiStopped } from '../ai/engine.js';
-import { loadGuardRules, OutboundGuard, withWithheld } from '../ai/guard.js';
+import { loadGuardRules, OutboundGuard, withWithheld, type ImageInput } from '../ai/guard.js';
 import { ManifestBuilder, mergeSummaries, summarise, type ManifestSummary } from '../ai/manifest.js';
 import { cutOffNote } from '../ai/reply.js';
 import { toSuggestions } from '../ai/chatQueue.js';
 import { historyToSend, type SessionStore } from '../ai/sessions.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
+import { mergeAccounts } from '../spaces/attachments.js';
 import { contextCollector, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import type { ReadPage, RetrievedContext } from '../spaces/contextRetriever.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
@@ -95,6 +103,46 @@ export function mergeFindings(lists: BranchFinding[][]): BranchFinding[] {
   });
 }
 
+/** The images a request carries, when its pages' account sends any. */
+const imagesOf = (seen?: { images: ImageInput[] }): { images?: ImageInput[] } =>
+  seen?.images.length ? { images: seen.images } : {};
+
+/** Records the images a request sends and the account of its pages' attachments in its manifest. */
+function recordAccount(manifest: ManifestBuilder, seen: { images: ImageInput[]; report: AttachmentsReport }): void {
+  manifest.includeImages(seen.images.map((i) => ({ name: i.name, bytes: i.data.length })));
+  manifest.includeAttachments(seen.report);
+}
+
+/**
+ * The account of a thorough answer's batch: each page's attachments are accounted for, and its images
+ * sent, with the first batch that reads it, so none is sent or counted twice.
+ */
+function accountOnce(
+  request: ThoroughRequest,
+  pages: Array<{ id: string }>,
+  so: { accounted: Set<string>; accounts: AttachmentsReport[] },
+  manifest: ManifestBuilder,
+): { images: ImageInput[]; report: AttachmentsReport } | undefined {
+  const fresh = pages.map((p) => p.id).filter((id) => !so.accounted.has(id));
+  fresh.forEach((id) => so.accounted.add(id));
+  const seen = fresh.length ? request.account?.(fresh) : undefined;
+  if (seen) {
+    recordAccount(manifest, seen);
+    so.accounts.push(seen.report);
+  }
+  return seen;
+}
+
+/** What an answer made over several requests records about its pages' attachments, when any. */
+function accountDetails(accounts: AttachmentsReport[], images?: ImageChoice): Partial<SessionTurn> {
+  if (accounts.length === 0) return {};
+  const merged = mergeAccounts(accounts, images ?? accounts[0].images.choice);
+  return {
+    ...(merged.images.found ? { images: merged.images } : {}),
+    ...(merged.files ? { attachments: merged } : {}),
+  };
+}
+
 export type CorpusReviewDeps = {
   ai: AiEngine;
   sessions: SessionStore;
@@ -120,7 +168,14 @@ export type CorpusReviewRequest = {
   kind: BatchProgress['kind'];
   /** Reads a batch's findings, or `null` when its answer is not the JSON asked for. */
   parse: (text: string) => BranchFinding[] | null;
+  /** The account of a batch's attachments and the images it sends (ADR-069). */
+  account?: Account;
+  /** The store as the chat reads it, without attachments when it reads pages only. */
+  store?: Pick<SpaceStore, 'readableMarkdown'>;
 };
+
+/** The attachments of pages a batch reads: the images it sends, and the account of the rest. */
+export type Account = (pages: PageDetail[]) => { images: ImageInput[]; report: AttachmentsReport };
 
 /** What reading one batch of a thorough answer gives: its context, checked again as it is read. */
 export type ReadBatch = (
@@ -140,6 +195,9 @@ export type ThoroughRequest = {
   /** The files added to the conversation, which the request combining the notes carries. */
   files: (manifest: ManifestBuilder) => string;
   weak: boolean;
+  /** The account of a batch's pages' attachments and the images it sends, by page id (ADR-069). */
+  account?: (pageIds: string[]) => { images: ImageInput[]; report: AttachmentsReport };
+  imageChoice?: ImageChoice;
 };
 
 /** What a batch's notes say when nothing in it helps, so the batch counts as read with nothing to add. */
@@ -290,13 +348,16 @@ export class CorpusReviews {
     const overflow: string[] = [];
     const unread: string[] = [];
     const read = new Map<string, { id: string; title: string; version: number }>();
+    const summaries: ManifestSummary[] = [];
+    const accounts: AttachmentsReport[] = [];
     try {
       for (const batch of batches) {
         if (this.jobs.isCancelled(job.jobId)) return;
         job.currentTitle = batch[0]?.title;
         // Each page is checked again here: excluded pages are left out unnamed, and a page holding a
         // secret is left out and named (contextCollector).
-        const { consider, result } = contextCollector(job.spaceKey, this.deps, dataDir, budget);
+        const reader = request.store ? { ...this.deps, store: request.store } : this.deps;
+        const { consider, result } = contextCollector(job.spaceKey, reader, dataDir, budget);
         batch.forEach(consider);
         withheld.push(...result.withheld);
         overflow.push(...result.overflow);
@@ -310,6 +371,13 @@ export class CorpusReviews {
             history.length,
             history.reduce((n, t) => n + t.text.length, 0),
           );
+          const seen = request.account?.(result.pages.map((p) => p.page));
+          if (seen) {
+            recordAccount(manifest, seen);
+            accounts.push(seen.report);
+          }
+          const built = manifest.build();
+          summaries.push(summarise(built));
           const batchNumber = job.processed + 1;
           // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
           const parsed = await (this.deps.tracer ?? noTracer).span(
@@ -322,7 +390,13 @@ export class CorpusReviews {
               for (let attempt = 1; attempt <= 2; attempt++) {
                 // eslint-disable-next-line no-await-in-loop -- the second attempt only follows a failed first
                 const reply = await ai.chat(
-                  { context, history, prompt: request.prompt, manifest: manifest.build() },
+                  {
+                    context,
+                    history,
+                    prompt: request.prompt,
+                    manifest: built,
+                    ...imagesOf(seen),
+                  },
                   { spaceKey: job.spaceKey, guard, signal },
                 );
                 const findings = reply.cutOff ? null : request.parse(reply.text);
@@ -359,6 +433,8 @@ export class CorpusReviews {
           (unread.length ? ` Not reviewed, because the AI's reply could not be read twice: ${unread.join(', ')}.` : ''),
         engine: ai.getEngine(),
         corpus: { pages: job.pages, mode: 'batched', batches: batches.length },
+        ...(summaries.length ? { sent: mergeSummaries(summaries) } : {}),
+        ...accountDetails(accounts),
       },
     ];
     sessions.addTurns(session.id, turns, guard.exportState(), (list, turn) => {
@@ -383,6 +459,8 @@ export class CorpusReviews {
     const withheld: string[] = [];
     const overflow: string[] = [];
     const unread: string[] = [];
+    const accounts: AttachmentsReport[] = [];
+    const accounted = new Set<string>();
     let reply: AiAnswer;
     try {
       for (const [n, ids] of request.batches.entries()) {
@@ -394,6 +472,7 @@ export class CorpusReviews {
         overflow.push(...batch.overflow);
         if (batch.selectedPages.length > 0) {
           manifest.includeTurns(history.length, historyChars);
+          const seen = accountOnce(request, batch.selectedPages, { accounted, accounts }, manifest);
           const built = manifest.build();
           // eslint-disable-next-line no-await-in-loop -- one batch at a time, as providers limit request rates
           const text = await tracer.span<string | null>(
@@ -406,7 +485,13 @@ export class CorpusReviews {
               for (let attempt = 1; attempt <= 2; attempt++) {
                 // eslint-disable-next-line no-await-in-loop -- the second attempt only follows a failed first
                 const got = await ai.chat(
-                  { context: batch.contextMarkdown, history, prompt: notesPrompt(request.question), manifest: built },
+                  {
+                    context: batch.contextMarkdown,
+                    history,
+                    prompt: notesPrompt(request.question),
+                    manifest: built,
+                    ...imagesOf(seen),
+                  },
                   { spaceKey: job.spaceKey, guard, signal },
                 );
                 const usable = !got.cutOff && got.text.trim().length > 0;
@@ -489,6 +574,7 @@ export class CorpusReviews {
           considered: job.sections,
           corpus: { pages: request.corpusPages, mode: 'retrieved', batches: request.batches.length },
           ...(request.weak ? { weakMatch: true } : {}),
+          ...accountDetails(accounts, request.imageChoice),
           traceId: job.traceId,
         },
       ],

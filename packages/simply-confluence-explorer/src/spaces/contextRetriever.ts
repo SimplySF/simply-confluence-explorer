@@ -73,6 +73,8 @@ export type RetrieverDeps = {
   signal?: AbortSignal;
   /** Told each step as it starts, so the person waiting can see how far the question has got. */
   onStep?: (step: string) => void;
+  /** False when the chat reads pages only, so no attachment's section is sent (ADR-069). */
+  attachments?: boolean;
 };
 
 /** How many candidate sections the search offers the AI to choose from. */
@@ -410,6 +412,7 @@ function readSections(
     const page = byId.get(pageId);
     const section = page && sectionAt(key, deps, pageId, Number(index));
     if (!page || !section) continue;
+    if (deps.attachments === false && section.path.some((h) => h.startsWith('Attachment: '))) continue;
     const name = sectionName(page.title, section);
     if (screen.secretsIn(section.text).length > 0) withheld.add(page.title);
     else if (used + section.text.length + name.length > budget) overflow.push(name);

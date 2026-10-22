@@ -81,8 +81,9 @@ removing."
 
 **Images are not checked.** The guard reads text, so it cannot see a password in a screenshot. A
 page's images are sent only for a space you chose to send them for (**Space → Exclusions and leak
-guard… → Images on pages**), and every answer names the images it sent unchecked. Text attachments
-are checked like the page.
+guard… → Images on pages**), and every answer names the images it sent unchecked. Every other
+attachment, Word and Excel files included, is turned into text on your computer first and checked
+like the page; a chat set to **Pages only** reads none of them.
 
 ### Your own guard rules
 

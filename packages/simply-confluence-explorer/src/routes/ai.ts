@@ -16,14 +16,22 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AiSettingsView, AnalyzeResponse, ImageChoice, MetadataProgress, PageDetail } from '../api/types.js';
+import type {
+  AiSettingsView,
+  AnalyzeResponse,
+  AttachmentsReport,
+  ImageChoice,
+  MetadataProgress,
+  PageDetail,
+} from '../api/types.js';
 import { listModels } from '../ai/engine.js';
 import { guardRulesPath, parseGuardRules, withWithheld } from '../ai/guard.js';
+import { isSessionId } from '../ai/sessions.js';
 import { API_PROVIDERS, type ApiProvider, type SettingsUpdate } from '../ai/settings.js';
 import { isValidPageId } from '../http/guards.js';
 import { HttpError, type Router } from '../http/router.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
-import { IMAGE_TYPES, imagesFor } from '../spaces/attachments.js';
+import { attachmentsFor, imagesFor, previewAccount } from '../spaces/attachments.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
 import { corpusSize, retrieveContext } from '../spaces/contextRetriever.js';
 import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
@@ -113,14 +121,41 @@ const requiredPrompt = (body: unknown): string => {
 export function addAiRoutes(router: Router, services: Services): Router {
   const { ai, store, exclusions, metadata, dataDir, index } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
-  /** How many images the pages hold, and the space's choice about them, for the coverage line. */
-  const imagesOnPages = (spaceKey: string, pages: PageDetail[]): { found: number; choice: ImageChoice } => ({
-    found: pages.reduce(
-      (n, p) => n + p.attachments.filter((a) => IMAGE_TYPES[path.extname(a.title).toLowerCase()]).length,
-      0,
-    ),
-    choice: loadSpaceSettings(dataDir, spaceKey).images,
-  });
+  /** The account of the attachments of the pages an answer read, and the images it sends (ADR-069). */
+  const accountOf = (spaceKey: string, pages: PageDetail[], searched = false): ReturnType<typeof attachmentsFor> => {
+    const seen = attachmentsFor(
+      (key, p) => store.attachments.of(key, p),
+      pages.map((page) => ({ spaceKey, page })),
+      { images: loadSpaceSettings(dataDir, spaceKey).images },
+    );
+    if (searched)
+      seen.report.read = seen.report.read.map((r) => ({ ...r, as: `${r.as}, searched for the parts that match` }));
+    return seen;
+  };
+
+  /**
+   * The attachments of the pages a chat reads, for it to list before its first question, with the
+   * chat's choice when it has made one (ADR-069); the images, as the coverage line has shown them.
+   */
+  const attachmentsPreview = async (
+    spaceKey: string,
+    rootPageId: string | undefined,
+    ids: string[] | undefined,
+    sessionId: string | undefined,
+  ): Promise<{ attachments?: AttachmentsReport; images?: { found: number; choice: ImageChoice } }> => {
+    const pages = await metadata.allowedPages(spaceKey, rootPageId, ids);
+    const chat = sessionId && isSessionId(sessionId) ? services.sessions.get(sessionId)?.attachments : undefined;
+    const report = previewAccount(
+      pages.map((page) => ({ page: page.title, entries: store.attachmentEntries(spaceKey, page) })),
+      { chat, images: loadSpaceSettings(dataDir, spaceKey).images },
+      store.isSynced(spaceKey),
+    );
+    if (!report.files) return {};
+    return {
+      attachments: report,
+      ...(report.images.found ? { images: { found: report.images.found, choice: report.images.choice } } : {}),
+    };
+  };
   const settingsView = (): AiSettingsView => ({ ...ai.settings.publicView(), geminiCliFound: ai.cliPath() });
   const gate = async (
     pageId: string,
@@ -175,18 +210,21 @@ export function addAiRoutes(router: Router, services: Services): Router {
         let markdown = optionalString(body, 'markdown') ?? optionalString(body, 'documentMarkdown') ?? '';
         let pageTitle = optionalString(body, 'pageTitle');
         let branch = {
-          pages: [] as Array<{ markdown: string; page: { title: string } }>,
+          pages: [] as Array<{ markdown: string; page: PageDetail }>,
           withheld: [] as string[],
           overflow: [] as string[],
         };
+        let read: PageDetail[] = [];
         if (pageId) {
           // The page that is sent is the page that was checked: the server's own copy, read by the
           // exclusion check itself. Any text or title in the request is ignored, so text from another
           // page, or from before a rule changed, can never go out under this page's name.
           const checked = await gate(pageId, spaceKey);
           spaceKey = checked.spaceKey;
+          await store.attachments.prepare([{ spaceKey: checked.spaceKey, page: checked.page }]);
           markdown = store.readableMarkdown(checked.spaceKey, checked.page);
           pageTitle = checked.page.title;
+          read = [checked.page];
           // A page with no body of its own, such as a folder page, is answered from the pages below it.
           const ownBody = markdown.replace(/^---[\s\S]*?---\s*/m, '').trim();
           if (fields.includeChildren === true || ownBody.length < 50) {
@@ -196,12 +234,17 @@ export function addAiRoutes(router: Router, services: Services): Router {
         const full =
           markdown + branch.pages.map((p) => `\n\n---\n# Sub-Page: ${p.page.title}\n${p.markdown}`).join('\n');
         if (!full.trim()) throw new HttpError(400, 'there is no page content to ask about');
-        const answer = await ai.analyzeDocument(full, prompt, pageTitle, { spaceKey });
+        const seen = spaceKey ? accountOf(spaceKey, [...read, ...branch.pages.map((p) => p.page)]) : undefined;
+        const answer = await ai.analyzeDocument(full, prompt, pageTitle, {
+          spaceKey,
+          ...(seen?.images.length ? { images: seen.images } : {}),
+        });
         const guard = withWithheld(answer.guard, branch.withheld);
         return {
           answer: answer.text,
           guard: { ...guard, summary: guard.summary + leftOutNote(branch) },
           engine: ai.getEngine(),
+          ...(seen?.report.files ? { attachments: seen.report } : {}),
         };
       })
       .add('POST', '/api/space-cache/:spaceKey/ai/ask', async ({ params, body, signal }): Promise<AnalyzeResponse> => {
@@ -215,15 +258,23 @@ export function addAiRoutes(router: Router, services: Services): Router {
           { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
           { budget: services.contextChars, outline: true },
         );
+        const visible = await store.visiblePages(key);
+        const seen = accountOf(
+          key,
+          visible.filter((p) => context.selectedPages.some((s) => s.id === p.id)),
+          context.corpus.mode === 'retrieved',
+        );
         const answer = await ai.analyzeDocument(context.contextMarkdown, prompt, `Space ${key}`, {
           spaceKey: key,
           signal,
+          ...(seen.images.length ? { images: seen.images } : {}),
         });
         return {
           answer: answer.text,
           guard: withWithheld(answer.guard, context.withheld),
           selectedPages: context.selectedPages,
           engine: ai.getEngine(),
+          ...(seen.report.files ? { attachments: seen.report } : {}),
         };
       })
       .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/metadata', ({ params }) => ({
@@ -259,6 +310,8 @@ export function addAiRoutes(router: Router, services: Services): Router {
         const key = params.spaceKey.toUpperCase();
         const rootPageId = optionalString(body, 'rootPageId');
         const ids = await chosenIdsOf(body, key, store, exclusions);
+        // The chat's pages' attachments are listed at once, from their names, before the index is ready.
+        const attachments = await attachmentsPreview(key, rootPageId, ids, optionalString(body, 'sessionId'));
         // A space still being indexed answers with how far it has got rather than keep the chat waiting;
         // the chat asks again until it is done.
         const built = await Promise.race([
@@ -270,15 +323,15 @@ export function addAiRoutes(router: Router, services: Services): Router {
           return {
             ...(await metadata.coverage(key, rootPageId, ids)),
             indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 },
+            ...attachments,
           };
         }
         const allowed = await metadata.allowedPages(key, rootPageId, ids);
         const size = corpusSize(key, allowed, index);
-        const images = imagesOnPages(key, allowed);
         return {
           ...(await metadata.coverage(key, rootPageId, ids)),
           fits: size <= services.contextChars,
-          ...(images.found ? { images } : {}),
+          ...attachments,
         };
       })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {

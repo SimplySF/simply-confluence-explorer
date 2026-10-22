@@ -34,6 +34,7 @@
   import { observe } from '../support/observe.svelte.js';
   import { readLabel, sentLines } from '../support/sources.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
+  import AttachmentsNote from './AttachmentsNote.svelte';
   import ImagesNote from './ImagesNote.svelte';
   import Diff from './ui/Diff.svelte';
   import Markdown from './ui/Markdown.svelte';
@@ -253,6 +254,10 @@
           </div>
         {/if}
         {#if t.images && chat.session}<ImagesNote spaceKey={chat.session.scope.spaceKey} report={t.images} />{/if}
+        {#if t.attachments && chat.session}<AttachmentsNote
+            spaceKey={chat.session.scope.spaceKey}
+            report={t.attachments}
+          />{/if}
         {#if t.weakMatch}
           <div class="alert alert-warning chat-weak">
             Weak matches: the pages found share few words with the question, so this answer may not be about it. Try

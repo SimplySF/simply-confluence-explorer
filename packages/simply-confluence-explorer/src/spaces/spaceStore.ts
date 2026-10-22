@@ -21,7 +21,7 @@ import { parsePage } from '../parser/convert.js';
 import { mapChunked } from '../util/pause.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
-import { AttachmentReader } from './attachments.js';
+import { AttachmentReader, type AttachmentFile } from './attachments.js';
 import { SpaceCatalog, type CatalogEntry } from './catalog.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { tagsOf } from './tags.js';
@@ -41,6 +41,23 @@ import { tagsOf } from './tags.js';
 // pages_cache/, and purging reconciles the two.
 
 type Manifest = Omit<SyncedSpace, 'metadataCount' | 'hasTOC'>;
+
+/**
+ * The store as a chat that reads pages only sees it: every page read without its attachments
+ * (ADR-069). Everything else is the store itself.
+ *
+ * @param store The space store.
+ */
+export function withoutAttachments<T extends Pick<SpaceStore, 'readableMarkdown'>>(store: T): T {
+  return new Proxy(store, {
+    get(target, prop, receiver): unknown {
+      if (prop === 'readableMarkdown')
+        return (spaceKey: string, page: PageDetail): string => target.readableMarkdown(spaceKey, page, false);
+      const value: unknown = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+}
 
 export class SpaceStore {
   /** Each space's page catalog, which whole-space views read instead of every page's file. */
@@ -69,7 +86,11 @@ export class SpaceStore {
       readMetadata: (key, id): PageMetadata | undefined => this.readMetadata(key, id),
       log,
     });
-    this.attachments = new AttachmentReader((key, page) => this.attachmentFiles(key, page), log);
+    this.attachments = new AttachmentReader(
+      (key, page) => this.attachmentEntries(key, page),
+      log,
+      (key) => this.isSynced(key),
+    );
   }
 
   public spaceDir(spaceKey: string): string {
@@ -89,10 +110,11 @@ export class SpaceStore {
 
   /**
    * A page's Markdown as the AI reads it: its text, then the text of its text attachments as
-   * sections of their own (ADR-066).
+   * sections of their own (ADR-066), unless a chat reads pages only (ADR-069).
    */
-  public readableMarkdown(spaceKey: string, page: PageDetail): string {
-    return `${parsePage(page).markdown}${this.attachments.of(spaceKey.toUpperCase(), page).text}`;
+  public readableMarkdown(spaceKey: string, page: PageDetail, attachments = true): string {
+    const markdown = parsePage(page).markdown;
+    return attachments ? `${markdown}${this.attachments.of(spaceKey.toUpperCase(), page).text}` : markdown;
   }
 
   /** The synced space a page belongs to, when the caller does not know it. */
@@ -146,12 +168,23 @@ export class SpaceStore {
     spaceKey: string,
     page: PageDetail,
   ): Array<{ title: string; mediaType: string; file: string; bytes: number }> {
+    return this.attachmentEntries(spaceKey, page).filter((a) => !a.missing);
+  }
+
+  /** Every attachment a page lists, each marked missing when its file is not on this machine. */
+  public attachmentEntries(spaceKey: string, page: PageDetail): AttachmentFile[] {
     const dir = this.attachmentsDir(spaceKey, page);
     const names = attachmentFileNames(page.attachments.map((a) => a.title));
-    return page.attachments.flatMap((a, i) => {
+    return page.attachments.map((a, i) => {
       const file = within(dir, names[i]);
       const stat = fs.statSync(file, { throwIfNoEntry: false });
-      return stat ? [{ title: a.title, mediaType: a.mediaType, file, bytes: stat.size }] : [];
+      return {
+        title: a.title,
+        mediaType: a.mediaType,
+        file,
+        bytes: stat?.size ?? 0,
+        ...(stat ? {} : { missing: true }),
+      };
     });
   }
 

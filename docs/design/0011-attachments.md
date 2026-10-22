@@ -15,7 +15,8 @@ Text attachments are read with their page; images are sent only when the space c
 
 ## Behavior
 
-- **Text attachments** (JSON, YAML, CSV, logs, Markdown, XML, HTML, PDF) are added to their page's
+- **Text attachments** (JSON, YAML, CSV, logs, Markdown, XML, HTML, PDF, and a Gliffy diagram's
+  source, read as its labels by `gliffyLabels`) are added to their page's
   text as `## Attachment: <name>` sections, up to 50,000 characters each and 100,000 per page
   (`src/spaces/attachments.ts`, `SpaceStore.readableMarkdown`). Chats, reviews, search, the AI index,
   edits and the chat's open edit all read them; the edit model is told not to edit them. A PDF is

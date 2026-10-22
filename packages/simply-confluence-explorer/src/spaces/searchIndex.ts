@@ -236,11 +236,13 @@ export class SearchIndex {
   private docsFor(key: string, page: PageDetail): Doc[] {
     const meta = this.store.readMetadata(key, page.id);
     const id = `${key}/${page.id}`;
-    const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}`;
+    // The attachments' text is in both stamps, so a page is split again once a PDF of it has been read.
+    const attachedChars = this.store.attachments.of(key, page).text.length;
+    const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}|${attachedChars}`;
     let cached = this.pages.get(id);
     if (cached?.stamp !== pageStamp) {
       const attached = page.attachments.map((a) => `${a.title}:${a.fileSize}`).join(',');
-      const splitStamp = `${page.version}|${page.storageXml.length}|${attached}`;
+      const splitStamp = `${page.version}|${page.storageXml.length}|${attached}|${attachedChars}`;
       let split = this.split.get(id);
       if (split?.stamp !== splitStamp) {
         // Text attachments are sections of their page, so a question finds a value only they hold.

@@ -19,9 +19,15 @@
 // just before sending, that every piece is in the payload whole; a request that fails the check is
 // refused rather than sent with context silently missing.
 
-/** `notes` are what one batch of a thorough answer found, sent to the request that combines them. */
-export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image';
-export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit';
+import type { AttachmentsReport } from '../api/types.js';
+
+/**
+ * `notes` are what one batch of a thorough answer found, sent to the request that combines them. An
+ * `attachment` is read inside its page's text, so it is counted rather than marked (ADR-069).
+ */
+export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image' | 'attachment';
+/** `not-read` is an attachment that was not read, or not read whole, with its own `why`. */
+export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit' | 'not-read';
 
 export type ManifestItem = {
   kind: ContextKind;
@@ -33,6 +39,8 @@ export type ManifestItem = {
   /** A file sent in part because it was longer than a file may contribute. */
   cut?: boolean;
   marker?: string;
+  /** Why an attachment was not read, in words, as its reason alone cannot say. */
+  why?: string;
 };
 
 export type ContextManifest = { items: ManifestItem[] };
@@ -45,8 +53,10 @@ export type ManifestSummary = {
   turns: number;
   /** Images sent with the context, unchecked by the guard (ADR-066). */
   images?: number;
+  /** Attachments read with their pages (ADR-069). */
+  attachments?: number;
   chars: number;
-  leftOut: Array<{ kind: ContextKind; label: string; reason: LeftOutReason | 'cut' }>;
+  leftOut: Array<{ kind: ContextKind; label: string; reason: LeftOutReason | 'cut'; why?: string }>;
 };
 
 /** A thing that should never happen: context the request was built to carry is missing from it. */
@@ -79,8 +89,34 @@ export class ManifestBuilder {
     for (const image of images) this.items.push({ kind: 'image', label: image.name, chars: 0, included: true });
   }
 
-  public leaveOut(kind: ContextKind, label: string, chars: number, reason: LeftOutReason): void {
-    this.items.push({ kind, label: reason === 'excluded' ? '' : label, chars, included: false, reason });
+  public leaveOut(kind: ContextKind, label: string, chars: number, reason: LeftOutReason, why?: string): void {
+    this.items.push({
+      kind,
+      label: reason === 'excluded' ? '' : label,
+      chars,
+      included: false,
+      reason,
+      ...(why ? { why } : {}),
+    });
+  }
+
+  /**
+   * Records the attachments a request read with its pages, and names each one it did not read, or
+   * read only in part, with why, so What was sent never claims more than reached the model (ADR-069).
+   */
+  public includeAttachments(report: AttachmentsReport): void {
+    for (const r of report.read) {
+      this.items.push({ kind: 'attachment', label: `${r.page} / ${r.name}`, chars: 0, included: true });
+      if (r.cut)
+        this.leaveOut(
+          'attachment',
+          `${r.page} / ${r.name}`,
+          0,
+          'not-read',
+          `only its first ${r.cut.toLocaleString('en')} characters were read`,
+        );
+    }
+    for (const u of report.unread) this.leaveOut('attachment', `${u.page} / ${u.name}`, 0, 'not-read', u.why);
   }
 
   public build(): ContextManifest {
@@ -132,9 +168,12 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
     files: count('file'),
     turns,
     ...(count('image') ? { images: count('image') } : {}),
+    ...(count('attachment') ? { attachments: count('attachment') } : {}),
     chars: sent.reduce((n, i) => n + i.chars, 0),
     leftOut: [
-      ...manifest.items.filter((i) => !i.included).map((i) => ({ kind: i.kind, label: i.label, reason: i.reason! })),
+      ...manifest.items
+        .filter((i) => !i.included)
+        .map((i) => ({ kind: i.kind, label: i.label, reason: i.reason!, ...(i.why ? { why: i.why } : {}) })),
       ...sent.filter((i) => i.cut).map((i) => ({ kind: i.kind, label: i.label, reason: 'cut' as const })),
     ],
   };
@@ -152,6 +191,9 @@ export function mergeSummaries(summaries: ManifestSummary[]): ManifestSummary {
     files: Math.max(0, ...summaries.map((s) => s.files)),
     turns: Math.max(0, ...summaries.map((s) => s.turns)),
     ...(summaries.some((s) => s.images) ? { images: summaries.reduce((n, s) => n + (s.images ?? 0), 0) } : {}),
+    ...(summaries.some((s) => s.attachments)
+      ? { attachments: summaries.reduce((n, s) => n + (s.attachments ?? 0), 0) }
+      : {}),
     chars: sum('chars'),
     leftOut: summaries.flatMap((s) => s.leftOut),
   };

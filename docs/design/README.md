@@ -45,6 +45,7 @@ refactors that keep the public surface identical (though a short doc is welcome 
 | [0010](0010-chat-queues.md)                    | A chat's queues: review, changes and push, from the live page                  | Implemented          |
 | [0011](0011-attachments.md)                    | Page attachments, read with their page                                         | Implemented          |
 | [0012](0012-review-visuals.md)                 | Images, diagrams and work left for a person, in review                         | Implemented          |
+| [0013](0013-attachment-account.md)             | Every attachment accounted for, in every format                                | Implemented          |
 
 Design docs work alongside the [decision log](../decisions.md), and each has a different job. A
 design doc describes one feature: what it does, how it behaves, and why it has that shape. It is

@@ -444,6 +444,9 @@ export class BranchRunner {
       item.status = 'working';
       step(item, `Writing the edit, applying ${plural(item.fixes?.length ?? 0, 'suggestion')}`);
       this.store.save(run);
+      const local = this.deps.store.readPage(run.spaceKey, item.pageId);
+      // The page's PDFs are read first, so the edit model reads their text too (ADR-069).
+      if (local) await this.deps.store.attachments.prepare([{ spaceKey: run.spaceKey, page: local }]);
       const prompt = applyPrompt(item.fixes ?? [], run.instructions) + this.attachmentsNote(run.spaceKey, item.pageId);
       const seen = this.imagesOf(run.spaceKey, item.pageId);
       if (seen.report.found) item.images = seen.report;

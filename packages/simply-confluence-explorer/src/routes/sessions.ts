@@ -16,11 +16,12 @@
 
 import type {
   AiSessionView,
+  AttachmentChoice,
+  AttachmentsReport,
   BatchProgress,
   BranchItem,
   BranchRun,
   ChatQueue,
-  ImagesReport,
   PageDetail,
   SessionScope,
   SessionTurn,
@@ -46,7 +47,8 @@ import { isValidPageId, isValidSpaceKey, PARAMS } from '../http/guards.js';
 import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { pageText } from '../branches/pageChanges.js';
-import { imagesFor } from '../spaces/attachments.js';
+import { attachmentsFor } from '../spaces/attachments.js';
+import { withoutAttachments, type SpaceStore } from '../spaces/spaceStore.js';
 import { loadSpaceSettings } from '../spaces/spaceSettings.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
@@ -116,13 +118,18 @@ function scopeFrom(value: unknown): SessionScope {
 }
 
 /** What an answer records about how it was made, when there is anything to record. */
-function turnDetails(ctx: TurnContext, cutOff: SessionTurn['cutOff'], images: ImagesReport): Partial<SessionTurn> {
+function turnDetails(
+  ctx: TurnContext,
+  cutOff: SessionTurn['cutOff'],
+  attachments: AttachmentsReport,
+): Partial<SessionTurn> {
   return {
     ...(cutOff ? { cutOff } : {}),
     ...(ctx.considered ? { considered: ctx.considered } : {}),
     ...(ctx.corpus ? { corpus: ctx.corpus } : {}),
     ...(ctx.weak ? { weakMatch: true } : {}),
-    ...(images.found ? { images } : {}),
+    ...(attachments.images.found ? { images: attachments.images } : {}),
+    ...(attachments.files ? { attachments } : {}),
   };
 }
 
@@ -190,6 +197,8 @@ type TurnContext = {
   weak?: boolean;
   /** Every page the chat reads from, so a suggestion can name one that was not retrieved this turn. */
   pages: Array<{ id: string; title: string; version: number }>;
+  /** The pages whose text this turn read, whose attachments it accounts for (ADR-069). */
+  read: PageDetail[];
 };
 
 /**
@@ -203,6 +212,9 @@ type TurnContext = {
 export function addSessionRoutes(router: Router, services: Services): Router {
   const { ai, sessions, store, exclusions, dataDir, index, branches, reviews } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
+  // A chat that reads pages only sees a store whose pages come without their attachments (ADR-069).
+  const storeOf = (session: AiSessionView): SpaceStore =>
+    session.attachments === 'pages' ? withoutAttachments(store) : store;
   const found = (id: string): AiSessionView => {
     const session = sessions.get(id);
     if (!session) throw new HttpError(404, 'no such conversation');
@@ -222,10 +234,20 @@ export function addSessionRoutes(router: Router, services: Services): Router {
   };
 
   /** A page chat, or a directory chat in a space that is not synced, read from Confluence as before. */
-  const unsyncedContext = async (scope: SessionScope, manifest: ManifestBuilder): Promise<TurnContext> => {
+  const unsyncedContext = async (
+    scope: SessionScope,
+    manifest: ManifestBuilder,
+    reader: SpaceStore = store,
+  ): Promise<TurnContext> => {
     const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
     if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
-    const root = store.readableMarkdown(scope.spaceKey, gate.page);
+    if (reader === store) {
+      // The PDFs of the page, and of a directory's pages on disk, are read before the request (ADR-069).
+      const below = scope.kind === 'branch' ? store.descendants(scope.spaceKey, gate.page.id) : [];
+      const pages = [gate.page, ...below.flatMap((n) => store.readPage(scope.spaceKey, n.id) ?? [])];
+      await store.attachments.prepare(pages.map((page) => ({ spaceKey: scope.spaceKey, page })));
+    }
+    const root = reader.readableMarkdown(scope.spaceKey, gate.page);
     const ctx: TurnContext = {
       context: manifest.include('page', gate.page.title, `## [Page: ${gate.page.title}]\n${root}`),
       manifest,
@@ -233,12 +255,13 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       note: '',
       matchedPages: [{ id: gate.page.id, title: gate.page.title, score: 1 }],
       pages: [{ id: gate.page.id, title: gate.page.title, version: gate.page.version }],
+      read: [gate.page],
     };
     if (scope.kind === 'branch') {
       const branch = await collectBranch(
         scope.pageId!,
         scope.spaceKey,
-        deps,
+        { ...deps, store: reader },
         dataDir,
         services.contextChars - root.length,
       );
@@ -254,6 +277,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         ctx.pages[0],
         ...branch.pages.map((p) => ({ id: p.page.id, title: p.page.title, version: p.page.version })),
       ];
+      ctx.read.push(...branch.pages.map((p) => p.page));
     }
     return ctx;
   };
@@ -289,7 +313,15 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     if (scope.kind === 'page' || !store.isSynced(scope.spaceKey)) return null;
     const corpus = await corpusOf(session);
     if (corpusSize(scope.spaceKey, corpus, index) <= services.contextChars) return null;
-    const retriever: RetrieverDeps = { store, exclusions, dataDir, index, vectors: services.vectors, ai };
+    const retriever: RetrieverDeps = {
+      store: storeOf(session),
+      exclusions,
+      dataDir,
+      index,
+      vectors: services.vectors,
+      ai,
+      attachments: session.attachments !== 'pages',
+    };
     const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
     const batches = await sectionBatches(
       scope.spaceKey,
@@ -308,6 +340,12 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       read: (ids, manifest) => readBatch(scope.spaceKey, corpus, ids, retriever, services.contextChars, manifest),
       files: (manifest) => sessions.filesContext(session.id, manifest),
       weak: batches.weak,
+      account: (ids) => {
+        const seen = pagesAccount(session)(corpus.filter((p) => ids.includes(p.id)));
+        seen.report.read = seen.report.read.map((r) => ({ ...r, as: `${r.as}, searched for the parts that match` }));
+        return seen;
+      },
+      imageChoice: loadSpaceSettings(dataDir, scope.spaceKey).images,
     });
   };
 
@@ -321,9 +359,15 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const manifest = new ManifestBuilder();
     let ctx: TurnContext;
     if (scope.kind === 'page' || (scope.kind === 'branch' && !store.isSynced(scope.spaceKey))) {
-      ctx = await unsyncedContext(scope, manifest);
+      ctx = await unsyncedContext(scope, manifest, storeOf(session));
     } else {
       const corpus = await corpusOf(session);
+      // A PDF is read before the request is built, so its text goes with this question; a whole space's
+      // are read as its index is built instead (ADR-069).
+      if (session.attachments !== 'pages' && scope.kind !== 'space') {
+        step(session.id, 'Reading the PDFs attached to these pages');
+        await store.attachments.prepare(corpus.map((page) => ({ spaceKey: scope.spaceKey, page })));
+      }
       const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
       const r = await services.telemetry.span('retrieval', 'context', { corpusPages: corpus.length }, async (span) => {
         const retrieved = await retrieveContext(
@@ -331,7 +375,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           corpus,
           { question: prompt, previous, keep: keptSections(session) },
           {
-            store,
+            store: storeOf(session),
             exclusions,
             dataDir,
             index,
@@ -339,6 +383,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             ai,
             signal,
             onStep: (text) => step(session.id, text),
+            attachments: session.attachments !== 'pages',
           },
           { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );
@@ -362,6 +407,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         corpus: r.corpus,
         weak: r.weak,
         pages: corpus.map(({ id, title, version }) => ({ id, title, version })),
+        read: corpus.filter((p) => r.selectedPages.some((s) => s.id === p.id)),
       };
     }
     const files = sessions.filesContext(session.id, manifest);
@@ -412,7 +458,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const gate = await gatePageForAi(item.pageId, run.spaceKey, deps);
     if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
     const fixes = (item.fixes ?? []).map((f) => `- [${f.kind}] ${f.detail}${f.suggestion ? ` → ${f.suggestion}` : ''}`);
-    const attached = store.attachments.of(run.spaceKey, gate.page!).text;
+    const attached = session.attachments === 'pages' ? '' : store.attachments.of(run.spaceKey, gate.page!).text;
     const text = `## [Edit of: ${item.title}]\n### The page as it is\n${pageText(item)}\n### The edit so far\n${item.proposed}\n### The suggestions it applies\n${fixes.join('\n')}${attached ? `\n### Its attachments, for context only${attached}` : ''}`;
     ctx.context += `\n\n---\n\n${ctx.manifest.include('page', `${item.title} (its edit)`, text)}`;
     return item;
@@ -451,8 +497,9 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const guard = new OutboundGuard(loadGuardRules(dataDir, session.scope.spaceKey), sessions.guardState(session.id));
     const history = historyToSend(session.turns);
     recordHistory(ctx.manifest, session, history);
-    const seen = imagesOfTurn(session.scope.spaceKey, ctx, item);
+    const seen = accountOfTurn(session, ctx, item);
     ctx.manifest.includeImages(seen.images.map((i) => ({ name: i.name, bytes: i.data.length })));
+    ctx.manifest.includeAttachments(seen.report);
     const manifest = ctx.manifest.build();
     step(session.id, 'Writing the answer');
     // A question may change the chat's review queue or revise the open edit; a request for
@@ -510,20 +557,36 @@ export function addSessionRoutes(router: Router, services: Services): Router {
   };
 
   /**
-   * The images on the pages a turn read, and the open edit's page, sent only when the space chose to
-   * send them; either way counted, so the answer can ask about them (ADR-066).
+   * The account of the attachments on the pages a turn read, and the open edit's page: each one read,
+   * sent or named with why, and the images sent only when the space chose to send them (ADR-066,
+   * ADR-069). An answer that searched its pages read only the parts of their attachments that matched.
    */
-  const imagesOfTurn = (spaceKey: string, ctx: TurnContext, item?: BranchItem): ReturnType<typeof imagesFor> => {
-    const ids = [...new Set([...(ctx.matchedPages ?? []).map((p) => p.id), ...(item ? [item.pageId] : [])])];
-    const pages = ids.flatMap((id) => {
-      const page = store.readPage(spaceKey, id);
-      return page ? [{ spaceKey, page }] : [];
-    });
-    return imagesFor(
-      (key, page) => store.attachments.of(key, page),
-      loadSpaceSettings(dataDir, spaceKey).images,
-      pages,
-    );
+  /** The account of some of a chat's pages' attachments, with the chat's and the space's choices. */
+  const pagesAccount =
+    (session: AiSessionView) =>
+    (pages: PageDetail[]): ReturnType<typeof attachmentsFor> =>
+      attachmentsFor(
+        (key, page) => store.attachments.of(key, page),
+        pages.map((page) => ({ spaceKey: session.scope.spaceKey, page })),
+        { chat: session.attachments, images: loadSpaceSettings(dataDir, session.scope.spaceKey).images },
+      );
+
+  const accountOfTurn = (
+    session: AiSessionView,
+    ctx: TurnContext,
+    item?: BranchItem,
+  ): ReturnType<typeof attachmentsFor> => {
+    const { spaceKey } = session.scope;
+    const pages = [...ctx.read];
+    const edited = item && store.readPage(spaceKey, item.pageId);
+    if (edited && !pages.some((p) => p.id === edited.id)) pages.push(edited);
+    const account = pagesAccount(session)(pages);
+    if (ctx.corpus?.mode === 'retrieved')
+      account.report.read = account.report.read.map((r) => ({
+        ...r,
+        as: `${r.as}, searched for the parts that match`,
+      }));
+    return account;
   };
 
   /** A chat's suggestions with their state, and the runs of edits made from them. */
@@ -591,7 +654,12 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       .add('PATCH', '/api/ai/sessions/:sessionId', async ({ params, body }) => {
         const session = found(params.sessionId);
         const fields = fieldsOf(body);
-        const patch: { title?: string; scope?: SessionScope } = {};
+        const patch: { title?: string; scope?: SessionScope; attachments?: AttachmentChoice } = {};
+        if (fields.attachments !== undefined) {
+          if (fields.attachments !== 'include' && fields.attachments !== 'pages')
+            throw new HttpError(400, 'attachments is include or pages');
+          patch.attachments = fields.attachments;
+        }
         if (fields.title !== undefined) {
           const title = typeof fields.title === 'string' ? fields.title.trim() : '';
           if (!title || title.length > 80) throw new HttpError(400, 'a title is 1 to 80 characters');
@@ -656,6 +724,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
               : 'Suggest improvements to this page';
         if (notes && fields.kind === 'review') shown = `${shown}: ${notes}`;
         if (large) {
+          if (session.attachments !== 'pages')
+            await store.attachments.prepare(large.map((page) => ({ spaceKey: session.scope.spaceKey, page })));
           const batch = reviews.start({
             sessionId: session.id,
             spaceKey: session.scope.spaceKey,
@@ -664,6 +734,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             prompt: sent,
             kind: fields.kind,
             parse: parseFindings,
+            account: pagesAccount(session),
+            store: storeOf(session),
           });
           return { ...session, batch };
         }

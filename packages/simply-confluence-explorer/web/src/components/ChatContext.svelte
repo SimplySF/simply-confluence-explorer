@@ -2,6 +2,7 @@
   import { BookOpen, ChevronDown, ChevronUp, FileText, Folder, Plus, Search, Tag, X } from '@lucide/svelte';
   import type { SessionScope, TaggedPages } from '../../../src/api/types.js';
   import { api, type Coverage } from '../support/api.js';
+  import type { AiChat } from '../support/chat.svelte.js';
   import { catalogProgress, readTags } from '../support/pageResult.js';
   import { directoryLabel, readingLine, searchPages, type SpacePage } from '../support/pages.js';
   import SummaryCoverage from './SummaryCoverage.svelte';
@@ -19,9 +20,11 @@
     pages: SpacePage[];
     onChange: (choice: Choice) => void;
     onSelectPage: (pageId: string) => void;
+    /** The chat, which keeps its choice about its pages' attachments. */
+    chat?: AiChat;
   };
 
-  let { spaceKey, scope, pages, onChange, onSelectPage }: Props = $props();
+  let { spaceKey, scope, pages, onChange, onSelectPage, chat }: Props = $props();
   let open = $state(false);
   // Unread until the panel first offers them, so "no tags" is not said while they are being read.
   let tags = $state<TaggedPages[] | null>(null);
@@ -116,7 +119,7 @@
   </button>
   {#if counts}<p class="chat-context-line">{readingLine(counts)}</p>{/if}
   <div class="chat-context-coverage">
-    <SummaryCoverage {spaceKey} {chosen} bind:counts />
+    <SummaryCoverage {spaceKey} {chosen} bind:counts {chat} />
   </div>
   {#if open}
     <div class="chat-context-panel">

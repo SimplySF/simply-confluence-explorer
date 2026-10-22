@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { AiSessionView, SessionScope } from '../../../src/api/types.js';
+import type { AiSessionView, AttachmentChoice, SessionScope } from '../../../src/api/types.js';
 import { sessions, type Focus } from './api.js';
 import { jobs } from './jobs.svelte.js';
 import { messageOf } from './toast.svelte.js';
@@ -157,5 +157,11 @@ export class AiChat {
   public async ensure(): Promise<AiSessionView> {
     if (!this.session) this.session = await sessions.create(this.scope!);
     return this.session;
+  }
+
+  /** Whether this chat reads its pages' attachments, kept with the chat (ADR-069). */
+  public async chooseAttachments(choice: AttachmentChoice): Promise<void> {
+    const s = await this.ensure();
+    this.session = await sessions.update(s.id, { attachments: choice });
   }
 }

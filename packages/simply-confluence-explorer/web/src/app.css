@@ -3297,3 +3297,31 @@ div.disclosure-body {
   font-size: 0.8rem;
   margin: 0.3rem 0;
 }
+
+/* The attachments of a chat's pages: what is read, and every file not read with why (ADR-069). */
+.attachments-note {
+  font-size: 0.8rem;
+  margin: 0.3rem 0;
+}
+.attachments-note.alert {
+  display: block;
+}
+.attachments-line,
+.attachments-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0;
+}
+.attachments-line > span:first-of-type {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.attachments-list summary {
+  cursor: pointer;
+}
+.attachments-list ul {
+  margin: 0.2rem 0 0.4rem;
+  padding-left: 1.2rem;
+}

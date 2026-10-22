@@ -139,15 +139,21 @@ listed, found or read, and a page holding a secret is left out and named.
 
 ## Attachments
 
-A page's text attachments are read with it: JSON, YAML, CSV, logs, Markdown, XML, HTML and PDF, up
-to 50,000 characters each. They are checked by the leak guard like the page, found by search, and
-used by the AI index and by edits. A PDF is read the first time its page is, and sent from the next
-question.
+A page's attachments are read with it, in these formats: Word, Excel, PowerPoint, OpenDocument,
+Visio, PDF, HTML, text, CSV, JSON, YAML, XML, logs, Markdown, email, calendar files, notebooks, code
+and configuration files, and the text files inside a zip. Gliffy, draw.io, SVG, BPMN, Mermaid and
+PlantUML diagrams give their labels. Up to 50,000 characters of each are read. They are checked by
+the leak guard like the page, found by search, and used by the AI index and by edits.
+
+When a chat's pages have attachments, the chat lists them before your first question: how many,
+what each will be read as, the images, and each file that cannot be read, with why, such as an older
+`.doc` file. It asks once whether to include them: **Include all** or **Pages only**. Until you
+choose, they are read. Every answer says the same for what it read, and What was sent names each
+file that was not read.
 
 Images are sent only if you choose for the space, because the leak guard cannot check them. Until
-you choose, an answer that read pages with images says how many the AI did not see, with **Send
-images for PLAT** and **Not for PLAT**. Change it later under **Space → Exclusions and leak
-guard…** → **Images on pages**.
+you choose, the chat says how many the AI did not see, with **Send images for PLAT** and **Not for
+PLAT**. Change it later under **Space → Exclusions and leak guard…** → **Images on pages**.
 
 ## The AI index: summaries, topics and embeddings
 
