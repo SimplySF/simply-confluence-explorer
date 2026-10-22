@@ -330,3 +330,24 @@ export function previewAccount(
     }
   return report;
 }
+
+/**
+ * The account once a provider gave no answer with some of the images sent and was asked again
+ * without them: those images are named as not read rather than counted as sent (ADR-069).
+ *
+ * @param report The account the request was sent with, changed in place.
+ * @param dropped The images' names as they were sent, "page / file".
+ */
+export function withoutImages(report: AttachmentsReport, dropped: string[] | undefined): AttachmentsReport {
+  if (!dropped?.length) return report;
+  report.images.sent = Math.max(0, report.images.sent - dropped.length);
+  for (const name of dropped) {
+    const [page, ...file] = name.split(' / ');
+    report.unread.push({
+      page,
+      name: file.join(' / ') || name,
+      why: 'not read: the AI gave no answer with the images, so it was asked again without them',
+    });
+  }
+  return report;
+}

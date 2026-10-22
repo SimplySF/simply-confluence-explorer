@@ -40,14 +40,14 @@ import {
 } from '../ai/chatQueue.js';
 import { CHAT_SYSTEM } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard, withWithheld, type ChatTurn } from '../ai/guard.js';
-import { ManifestBuilder, summarise } from '../ai/manifest.js';
+import { droppedFrom, ManifestBuilder, summarise } from '../ai/manifest.js';
 import { cutOffNote } from '../ai/reply.js';
 import { FILE_BYTE_LIMIT, historyToSend } from '../ai/sessions.js';
 import { isValidPageId, isValidSpaceKey, PARAMS } from '../http/guards.js';
 import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../branches/branchRuns.js';
 import { HttpError, type Router } from '../http/router.js';
 import { pageText } from '../branches/pageChanges.js';
-import { attachmentsFor } from '../spaces/attachments.js';
+import { attachmentsFor, withoutImages } from '../spaces/attachments.js';
 import { withoutAttachments, type SpaceStore } from '../spaces/spaceStore.js';
 import { loadSpaceSettings } from '../spaces/spaceSettings.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
@@ -516,6 +516,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       { spaceKey: session.scope.spaceKey, guard, signal },
     );
     const report = withWithheld(reply.guard, ctx.withheld);
+    withoutImages(seen.report, reply.imagesDropped);
     const findings = suggestions ? parseFindings(reply.text) : null;
     const queueBlock = suggestions ? { text: reply.text } : queueChangesOf(reply.text);
     const revised = item ? editOfReply(queueBlock.text) : { text: queueBlock.text };
@@ -534,7 +535,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           text,
           at: now,
           guardSummary: report.summary + ctx.note + cutOffNote(reply.cutOff),
-          sent: summarise(manifest),
+          sent: droppedFrom(summarise(manifest), reply.imagesDropped),
           engine: ai.getEngine(),
           matchedPages: ctx.matchedPages,
           ...turnDetails(ctx, reply.cutOff, seen.report),

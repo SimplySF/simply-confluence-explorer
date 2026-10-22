@@ -283,6 +283,41 @@ describe("a space's images", () => {
     });
   });
 
+  it('are named as not read when the AI answered without them, where they were counted as sent', async () => {
+    // As the Gemini CLI does when it gives no answer with images and is asked again without them.
+    const without = (payload: GuardedPayload): string =>
+      (payload.images?.length
+        ? { text: 'An answer from the text.', imagesDropped: payload.images.map((i) => i.name) }
+        : reviewer(payload)) as unknown as string;
+    const app = await startTestApp(fake, without);
+    try {
+      const { body } = await app.call<{ jobId: string }>('POST', '/space-cache/sync', { spaceKey: 'PLAT' });
+      for (let s = 'running'; s === 'running' || s === 'pending';)
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the sync
+        s = (await app.call<SyncProgress>('GET', `/space-cache/sync/status/${body.jobId}`)).body.status;
+      await choose(app, 'send');
+      const turn = (await ask(app)).turns.at(-1)!;
+      expect(turn.text).toBe('An answer from the text.');
+      expect(turn.images).toMatchObject({ found: 1, sent: 0 });
+      expect(turn.attachments?.unread).toContainEqual(
+        expect.objectContaining({
+          page: 'Architecture Overview',
+          name: 'architecture-diagram.png',
+          why: expect.stringMatching(/not read/),
+        }),
+      );
+      expect(turn.sent?.leftOut).toContainEqual(
+        expect.objectContaining({
+          kind: 'image',
+          label: 'Architecture Overview / architecture-diagram.png',
+          reason: 'not-read',
+        }),
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   it('leave out one too large to send, and name it', async () => {
     await withSynced(async (app) => {
       await choose(app, 'send');

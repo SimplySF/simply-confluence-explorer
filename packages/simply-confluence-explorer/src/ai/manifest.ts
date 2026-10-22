@@ -180,6 +180,28 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
 }
 
 /**
+ * What was sent, once the provider gave no answer with some images and was asked again without them:
+ * those images are no longer counted as sent, and each is named as not read (ADR-069).
+ */
+export function droppedFrom(summary: ManifestSummary, dropped: string[] | undefined): ManifestSummary {
+  if (!dropped?.length) return summary;
+  const images = Math.max(0, (summary.images ?? 0) - dropped.length);
+  return {
+    ...summary,
+    ...(images ? { images } : { images: undefined }),
+    leftOut: [
+      ...summary.leftOut,
+      ...dropped.map((label) => ({
+        kind: 'image' as const,
+        label,
+        reason: 'not-read' as const,
+        why: 'the AI gave no answer with the images, so it was asked again without them',
+      })),
+    ],
+  };
+}
+
+/**
  * What several requests carried together, as one answer made over several requests shows it. The
  * conversation's earlier messages travel with each request, so they are counted once.
  */

@@ -46,7 +46,19 @@ export type AiAnswer = {
   guard: GuardReport;
   /** The model stopped before finishing: at its output limit, or because the answer was blocked. */
   cutOff?: Reply['cutOff'];
+  /** Images the answer was made without, because the provider gave no answer with them. */
+  imagesDropped?: string[];
 };
+
+/** The answer a person reads: the reply with its placeholders put back, and what it says about itself. */
+function answerOf(reply: Reply, guard: OutboundGuard, report: GuardReport): AiAnswer {
+  return {
+    text: guard.restore(reply.text),
+    guard: report,
+    ...(reply.cutOff ? { cutOff: reply.cutOff } : {}),
+    ...(reply.imagesDropped?.length ? { imagesDropped: reply.imagesDropped } : {}),
+  };
+}
 
 export type AiContext = {
   /** The space the content comes from, whose .confluenceguard rules apply. */
@@ -343,7 +355,7 @@ export class ConfiguredAi implements AiEngine {
         'ai',
         `An answer was ${reply.cutOff === 'blocked' ? 'blocked' : 'cut short at the output limit'}.`,
       );
-    return { text: guard.restore(reply.text), guard: report, ...(reply.cutOff ? { cutOff: reply.cutOff } : {}) };
+    return answerOf(reply, guard, report);
   }
 
   /** Sends as a span of the current trace, counted for the health numbers; a stopped request is not a failure. */
