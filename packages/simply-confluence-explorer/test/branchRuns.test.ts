@@ -666,6 +666,59 @@ describe('a stopped run', () => {
   });
 });
 
+describe('work only a person can do in Confluence', () => {
+  const HAND: BranchFinding[] = [
+    {
+      kind: 'stale',
+      pages: ['Interview Guide'],
+      detail: 'The flow diagram shows the old loop',
+      byHand: 'Redraw loop.png without the phone screen',
+      byHandOnly: true,
+    },
+    {
+      kind: 'stale',
+      pages: ['Interview Guide'],
+      detail: 'The loop changed',
+      suggestion: 'Describe the new loop',
+      byHand: 'Redraw loop.png to match',
+    },
+  ];
+
+  it('is read from a review, and a wrong value is ignored rather than trusted', () => {
+    expect(parseFindings(JSON.stringify({ findings: HAND }))).toEqual(HAND);
+    expect(
+      parseFindings(
+        '{"findings":[{"kind":"stale","detail":"x","byHand":3,"byHandOnly":true},{"kind":"stale","detail":"y","byHand":"z","byHandOnly":"yes"}]}',
+      ),
+    ).toEqual([
+      { kind: 'stale', pages: [], detail: 'x' },
+      { kind: 'stale', pages: [], detail: 'y', byHand: 'z' },
+    ]);
+    expect(reviewPrompt(['staleness'], 1)).toContain('"byHandOnly"');
+  });
+
+  it('cannot be recommended when it is all of a suggestion, and is left out of the edit when it is part', async () => {
+    const prompts: string[] = [];
+    const reply = (payload: GuardedPayload): string => {
+      const text = textOf(payload);
+      if (payload.messages.at(-1)?.content.includes('"findings"')) return JSON.stringify({ findings: HAND });
+      if (text.includes('<<<PROPOSED_MARKDOWN>>>')) prompts.push(text);
+      return answer(payload);
+    };
+    await withApp(reply, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      expect((await recommend(app, c.id, [0])).status).toBe(400);
+      const res = await recommend(app, c.id, [1]);
+      const item = itemOf(await settled(app, res.body.id), guide());
+      expect(item.fixes?.[0].byHand).toBe('Redraw loop.png to match');
+      expect(prompts.join('\n')).toContain(
+        'A person will do this part in Confluence, so leave it: Redraw loop.png to match',
+      );
+    });
+  });
+});
+
 describe('an edit that changes nothing', () => {
   it('was left at To decide forever with nothing to press, and is now not edited, with the AI’s reason', async () => {
     const unchanged = (payload: GuardedPayload): string => {

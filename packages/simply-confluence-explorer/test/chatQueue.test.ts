@@ -30,7 +30,7 @@ import type {
   StagedPage,
 } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
-import { toSuggestions } from '../src/ai/chatQueue.js';
+import { applyQueueChanges, toSuggestions } from '../src/ai/chatQueue.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -467,5 +467,22 @@ describe('the pages a suggestion names', () => {
     const s = named('Interview Guides', 'Offers');
     expect(s.pages).toEqual(['Interview Guides', 'Offers']);
     expect(s.pageIds).toEqual({});
+  });
+});
+
+describe('a suggestion the chat adds to its queue', () => {
+  it('keeps the work only a person can do, and nothing the model added beside the fields a suggestion has', () => {
+    const list: QueuedSuggestion[] = [];
+    const line = JSON.stringify({
+      kind: 'stale',
+      pages: ['Interview Guide'],
+      detail: 'Old diagram',
+      byHand: 'Redraw loop.png',
+      byHandOnly: true,
+      extra: 'kept nowhere',
+    });
+    applyQueueChanges([`add ${line}`], list, 1, [{ id: '1', title: 'Interview Guide' }]);
+    expect(list[0]).toMatchObject({ byHand: 'Redraw loop.png', byHandOnly: true, pageIds: { 'Interview Guide': '1' } });
+    expect(list[0]).not.toHaveProperty('extra');
   });
 });

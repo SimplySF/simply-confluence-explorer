@@ -1,7 +1,7 @@
 <script lang="ts">
   import { FilePlus2, History, RefreshCw, Sparkles, X } from '@lucide/svelte';
   import type { BranchFinding, SuggestionView } from '../../../src/api/types.js';
-  import { canEdit, editNote } from '../support/suggestions.js';
+  import { canEdit, editNote, handNote } from '../support/suggestions.js';
 
   // A chat's review queue (ADR-060), in three parts: suggestions to recommend, those whose edits are
   // in progress, and those that are closed. Ticked suggestions become one edit for each page they
@@ -120,6 +120,7 @@
     </div>
     <p>{s.detail}</p>
     {#if s.suggestion}<p class="branch-suggestion">→ {s.suggestion}</p>{/if}
+    {#if handNote(s)}<p class="branch-note">{handNote(s)}</p>{/if}
     {#if s.why}<p class="branch-note">{s.why}</p>{/if}
     {#if s.dismissed === 'chat'}<p class="branch-note">Removed by the chat.</p>{/if}
     {#if s.history?.length}

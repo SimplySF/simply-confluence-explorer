@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { canEdit, editNote } from '../../web/src/support/suggestions.js';
+import { canEdit, editNote, handNote } from '../../web/src/support/suggestions.js';
 
 describe('a suggestion in the review queue', () => {
   it('says why it has no checkbox when it names only pages the chat did not read, where it said nothing', () => {
@@ -36,5 +36,21 @@ describe('a suggestion in the review queue', () => {
       expect(canEdit({ kind, pages: ['Interviews'], pageIds: { Interviews: '1' } })).toBe(false);
       expect(editNote({ kind, pages: [], pageIds: {} })).toMatch(/new page|moved/);
     }
+  });
+
+  it('cannot be ticked when it is all work for a person, and says what that work is', () => {
+    const s = {
+      kind: 'stale' as const,
+      pages: ['Interviews'],
+      pageIds: { Interviews: '1' },
+      byHand: 'Redraw loop.png.',
+      byHandOnly: true,
+    };
+    expect(canEdit(s)).toBe(false);
+    expect(editNote(s)).toBe('The AI cannot make this change: Redraw loop.png. Change it in Confluence.');
+    expect(handNote(s)).toBeUndefined();
+    const part = { ...s, byHandOnly: undefined };
+    expect(canEdit(part)).toBe(true);
+    expect(handNote(part)).toBe('Part of this is for you to do in Confluence: Redraw loop.png.');
   });
 });

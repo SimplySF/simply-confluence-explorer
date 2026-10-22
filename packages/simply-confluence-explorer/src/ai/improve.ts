@@ -30,7 +30,8 @@ export function applyPrompt(fixes: BranchFix[], userPrompt?: string): string {
   const list = fixes
     .map((f, i) => {
       const also = f.otherPages.length ? ` (also concerns: ${f.otherPages.join(', ')})` : '';
-      return `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}${also}`;
+      const left = f.byHand ? ` A person will do this part in Confluence, so leave it: ${f.byHand}` : '';
+      return `${i + 1}. [${f.kind}] ${f.detail}${f.suggestion ? ` Suggested fix: ${f.suggestion}` : ''}${also}${left}`;
     })
     .join('\n');
   return `You are an expert technical documentation editor.

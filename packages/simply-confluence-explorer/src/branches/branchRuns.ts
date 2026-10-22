@@ -26,6 +26,7 @@ import type {
   QueuedSuggestion,
   ReviewAspect,
 } from '../api/types.js';
+import { HAND_WORK_NOTE, readFinding } from '../ai/chatQueue.js';
 import { AiStopped, type AiEngine } from '../ai/engine.js';
 import { GuardBlockedError } from '../ai/guard.js';
 import {
@@ -100,22 +101,12 @@ export function reviewPrompt(aspects: ReviewAspect[], pageCount: number, instruc
 Find what a maintainer should fix, of these kinds only:
 ${kinds.join('\n')}
 Reply with JSON only, in this shape:
-{"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do"}]}
+{"findings":[{"kind":"incorrect","pages":["Exact page title"],"detail":"what is wrong","suggestion":"what to do","byHand":"only when a person must do part of it","byHandOnly":false}]}
 Use exact page titles, and name every page a finding is about. Report nothing you are not confident of; an empty list is a valid answer.
+${HAND_WORK_NOTE}
 ${RECORD_NOTE}${instructions ? `\nAlso: ${instructions}` : ''}`;
 }
 
-const KINDS = new Set<string>([
-  'incorrect',
-  'redundant',
-  'stale',
-  'clarity',
-  'depth',
-  'structure',
-  'operations',
-  'placement',
-  'gap',
-]);
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DECIDABLE = new Set(['proposed', 'accepted', 'rejected', 'checked', 'check-failed', 'push-failed']);
 /** A page whose edit can be made again from the page as Confluence holds it now. */
@@ -137,16 +128,8 @@ export function parseFindings(text: string): BranchFinding[] | null {
     const raw = (JSON.parse(json[0]) as { findings?: unknown }).findings;
     if (!Array.isArray(raw)) return null;
     return raw.flatMap((f: unknown): BranchFinding[] => {
-      const finding = (f ?? {}) as { kind?: unknown; pages?: unknown; detail?: unknown; suggestion?: unknown };
-      if (typeof finding.kind !== 'string' || !KINDS.has(finding.kind) || typeof finding.detail !== 'string') return [];
-      return [
-        {
-          kind: finding.kind as BranchFinding['kind'],
-          pages: Array.isArray(finding.pages) ? finding.pages.filter((p): p is string => typeof p === 'string') : [],
-          detail: finding.detail,
-          suggestion: typeof finding.suggestion === 'string' ? finding.suggestion : undefined,
-        },
-      ];
+      const finding = readFinding(f);
+      return finding ? [finding] : [];
     });
   } catch {
     // Not JSON after all: the caller keeps the answer as text.
@@ -225,6 +208,8 @@ export class BranchRunner {
     if (picked.length === 0) throw new HttpError(400, 'choose suggestions from the list');
     if (picked.some((f) => NOT_EDITABLE.has(f.kind)))
       throw new HttpError(400, 'a suggestion to move, split, merge or write a page cannot be applied as an edit');
+    if (picked.some((f) => f.byHandOnly))
+      throw new HttpError(400, 'a suggestion only a person can carry out in Confluence cannot be applied as an edit');
     const fixesFor = new Map<string, { title: string; fixes: BranchFix[] }>();
     for (const f of picked) {
       for (const title of f.pages) {
@@ -235,6 +220,7 @@ export class BranchRunner {
           detail: f.detail,
           suggestion: f.suggestion,
           otherPages: f.pages.filter((p) => p !== title),
+          ...(f.byHand ? { byHand: f.byHand } : {}),
           suggestionId: f.id,
           seenVersion: f.seenVersions[id],
         };

@@ -256,6 +256,12 @@
           {#each item.fixes as f, n (n)}<li>{f.detail}{f.suggestion ? ` → ${f.suggestion}` : ''}</li>{/each}
         </ul>
       {/if}
+      {#if item.fixes?.some((f) => f.byHand)}
+        <p class="branch-note">To do in Confluence, which no edit can change:</p>
+        <ul class="branch-critique">
+          {#each item.fixes.filter((f) => f.byHand) as f, n (n)}<li>{f.byHand}</li>{/each}
+        </ul>
+      {/if}
       {#if dropped.length}
         <p class="branch-note">Not applied, because the page changed since they were suggested:</p>
         <ul class="branch-critique">

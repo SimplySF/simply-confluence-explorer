@@ -19,18 +19,23 @@
 
 import type { SuggestionView } from '../../../src/api/types.js';
 
-type Suggestion = Pick<SuggestionView, 'kind' | 'pages' | 'pageIds'>;
+type Suggestion = Pick<SuggestionView, 'kind' | 'pages' | 'pageIds' | 'byHand' | 'byHandOnly'>;
 
 const quoted = (titles: string[]): string => titles.map((t) => `“${t}”`).join(', ');
 
 /** Whether a suggestion can be ticked: an edit of a page the chat read can carry it out. */
 export const canEdit = (s: Suggestion): boolean =>
-  s.kind !== 'placement' && s.kind !== 'gap' && Object.keys(s.pageIds).length > 0;
+  s.kind !== 'placement' && s.kind !== 'gap' && !s.byHandOnly && Object.keys(s.pageIds).length > 0;
+
+/** The part of a suggestion an edit leaves for a person to do in Confluence (ADR-068). */
+export const handNote = (s: Pick<SuggestionView, 'byHand' | 'byHandOnly'>): string | undefined =>
+  s.byHand && !s.byHandOnly ? `Part of this is for you to do in Confluence: ${s.byHand}` : undefined;
 
 /** Why a suggestion cannot be edited, or which of its pages will not be, or nothing. */
 export function editNote(s: Suggestion): string | undefined {
   if (s.kind === 'gap') return 'This needs a new page, so it cannot be applied as an edit.';
   if (s.kind === 'placement') return 'This needs a page moved, split or merged: do it in Confluence.';
+  if (s.byHandOnly) return `The AI cannot make this change: ${s.byHand ?? ''} Change it in Confluence.`;
   const unread = s.pages.filter((p) => !s.pageIds[p]);
   if (s.pages.length === 0) return 'This names no page, so it cannot be applied as an edit.';
   if (unread.length === s.pages.length)
