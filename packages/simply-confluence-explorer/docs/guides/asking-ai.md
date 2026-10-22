@@ -142,7 +142,7 @@ listed, found or read, and a page holding a secret is left out and named.
 A page's text attachments are read with it: JSON, YAML, CSV, logs, Markdown, XML, HTML and PDF, up
 to 50,000 characters each. They are checked by the leak guard like the page, found by search, and
 used by the AI index and by edits. A PDF is read the first time its page is, and sent from the next
-question.
+question. A Gliffy diagram is read as the labels on its shapes and lines, and its picture is an image.
 
 Images are sent only if you choose for the space, because the leak guard cannot check them. Until
 you choose, an answer that read pages with images says how many the AI did not see, with **Send

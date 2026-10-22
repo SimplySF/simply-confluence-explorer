@@ -109,6 +109,15 @@ export class AttachmentReader {
     const kept = this.texts.get(a.file);
     if (kept?.mtimeMs === stat.mtimeMs) return kept.text;
     if (ext === '.pdf') return this.readPdf(a.file, stat.mtimeMs);
+    if (/gliffy/i.test(a.mediaType)) {
+      const labels = gliffyLabels(fs.readFileSync(a.file, 'utf8'));
+      if (labels === undefined) return { why: 'a Gliffy diagram whose source could not be read' };
+      const text = labels.length
+        ? `A Gliffy diagram. Its shapes and labels, in the order the diagram holds them:\n${labels.map((l) => `- ${l}`).join('\n')}`
+        : 'A Gliffy diagram with no text in it.';
+      this.texts.set(a.file, { mtimeMs: stat.mtimeMs, text });
+      return text;
+    }
     if (!TEXT_TYPES.has(ext) && !HTML_TYPES.has(ext)) return { why: 'not a kind of file the AI reads' };
     const bytes = fs.readFileSync(a.file);
     if (bytes.includes(0)) return { why: 'looks like a binary file' };
@@ -138,6 +147,34 @@ export class AttachmentReader {
     }
     return { why: 'a PDF being read now; its text is sent from the next request' };
   }
+}
+
+/**
+ * The text of a Gliffy diagram's source: every label its shapes and lines carry, in order, once each.
+ * The source is mostly layout and styling, so its words are what is worth the AI's attention. Returns
+ * undefined when the source is not JSON.
+ *
+ * @param source The diagram's JSON, as Confluence stores it beside the page.
+ */
+export function gliffyLabels(source: string): string[] | undefined {
+  let json: unknown;
+  try {
+    json = JSON.parse(source);
+  } catch {
+    // Not the JSON a Gliffy diagram is kept as; the caller names it as unread.
+    return undefined;
+  }
+  const labels: string[] = [];
+  const walk = (value: unknown, key?: string): void => {
+    if (typeof value === 'string') {
+      if (key !== 'html' && key !== 'text') return;
+      const words = storageToBody(`<p>${value}</p>`).replace(/\s+/g, ' ').trim();
+      if (words && !labels.includes(words)) labels.push(words);
+    } else if (Array.isArray(value)) value.forEach((v) => walk(v));
+    else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) walk(v, k);
+  };
+  walk(json);
+  return labels;
 }
 
 /**

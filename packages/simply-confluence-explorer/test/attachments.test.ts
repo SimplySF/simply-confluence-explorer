@@ -22,6 +22,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AiSessionView, BranchRun, SyncProgress } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
+import { gliffyLabels } from '../src/spaces/attachments.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
@@ -136,6 +137,47 @@ describe("a page's text attachments", () => {
       expect(asked.status).toBe(422);
       expect(app.sentText()).not.toContain('IOSFODNN7');
     });
+  });
+
+  it("include a Gliffy diagram's labels, which were never read because its source has no file extension", async () => {
+    const page = fake.page('PLAT', 'Architecture Overview');
+    const label = (html: string): unknown => ({ graphic: { type: 'Text', Text: { html } } });
+    const source = {
+      contentType: 'application/gliffy+json',
+      stage: {
+        objects: [
+          {
+            graphic: { type: 'Shape', Shape: { fillColor: '#ffffff' } },
+            children: [label('<p><span>Client</span></p>')],
+          },
+          { children: [label('<p>Rate limiter &amp; cache</p>'), label('<p><span>Client</span></p>')] },
+          { graphic: { type: 'Line' }, children: [label('<p>retries 3 times</p>')] },
+        ],
+      },
+    };
+    page.attachments.push({
+      title: 'request-flow',
+      type: 'application/gliffy+json',
+      content: Buffer.from(JSON.stringify(source)),
+    });
+    try {
+      await withSynced(async (app) => {
+        const chat = await pageChat(app, 'Architecture Overview');
+        await app.call('POST', `/ai/sessions/${chat.id}/messages`, { prompt: 'What does the request flow show?' });
+        expect(app.sentText()).toContain(
+          '## Attachment: request-flow\n\nA Gliffy diagram. Its shapes and labels, in the order the diagram holds them:\n' +
+            '- Client\n- Rate limiter & cache\n- retries 3 times',
+        );
+        expect(app.sentText()).not.toContain('fillColor');
+      });
+    } finally {
+      page.attachments.pop();
+    }
+  });
+
+  it('name a Gliffy source that is not JSON as unread, and read one with no text as such', () => {
+    expect(gliffyLabels('not json')).toBeUndefined();
+    expect(gliffyLabels(JSON.stringify({ stage: { objects: [{ graphic: { type: 'Shape' } }] } }))).toEqual([]);
   });
 
   it('never leave the machine for a page excluded after it was synced', async () => {
