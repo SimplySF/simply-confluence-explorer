@@ -43,16 +43,20 @@ import { tagsOf } from './tags.js';
 type Manifest = Omit<SyncedSpace, 'metadataCount' | 'hasTOC'>;
 
 /**
- * The store as a chat that reads pages only sees it: every page read without its attachments
- * (ADR-069). Everything else is the store itself.
+ * The store as a chat sees it: every page read without its attachments when the chat reads pages
+ * only, or without those the person left out (ADR-069). Everything else is the store itself.
  *
  * @param store The space store.
+ * @param attachments False for pages only, or the files left out, by `fileKey`.
  */
-export function withoutAttachments<T extends Pick<SpaceStore, 'readableMarkdown'>>(store: T): T {
+export function storeFor<T extends Pick<SpaceStore, 'readableMarkdown'>>(
+  store: T,
+  attachments: false | ReadonlySet<string>,
+): T {
   return new Proxy(store, {
     get(target, prop, receiver): unknown {
       if (prop === 'readableMarkdown')
-        return (spaceKey: string, page: PageDetail): string => target.readableMarkdown(spaceKey, page, false);
+        return (spaceKey: string, page: PageDetail): string => target.readableMarkdown(spaceKey, page, attachments);
       const value: unknown = Reflect.get(target, prop, receiver);
       return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     },
@@ -112,9 +116,15 @@ export class SpaceStore {
    * A page's Markdown as the AI reads it: its text, then the text of its text attachments as
    * sections of their own (ADR-066), unless a chat reads pages only (ADR-069).
    */
-  public readableMarkdown(spaceKey: string, page: PageDetail, attachments = true): string {
+  public readableMarkdown(
+    spaceKey: string,
+    page: PageDetail,
+    attachments: boolean | ReadonlySet<string> = true,
+  ): string {
     const markdown = parsePage(page).markdown;
-    return attachments ? `${markdown}${this.attachments.of(spaceKey.toUpperCase(), page).text}` : markdown;
+    if (attachments === false) return markdown;
+    const skip = attachments === true ? undefined : attachments;
+    return `${markdown}${this.attachments.of(spaceKey.toUpperCase(), page, skip).text}`;
   }
 
   /** The synced space a page belongs to, when the caller does not know it. */

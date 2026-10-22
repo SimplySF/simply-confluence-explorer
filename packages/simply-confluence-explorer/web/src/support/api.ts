@@ -235,8 +235,16 @@ export const sessions = {
     call<{ session: AiSessionView; run: BranchRun }>(`${SESSIONS}/${key(id)}/turns/${turn}/accept-edit`, 'POST'),
   dismissEdit: (id: string, turn: number) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}/turns/${turn}/close-proposal`, 'POST'),
-  update: (id: string, patch: { title?: string; scope?: Partial<SessionScope>; attachments?: AttachmentChoice }) =>
-    call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
+  update: (
+    id: string,
+    patch: {
+      title?: string;
+      scope?: Partial<SessionScope>;
+      attachments?: AttachmentChoice;
+      leftOutFiles?: string[];
+      attachmentsSeen?: string[];
+    },
+  ) => call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
   /** Asks a question; `thorough` reads many sections over several requests, as a job (design doc 0008). */
   send: (id: string, prompt: string, signal?: AbortSignal, thorough = false, focus?: Focus) =>

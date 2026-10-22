@@ -16,7 +16,6 @@
 
 import type {
   AiSessionView,
-  AttachmentChoice,
   AttachmentsReport,
   BatchProgress,
   BranchItem,
@@ -48,7 +47,7 @@ import { parseFindings, RECORD_NOTE, REVIEW_ASPECTS, reviewPrompt } from '../bra
 import { HttpError, type Router } from '../http/router.js';
 import { pageText } from '../branches/pageChanges.js';
 import { attachmentsFor, withoutImages } from '../spaces/attachments.js';
-import { withoutAttachments, type SpaceStore } from '../spaces/spaceStore.js';
+import { storeFor, type SpaceStore } from '../spaces/spaceStore.js';
 import { loadSpaceSettings } from '../spaces/spaceSettings.js';
 import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { collectBranch, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
@@ -133,6 +132,20 @@ function turnDetails(
   };
 }
 
+/** The most files a chat may name as left out or asked about. */
+const MAX_FILES = 2000;
+
+/** A list of attachments as "page id/file name", each checked, or a refusal that says why. */
+function fileList(value: unknown, field: string): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_FILES ||
+    !value.every((v) => typeof v === 'string' && v.length <= 300 && isValidPageId(v.split('/')[0]) && v.includes('/'))
+  )
+    throw new HttpError(400, `${field} is a list of at most ${MAX_FILES} "page id/file name" entries`);
+  return [...new Set(value as string[])];
+}
+
 /** The edit a person has open while they ask, named by ids the server reads it by. */
 type Focus = { runId: string; pageId: string };
 
@@ -212,9 +225,11 @@ type TurnContext = {
 export function addSessionRoutes(router: Router, services: Services): Router {
   const { ai, sessions, store, exclusions, dataDir, index, branches, reviews } = services;
   const deps: GateDeps = { store, exclusions, client: services.client };
-  // A chat that reads pages only sees a store whose pages come without their attachments (ADR-069).
+  // A chat sees a store whose pages come without their attachments when it reads pages only, and
+  // without the files the person left out (ADR-069).
+  const leftOutOf = (session: AiSessionView): ReadonlySet<string> => new Set(session.leftOutFiles ?? []);
   const storeOf = (session: AiSessionView): SpaceStore =>
-    session.attachments === 'pages' ? withoutAttachments(store) : store;
+    session.attachments === 'pages' ? storeFor(store, false) : storeFor(store, leftOutOf(session));
   const found = (id: string): AiSessionView => {
     const session = sessions.get(id);
     if (!session) throw new HttpError(404, 'no such conversation');
@@ -238,10 +253,11 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     scope: SessionScope,
     manifest: ManifestBuilder,
     reader: SpaceStore = store,
+    readPdfs = false,
   ): Promise<TurnContext> => {
     const gate = await gatePageForAi(scope.pageId!, scope.spaceKey, deps);
     if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
-    if (reader === store) {
+    if (readPdfs) {
       // The PDFs of the page, and of a directory's pages on disk, are read before the request (ADR-069).
       const below = scope.kind === 'branch' ? store.descendants(scope.spaceKey, gate.page.id) : [];
       const pages = [gate.page, ...below.flatMap((n) => store.readPage(scope.spaceKey, n.id) ?? [])];
@@ -321,6 +337,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       vectors: services.vectors,
       ai,
       attachments: session.attachments !== 'pages',
+      leftOut: leftOutOf(session),
     };
     const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
     const batches = await sectionBatches(
@@ -359,7 +376,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const manifest = new ManifestBuilder();
     let ctx: TurnContext;
     if (scope.kind === 'page' || (scope.kind === 'branch' && !store.isSynced(scope.spaceKey))) {
-      ctx = await unsyncedContext(scope, manifest, storeOf(session));
+      ctx = await unsyncedContext(scope, manifest, storeOf(session), session.attachments !== 'pages');
     } else {
       const corpus = await corpusOf(session);
       // A PDF is read before the request is built, so its text goes with this question; a whole space's
@@ -384,6 +401,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             signal,
             onStep: (text) => step(session.id, text),
             attachments: session.attachments !== 'pages',
+            leftOut: leftOutOf(session),
           },
           { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );
@@ -458,7 +476,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     const gate = await gatePageForAi(item.pageId, run.spaceKey, deps);
     if (!gate.allowed) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
     const fixes = (item.fixes ?? []).map((f) => `- [${f.kind}] ${f.detail}${f.suggestion ? ` → ${f.suggestion}` : ''}`);
-    const attached = session.attachments === 'pages' ? '' : store.attachments.of(run.spaceKey, gate.page!).text;
+    const attached =
+      session.attachments === 'pages' ? '' : store.attachments.of(run.spaceKey, gate.page!, leftOutOf(session)).text;
     const text = `## [Edit of: ${item.title}]\n### The page as it is\n${pageText(item)}\n### The edit so far\n${item.proposed}\n### The suggestions it applies\n${fixes.join('\n')}${attached ? `\n### Its attachments, for context only${attached}` : ''}`;
     ctx.context += `\n\n---\n\n${ctx.manifest.include('page', `${item.title} (its edit)`, text)}`;
     return item;
@@ -567,7 +586,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     (session: AiSessionView) =>
     (pages: PageDetail[]): ReturnType<typeof attachmentsFor> =>
       attachmentsFor(
-        (key, page) => store.attachments.of(key, page),
+        (key, page) => store.attachments.of(key, page, leftOutOf(session)),
         pages.map((page) => ({ spaceKey: session.scope.spaceKey, page })),
         { chat: session.attachments, images: loadSpaceSettings(dataDir, session.scope.spaceKey).images },
       );
@@ -655,12 +674,15 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       .add('PATCH', '/api/ai/sessions/:sessionId', async ({ params, body }) => {
         const session = found(params.sessionId);
         const fields = fieldsOf(body);
-        const patch: { title?: string; scope?: SessionScope; attachments?: AttachmentChoice } = {};
+        const patch: Parameters<typeof sessions.update>[1] = {};
         if (fields.attachments !== undefined) {
           if (fields.attachments !== 'include' && fields.attachments !== 'pages')
             throw new HttpError(400, 'attachments is include or pages');
           patch.attachments = fields.attachments;
         }
+        if (fields.leftOutFiles !== undefined) patch.leftOutFiles = fileList(fields.leftOutFiles, 'leftOutFiles');
+        if (fields.attachmentsSeen !== undefined)
+          patch.attachmentsSeen = fileList(fields.attachmentsSeen, 'attachmentsSeen');
         if (fields.title !== undefined) {
           const title = typeof fields.title === 'string' ? fields.title.trim() : '';
           if (!title || title.length > 80) throw new HttpError(400, 'a title is 1 to 80 characters');

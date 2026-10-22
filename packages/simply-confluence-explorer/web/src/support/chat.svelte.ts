@@ -159,9 +159,20 @@ export class AiChat {
     return this.session;
   }
 
-  /** Whether this chat reads its pages' attachments, kept with the chat (ADR-069). */
-  public async chooseAttachments(choice: AttachmentChoice): Promise<void> {
+  /**
+   * Whether this chat reads its pages' attachments, and which files it leaves out, kept with the chat
+   * with the files it has now been asked about, so a file added later is asked about again (ADR-069).
+   */
+  public async chooseAttachments(change: {
+    choice: AttachmentChoice;
+    leftOut?: string[];
+    seen: string[];
+  }): Promise<void> {
     const s = await this.ensure();
-    this.session = await sessions.update(s.id, { attachments: choice });
+    this.session = await sessions.update(s.id, {
+      attachments: change.choice,
+      ...(change.leftOut ? { leftOutFiles: change.leftOut } : {}),
+      attachmentsSeen: change.seen,
+    });
   }
 }
