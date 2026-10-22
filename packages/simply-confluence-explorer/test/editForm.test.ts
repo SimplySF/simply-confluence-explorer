@@ -118,6 +118,18 @@ describe('a change', () => {
     );
   });
 
+  it("changes a chart by changing its data table, keeping the chart's type and title", () => {
+    const chart = (value: string): string =>
+      '<ac:structured-macro ac:name="chart"><ac:parameter ac:name="type">line</ac:parameter>' +
+      '<ac:parameter ac:name="title">Load</ac:parameter><ac:rich-text-body><table><tbody>' +
+      `<tr><th><p>Month</p></th><th><p>Load</p></th></tr><tr><td><p>Jan</p></td><td><p>${value}</p></td></tr>` +
+      '</tbody></table>' +
+      '</ac:rich-text-body></ac:structured-macro>';
+    const form = toEditForm(chart('10'));
+    expect(form.markdown).toBe('⟦1 chart: Load⟧\n\n| Month | Load |\n| --- | --- |\n| Jan | 10 |\n\n⟦/1⟧');
+    expect(buildStorage(form, form.markdown.replace('| 10 |', '| 12 |'))).toBe(chart('12'));
+  });
+
   it('edits the text of one column of a layout, keeping the layout', () => {
     const form = toEditForm(LAYOUT);
     expect(form.markdown).toBe(

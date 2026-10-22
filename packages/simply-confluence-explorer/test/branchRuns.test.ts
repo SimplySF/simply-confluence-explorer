@@ -695,6 +695,9 @@ describe('work only a person can do in Confluence', () => {
       { kind: 'stale', pages: [], detail: 'y', byHand: 'z' },
     ]);
     expect(reviewPrompt(['staleness'], 1)).toContain('"byHandOnly"');
+    // A chart drawn from a table, or a diagram drawn with characters, is text an edit can change.
+    expect(reviewPrompt(['staleness'], 1)).toContain("a chart's data table (the chart is drawn from it");
+    expect(reviewPrompt(['staleness'], 1)).toContain('diagrams drawn with characters');
   });
 
   it('cannot be recommended when it is all of a suggestion, and is left out of the edit when it is part', async () => {

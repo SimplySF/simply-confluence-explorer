@@ -125,7 +125,7 @@ export function queueList(suggestions: QueuedSuggestion[]): string {
  * What the model that suggests changes is told about the parts of a page an edit cannot change, so it
  * names that work for a person instead of suggesting an edit that cannot carry it (ADR-068).
  */
-export const HAND_WORK_NOTE = `An edit can change only a page's text, including the text inside a table, a panel or a chart's data table. It cannot redraw or replace an image, a diagram (draw.io, Gliffy) or a chart's look, or change a macro's settings. When a suggestion needs any of that, say in "byHand" what a person must change in Confluence and where, such as "Redraw flow.png: it still shows the old approval step", and set "byHandOnly" to true when nothing else is left for an edit to do.`;
+export const HAND_WORK_NOTE = `Anything on a page written as text can be edited, wherever it is: paragraphs, lists, tables, a chart's data table (the chart is drawn from it, so changing the table changes the chart), code blocks, and diagrams drawn with characters such as | and -. Never mark those as work for a person. Only a picture cannot be edited: an image, a draw.io or Gliffy diagram, a chart's type or colours, a macro's settings, or a block the page shows as a marker kept as it is. When a suggestion needs one of those changed, say in "byHand" what a person must change in Confluence and where, such as "Redraw flow.png: it still shows the old approval step", and set "byHandOnly" to true when nothing else is left for an edit to do.`;
 
 /**
  * What a chat's model is told about its review queue and the open edit. It is the same on every turn,
