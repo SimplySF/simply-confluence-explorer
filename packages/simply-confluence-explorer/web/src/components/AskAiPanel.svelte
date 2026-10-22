@@ -166,6 +166,7 @@
       {spaceKey}
       rootPageId={effective === 'branch' ? detail.id : undefined}
       chosen={effective === 'page' ? { pageIds: [detail.id] } : undefined}
+      {chat}
     />
   {/if}
   {#if engine && !engine.available}

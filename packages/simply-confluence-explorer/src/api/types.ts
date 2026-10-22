@@ -226,6 +226,8 @@ export type AnalyzeResponse = {
   guard: GuardReport;
   engine: string;
   selectedPages?: Array<{ id: string; title: string; score: number }>;
+  /** Every attachment of the pages read: what was read, and what was not, with why (ADR-069). */
+  attachments?: AttachmentsReport;
 };
 
 /** An AI summary of one page, kept in the space's `metadata/` directory. */
@@ -334,6 +336,8 @@ export type SessionTurn = {
   proposalClosed?: boolean;
   /** The images on the pages this answer read: how many, how many were sent, and the space's choice. */
   images?: ImagesReport;
+  /** Every attachment of the pages this answer read: what was read, and what was not, with why (ADR-069). */
+  attachments?: AttachmentsReport;
   /** On an answer that changed the chat's suggestions: how many it added, updated and removed. */
   queued?: { added: number; updated: number; removed: number };
 };
@@ -419,6 +423,8 @@ export type AiSessionView = {
   suggestions?: QueuedSuggestion[];
   /** The runs of edits made from the chat's suggestions, oldest first. */
   runIds?: string[];
+  /** Whether the chat reads its pages' attachments; unanswered, it does, and asks (ADR-069). */
+  attachments?: AttachmentChoice;
 };
 
 /** An existing page that may already say what a new page is meant to. */
@@ -622,6 +628,20 @@ export type GitLabView = { baseUrl: string; tokenSet: boolean };
 
 /** Whether a space's images go to the AI: ask whenever pages with images are read, send, or skip (ADR-066). */
 export type ImageChoice = 'ask' | 'send' | 'skip';
+
+/** A chat's choice about its pages' attachments: read them with the pages, or read the pages only. */
+export type AttachmentChoice = 'include' | 'pages';
+
+/** The account of a set of pages' attachments: each read, with what as, or named with why it was not. */
+export type AttachmentsReport = {
+  /** How many attachments the pages hold. */
+  files: number;
+  read: Array<{ page: string; name: string; as: string; cut?: number }>;
+  unread: Array<{ page: string; name: string; why: string }>;
+  images: ImagesReport;
+  /** The chat's choice, once made. */
+  choice?: AttachmentChoice;
+};
 /** What a request did with the images on the pages it read. */
 export type ImagesReport = { found: number; sent: number; choice: ImageChoice; left?: string[] };
 

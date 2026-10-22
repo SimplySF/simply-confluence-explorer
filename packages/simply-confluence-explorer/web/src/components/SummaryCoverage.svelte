@@ -1,22 +1,25 @@
 <script lang="ts">
   import { Sparkles } from '@lucide/svelte';
   import { api, type Chosen, type Coverage } from '../support/api.js';
+  import type { AiChat } from '../support/chat.svelte.js';
   import { jobs } from '../support/jobs.svelte.js';
-  import ImagesNote from './ImagesNote.svelte';
+  import AttachmentsNote from './AttachmentsNote.svelte';
 
   // One line in a chat when some of the pages it reads are not in the AI index, which every part of
   // the chat leans on: finding sections, finding pages by tag, and answering. It offers to index them.
   // The counts it reads are shared with the chat through `counts`, which also says whether the pages
-  // fit one request.
+  // fit one request, and lists their attachments, which the chat is asked about (ADR-069).
   type Props = {
     spaceKey: string;
     /** A section's page, or the pages a chat chose; neither means the whole space. */
     rootPageId?: string;
     chosen?: Chosen;
     counts?: Coverage | null;
+    /** The chat, which keeps its choice about attachments. */
+    chat?: AiChat;
   };
 
-  let { spaceKey, rootPageId, chosen, counts = $bindable(null) }: Props = $props();
+  let { spaceKey, rootPageId, chosen, counts = $bindable(null), chat }: Props = $props();
   let finished = $state(0);
 
   $effect(() => jobs.onFinished((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && finished++));
@@ -26,8 +29,10 @@
   $effect(() => {
     void finished;
     void again;
+    void chat?.session?.attachments;
     let live = true;
-    api.summaryCoverage(spaceKey, { rootPageId, ...chosen }).then(
+    const sessionId = chat?.session?.id;
+    api.summaryCoverage(spaceKey, { rootPageId, ...chosen, ...(sessionId ? { sessionId } : {}) }).then(
       (c) => {
         if (!live) return;
         counts = c;
@@ -43,8 +48,8 @@
   const running = $derived(jobs.list.some((j) => j.kind === 'summaries' && j.spaceKey === spaceKey));
 </script>
 
-{#if counts?.images}
-  <ImagesNote {spaceKey} report={{ found: counts.images.found, sent: 0, choice: counts.images.choice }} />
+{#if counts?.attachments}
+  <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
 {/if}
 {#if counts && counts.missing > 0}
   <div class="summary-coverage">

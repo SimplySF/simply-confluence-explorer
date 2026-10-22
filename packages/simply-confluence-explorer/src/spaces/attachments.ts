@@ -14,17 +14,19 @@
  * limitations under the License.
  */
 
-// A synced page's attachments, as the AI reads them with the page (ADR-066). Text attachments become
-// sections of the page's text, so the guard checks them and search finds them like the page. Images
-// are listed, and their bytes read only for a space that chooses to send images. Every caller has
-// already checked the page against the exclusion rules, so an excluded page's files are never read.
+// A synced page's attachments, as the AI reads them with the page (ADR-066, ADR-069). Text attachments
+// become sections of the page's text, so the guard checks them and search finds them like the page.
+// Images are listed, and their bytes read only for a space that chooses to send images. Every file
+// that is not read, or not read whole, is named with why, so no attachment is left out unsaid. Every
+// caller has already checked the page against the exclusion rules, so an excluded page's files are
+// never read.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ImageChoice, ImagesReport, PageDetail } from '../api/types.js';
+import type { AttachmentChoice, AttachmentsReport, ImageChoice, ImagesReport, PageDetail } from '../api/types.js';
 import type { ImageInput } from '../ai/guard.js';
-import { storageToBody } from '../parser/convert.js';
 import { errorMessage } from '../util/errors.js';
+import { documentText, formatOf } from './documentText.js';
 
 /** The most of one attachment's text read, and of all a page's attachments together. */
 export const ATTACHMENT_CHARS = 50_000;
@@ -35,9 +37,9 @@ export const PAGE_IMAGES = 10;
 /** The most images, and bytes of them, one request carries. */
 export const REQUEST_IMAGES = 20;
 export const REQUEST_IMAGE_BYTES = 10 * 1024 * 1024;
+/** How long a request waits for PDFs still being read before it goes without them, naming them. */
+export const PDF_WAIT_MS = 30_000;
 
-const TEXT_TYPES = new Set(['.md', '.markdown', '.txt', '.csv', '.tsv', '.json', '.yaml', '.yml', '.log', '.xml']);
-const HTML_TYPES = new Set(['.html', '.htm']);
 export const IMAGE_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -46,13 +48,14 @@ export const IMAGE_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-export type AttachmentFile = { title: string; mediaType: string; file: string; bytes: number };
+export type AttachmentFile = { title: string; mediaType: string; file: string; bytes: number; missing?: boolean };
 export type PageImage = { name: string; mediaType: string; file: string; bytes: number };
 /** What reading a page's attachments found: their text, the images, and what was not read, with why. */
 export type PageAttachments = {
   /** The text attachments as Markdown sections, or empty. */
   text: string;
-  read: string[];
+  /** Each file read as text, what it was read as, and how many characters were kept when it was cut. */
+  read: Array<{ name: string; as: string; cut?: number }>;
   images: PageImage[];
   unread: Array<{ name: string; why: string }>;
 };
@@ -61,13 +64,14 @@ const extensionOf = (a: AttachmentFile): string => path.extname(a.title).toLower
 
 export class AttachmentReader {
   // Extracted text, by file, with the file time it was read at, so a file is read once.
-  private readonly texts = new Map<string, { mtimeMs: number; text: string }>();
-  // PDFs being read in the background: their text is ready the next time the page is read.
-  private readonly reading = new Set<string>();
+  private readonly texts = new Map<string, { mtimeMs: number; text: string; as: string }>();
+  // PDFs being read, as reading one can take a while; a request waits for them in prepare().
+  private readonly reading = new Map<string, Promise<void>>();
 
   public constructor(
     private readonly files: (spaceKey: string, page: PageDetail) => AttachmentFile[],
     private readonly log: (message: string) => void,
+    private readonly synced: (spaceKey: string) => boolean = () => true,
   ) {}
 
   /** A page's attachments as the AI reads them. */
@@ -75,106 +79,157 @@ export class AttachmentReader {
     const result: PageAttachments = { text: '', read: [], images: [], unread: [] };
     let used = 0;
     for (const a of this.files(spaceKey, page)) {
+      if (a.missing) {
+        result.unread.push({
+          name: a.title,
+          why: this.synced(spaceKey)
+            ? 'not on this machine: sync the space again to download it'
+            : 'this space is not synced, so its attachments are not downloaded',
+        });
+        continue;
+      }
       const ext = extensionOf(a);
       if (IMAGE_TYPES[ext]) {
-        if (a.bytes > IMAGE_BYTES) result.unread.push({ name: a.title, why: 'larger than 5 MB' });
+        if (a.bytes > IMAGE_BYTES) result.unread.push({ name: a.title, why: 'an image larger than 5 MB' });
         else if (result.images.length >= PAGE_IMAGES)
-          result.unread.push({ name: a.title, why: `more than ${PAGE_IMAGES} images on the page` });
+          result.unread.push({ name: a.title, why: `an image past the first ${PAGE_IMAGES} on the page` });
         else result.images.push({ name: a.title, mediaType: IMAGE_TYPES[ext], file: a.file, bytes: a.bytes });
         continue;
       }
-      const text = this.textOf(a, ext);
-      if (typeof text !== 'string') {
-        result.unread.push({ name: a.title, why: text.why });
+      const read = this.textOf(a, ext);
+      if ('why' in read) {
+        result.unread.push({ name: a.title, why: read.why });
         continue;
       }
       const room = PAGE_ATTACHMENT_CHARS - used;
       if (room <= 0) {
-        result.unread.push({ name: a.title, why: 'the page’s attachments already fill their share' });
+        result.unread.push({
+          name: a.title,
+          why: `the page's attachments already fill their ${PAGE_ATTACHMENT_CHARS.toLocaleString('en')} characters`,
+        });
         continue;
       }
       const cap = Math.min(ATTACHMENT_CHARS, room);
-      const kept = text.length > cap ? `${text.slice(0, cap)}\n(…cut to its first ${cap} characters)` : text;
-      used += Math.min(text.length, cap);
-      result.read.push(a.title);
+      const cut = read.text.length > cap;
+      const kept = cut ? `${read.text.slice(0, cap)}\n(…cut to its first ${cap} characters)` : read.text;
+      used += Math.min(read.text.length, cap);
+      result.read.push({ name: a.title, as: read.as, ...(cut ? { cut: cap } : {}) });
       result.text += `\n\n## Attachment: ${a.title}\n\n${kept.trim()}`;
     }
     return result;
   }
 
-  /** An attachment's text, or why it has none to give. */
-  private textOf(a: AttachmentFile, ext: string): string | { why: string } {
-    const stat = fs.statSync(a.file, { throwIfNoEntry: false });
-    if (!stat) return { why: 'not on this machine' };
-    const kept = this.texts.get(a.file);
-    if (kept?.mtimeMs === stat.mtimeMs) return kept.text;
-    if (ext === '.pdf') return this.readPdf(a.file, stat.mtimeMs);
-    if (/gliffy/i.test(a.mediaType)) {
-      const labels = gliffyLabels(fs.readFileSync(a.file, 'utf8'));
-      if (labels === undefined) return { why: 'a Gliffy diagram whose source could not be read' };
-      const text = labels.length
-        ? `A Gliffy diagram. Its shapes and labels, in the order the diagram holds them:\n${labels.map((l) => `- ${l}`).join('\n')}`
-        : 'A Gliffy diagram with no text in it.';
-      this.texts.set(a.file, { mtimeMs: stat.mtimeMs, text });
-      return text;
-    }
-    if (!TEXT_TYPES.has(ext) && !HTML_TYPES.has(ext)) return { why: 'not a kind of file the AI reads' };
-    const bytes = fs.readFileSync(a.file);
-    if (bytes.includes(0)) return { why: 'looks like a binary file' };
-    const text = HTML_TYPES.has(ext) ? storageToBody(bytes.toString('utf8')) : bytes.toString('utf8');
-    this.texts.set(a.file, { mtimeMs: stat.mtimeMs, text });
-    return text;
+  /**
+   * Waits for the PDFs of these pages to be read, so a request sends their text rather than going
+   * without it; one that takes longer than `PDF_WAIT_MS` is named as still being read.
+   */
+  public async prepare(pages: Array<{ spaceKey: string; page: PageDetail }>, waitMs = PDF_WAIT_MS): Promise<void> {
+    const pending: Array<Promise<void>> = [];
+    for (const { spaceKey, page } of pages)
+      for (const a of this.files(spaceKey, page))
+        if (!a.missing && extensionOf(a) === '.pdf') {
+          const stat = fs.statSync(a.file, { throwIfNoEntry: false });
+          if (stat && this.texts.get(a.file)?.mtimeMs !== stat.mtimeMs)
+            pending.push(this.readPdf(a.file, stat.mtimeMs));
+        }
+    if (pending.length === 0) return;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.all(pending),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, waitMs);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
-  /** Starts reading a PDF's text in the background, as reading one can take a while. */
-  private readPdf(file: string, mtimeMs: number): { why: string } {
-    if (!this.reading.has(file)) {
-      this.reading.add(file);
-      void (async (): Promise<void> => {
-        try {
-          const { extractText, getDocumentProxy } = await import('unpdf');
-          const { text } = await extractText(await getDocumentProxy(new Uint8Array(fs.readFileSync(file))), {
-            mergePages: true,
-          });
-          this.texts.set(file, { mtimeMs, text: text.trim() || '(This PDF has no text; it may be a scan.)' });
-        } catch (error) {
-          this.log(`could not read the text of ${path.basename(file)}: ${errorMessage(error)}`);
-          this.texts.set(file, { mtimeMs, text: '(This PDF could not be read.)' });
-        } finally {
-          this.reading.delete(file);
-        }
-      })();
+  /** An attachment's text and what it was read as, or why it has none to give. */
+  private textOf(a: AttachmentFile, ext: string): { text: string; as: string } | { why: string } {
+    const stat = fs.statSync(a.file, { throwIfNoEntry: false });
+    if (!stat) return { why: 'not on this machine: sync the space again to download it' };
+    const kept = this.texts.get(a.file);
+    if (kept?.mtimeMs === stat.mtimeMs) return kept;
+    if (ext === '.pdf') {
+      void this.readPdf(a.file, stat.mtimeMs);
+      return { why: 'a PDF still being read when this was sent; its text goes with the next question' };
     }
-    return { why: 'a PDF being read now; its text is sent from the next request' };
+    const read = documentText(a.title, a.mediaType, fs.readFileSync(a.file));
+    if ('text' in read) this.texts.set(a.file, { mtimeMs: stat.mtimeMs, ...read });
+    return read;
+  }
+
+  /** Reads a PDF's text, once however many ask while it is read. */
+  private readPdf(file: string, mtimeMs: number): Promise<void> {
+    const started = this.reading.get(file);
+    if (started) return started;
+    const reading = (async (): Promise<void> => {
+      try {
+        const { extractText, getDocumentProxy } = await import('unpdf');
+        const { text } = await extractText(await getDocumentProxy(new Uint8Array(fs.readFileSync(file))), {
+          mergePages: true,
+        });
+        this.texts.set(file, { mtimeMs, as: 'PDF', text: text.trim() || '(This PDF has no text; it may be a scan.)' });
+      } catch (error) {
+        this.log(`could not read the text of ${path.basename(file)}: ${errorMessage(error)}`);
+        this.texts.set(file, { mtimeMs, as: 'PDF', text: '(This PDF could not be read.)' });
+      } finally {
+        this.reading.delete(file);
+      }
+    })();
+    this.reading.set(file, reading);
+    return reading;
   }
 }
 
 /**
- * The text of a Gliffy diagram's source: every label its shapes and lines carry, in order, once each.
- * The source is mostly layout and styling, so its words are what is worth the AI's attention. Returns
- * undefined when the source is not JSON.
+ * The account of the attachments a request read with its pages, and the images it sends: every file
+ * read, sent, or named with why it was not (ADR-069).
  *
- * @param source The diagram's JSON, as Confluence stores it beside the page.
+ * @param of Reads a page's attachments.
+ * @param pages The pages the request reads, with their space.
+ * @param choices The chat's choice about attachments (unanswered reads them), and the space's about images.
  */
-export function gliffyLabels(source: string): string[] | undefined {
-  let json: unknown;
-  try {
-    json = JSON.parse(source);
-  } catch {
-    // Not the JSON a Gliffy diagram is kept as; the caller names it as unread.
-    return undefined;
-  }
-  const labels: string[] = [];
-  const walk = (value: unknown, key?: string): void => {
-    if (typeof value === 'string') {
-      if (key !== 'html' && key !== 'text') return;
-      const words = storageToBody(`<p>${value}</p>`).replace(/\s+/g, ' ').trim();
-      if (words && !labels.includes(words)) labels.push(words);
-    } else if (Array.isArray(value)) value.forEach((v) => walk(v));
-    else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) walk(v, k);
+export function attachmentsFor(
+  of: (spaceKey: string, page: PageDetail) => PageAttachments,
+  pages: Array<{ spaceKey: string; page: PageDetail }>,
+  choices: { chat?: AttachmentChoice; images: ImageChoice },
+): { images: ImageInput[]; report: AttachmentsReport } {
+  const report: AttachmentsReport = {
+    files: 0,
+    read: [],
+    unread: [],
+    images: { found: 0, sent: 0, choice: choices.images },
   };
-  walk(json);
-  return labels;
+  if (choices.chat) report.choice = choices.chat;
+  if (choices.chat === 'pages') {
+    for (const { page } of pages)
+      for (const a of page.attachments) {
+        report.files++;
+        report.unread.push({ page: page.title, name: a.title, why: 'this chat reads pages only' });
+      }
+    return { images: [], report };
+  }
+  const sent = imagesFor(of, choices.images, pages);
+  report.images = sent.report;
+  const went = new Set(sent.images.map((i) => i.name));
+  const imageWhy =
+    choices.images === 'skip'
+      ? 'an image: images are off for this space'
+      : 'an image: sent only once you choose to send images for this space';
+  for (const { spaceKey, page } of pages) {
+    const read = of(spaceKey, page);
+    report.files += read.read.length + read.images.length + read.unread.length;
+    report.read.push(...read.read.map((r) => ({ page: page.title, ...r })));
+    report.unread.push(...read.unread.map((u) => ({ page: page.title, ...u })));
+    for (const image of read.images)
+      if (!went.has(`${page.title} / ${image.name}`))
+        report.unread.push({
+          page: page.title,
+          name: image.name,
+          why: choices.images === 'send' ? 'an image left out to keep the request within its limits' : imageWhy,
+        });
+  }
+  return { images: sent.images, report };
 }
 
 /**
@@ -213,4 +268,65 @@ export function imagesFor(
     }
   }
   return { images, report: { found, sent: images.length, choice, ...(left.length ? { left } : {}) } };
+}
+
+/** The accounts of several requests that read different pages, as the one answer they made gives it. */
+export function mergeAccounts(reports: AttachmentsReport[], images: ImageChoice): AttachmentsReport {
+  const left = reports.flatMap((r) => r.images.left ?? []);
+  const merged: AttachmentsReport = {
+    files: reports.reduce((n, r) => n + r.files, 0),
+    read: reports.flatMap((r) => r.read),
+    unread: reports.flatMap((r) => r.unread),
+    images: {
+      found: reports.reduce((n, r) => n + r.images.found, 0),
+      sent: reports.reduce((n, r) => n + r.images.sent, 0),
+      choice: images,
+      ...(left.length ? { left } : {}),
+    },
+  };
+  const choice = reports.find((r) => r.choice)?.choice;
+  return choice ? { ...merged, choice } : merged;
+}
+
+/**
+ * What a chat will read of its pages' attachments, judged from their names and types without reading
+ * them, so the list shows at once before the first question, however many pages are chosen (ADR-069).
+ *
+ * @param files Each page's attachments, as the store lists them, missing ones marked.
+ * @param choices The chat's choice about attachments, and the space's about images.
+ * @param synced Whether the space is synced, for why a missing file is missing.
+ */
+export function previewAccount(
+  files: Array<{ page: string; entries: AttachmentFile[] }>,
+  choices: { chat?: AttachmentChoice; images: ImageChoice },
+  synced: boolean,
+): AttachmentsReport {
+  const report: AttachmentsReport = {
+    files: 0,
+    read: [],
+    unread: [],
+    images: { found: 0, sent: 0, choice: choices.images },
+  };
+  if (choices.chat) report.choice = choices.chat;
+  for (const { page, entries } of files)
+    for (const a of entries) {
+      report.files++;
+      const name = a.title;
+      if (choices.chat === 'pages') report.unread.push({ page, name, why: 'this chat reads pages only' });
+      else if (a.missing)
+        report.unread.push({
+          page,
+          name,
+          why: synced
+            ? 'not on this machine: sync the space again to download it'
+            : 'this space is not synced, so its attachments are not downloaded',
+        });
+      else if (IMAGE_TYPES[path.extname(name).toLowerCase()]) report.images.found++;
+      else {
+        const format = formatOf(name, a.mediaType);
+        if ('as' in format) report.read.push({ page, name, as: format.as });
+        else report.unread.push({ page, name, why: format.why });
+      }
+    }
+  return report;
 }

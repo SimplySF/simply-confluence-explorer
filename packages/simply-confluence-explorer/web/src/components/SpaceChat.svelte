@@ -248,6 +248,7 @@
             {pages}
             onChange={(choice) => update({ scope: choice })}
             {onSelectPage}
+            {chat}
           />
         {/key}
       {/snippet}

@@ -25,6 +25,7 @@ import type { RetrievedContext } from '../src/spaces/contextRetriever.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
 import { extractText, historyToSend, SessionStore } from '../src/ai/sessions.js';
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
+import { pdfSaying } from './support/pdf.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
@@ -33,29 +34,6 @@ beforeAll(async () => {
   fake = await startFakeConfluence();
 });
 afterAll(() => fake.close());
-
-/** A minimal one-page PDF whose page says `text`, with a correct cross-reference table. */
-function pdfSaying(text: string): Buffer {
-  const objs = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
-    null,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-  ];
-  const stream = `BT /F1 12 Tf 20 100 Td (${text}) Tj ET`;
-  objs[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
-  let out = '%PDF-1.4\n';
-  const offsets: number[] = [];
-  objs.forEach((o, i) => {
-    offsets.push(out.length);
-    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
-  });
-  const xref = out.length;
-  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
-  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(out, 'latin1');
-}
 
 const pageScope = (): { scope: { kind: string; spaceKey: string; pageId: string; title: string } } => ({
   scope: { kind: 'page', spaceKey: 'OPS', pageId: fake.page('OPS', 'On-Call Handbook').id, title: 'On-Call Handbook' },
@@ -158,7 +136,11 @@ test('an uploaded file holding a secret stops the turn, like any other content',
 });
 
 test('uploads that are not text are refused with a reason', async () => {
-  await assert.rejects(extractText('photo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47])), /not supported/);
+  await assert.rejects(
+    extractText('photo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47])),
+    /photo\.png: a \.png file, which the app does not read/,
+  );
+  await assert.rejects(extractText('old.doc', Buffer.from('x')), /an older binary format/);
   await assert.rejects(extractText('data.txt', Buffer.from([0x41, 0x00, 0x42])), /binary/);
   await assert.rejects(extractText('scan.pdf', pdfSaying('')), /no extractable text/);
 });

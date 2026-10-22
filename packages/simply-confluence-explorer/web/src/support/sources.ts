@@ -42,6 +42,7 @@ const REASON: Record<ManifestSummary['leftOut'][number]['reason'], string> = {
   'over-limit': 'over the size limit',
   'history-limit': 'the conversation was longer than a request carries',
   cut: 'sent in part, cut to the size a file may have',
+  'not-read': 'not read',
 };
 
 /**
@@ -53,12 +54,13 @@ export function sentLines(sent: ManifestSummary): { summary: string; leftOut: st
     sent.pages && plural(sent.pages, 'page'),
     sent.sections && plural(sent.sections, 'section'),
     sent.files && plural(sent.files, 'file'),
+    sent.attachments && plural(sent.attachments, 'attachment'),
     sent.images && plural(sent.images, 'image'),
     sent.turns && plural(sent.turns, 'earlier message'),
   ].filter(Boolean);
   const excluded = sent.leftOut.filter((l) => l.reason === 'excluded').length;
   const leftOut = [
-    ...sent.leftOut.filter((l) => l.reason !== 'excluded').map((l) => `${l.label}: ${REASON[l.reason]}`),
+    ...sent.leftOut.filter((l) => l.reason !== 'excluded').map((l) => `${l.label}: ${l.why ?? REASON[l.reason]}`),
     ...(excluded ? [`${plural(excluded, 'page')}: ${REASON.excluded}`] : []),
   ];
   return {

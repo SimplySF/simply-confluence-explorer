@@ -20,10 +20,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AiSessionView, BranchRun, SyncProgress } from '../src/api/types.js';
+import type {
+  AiSessionView,
+  AttachmentsReport,
+  BatchProgress,
+  BranchRun,
+  SessionTurn,
+  SyncProgress,
+} from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
-import { gliffyLabels } from '../src/spaces/attachments.js';
+import { gliffyLabels } from '../src/spaces/documentText.js';
+import { pdfSaying } from './support/pdf.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
+import { workbook } from './support/zipFiles.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
 let fake: FakeConfluence;
@@ -259,6 +268,21 @@ describe("a space's images", () => {
     });
   });
 
+  it('name one missing from this machine, which would have stopped the answer', async () => {
+    await withSynced(async (app) => {
+      await choose(app, 'send');
+      fs.rmSync(attachment(app, 'architecture-diagram.png'));
+      const turn = (await ask(app)).turns.at(-1)!;
+      expect(turn.role).toBe('assistant');
+      expect(turn.attachments?.unread).toContainEqual({
+        page: 'Architecture Overview',
+        name: 'architecture-diagram.png',
+        why: 'not on this machine: sync the space again to download it',
+      });
+      expect(app.sent.at(-1)?.images).toBeUndefined();
+    });
+  });
+
   it('leave out one too large to send, and name it', async () => {
     await withSynced(async (app) => {
       await choose(app, 'send');
@@ -319,5 +343,151 @@ describe("a page's pictures in the edit view", () => {
         expect.objectContaining({ label: 'image: architecture-diagram.png', picture: 0 }),
       ]);
     });
+  });
+});
+
+describe("the account of a chat's attachments", () => {
+  // Gateway Service gets a workbook, a Word file the app cannot read in its old format, and a PDF.
+  async function withFiles(run: (app: TestApp) => Promise<void>): Promise<void> {
+    const page = fake.page('PLAT', 'Gateway Service');
+    const added = [
+      {
+        title: 'limits.xlsx',
+        type: 'application/vnd.ms-excel',
+        content: await workbook([['Limit', '4200 per tenant']]),
+      },
+      { title: 'legacy-notes.doc', type: 'application/msword', content: Buffer.from('old binary') },
+      { title: 'sla.pdf', type: 'application/pdf', content: pdfSaying('The SLA is 99.95 percent') },
+    ];
+    page.attachments.push(...added);
+    try {
+      await withSynced(run);
+    } finally {
+      page.attachments.splice(-added.length);
+    }
+  }
+  const gatewayChat = (app: TestApp): Promise<AiSessionView> => pageChat(app, 'Gateway Service');
+  const question = async (app: TestApp, id: string): Promise<SessionTurn> =>
+    (
+      await app.call<AiSessionView>('POST', `/ai/sessions/${id}/messages`, { prompt: 'What are the limits?' })
+    ).body.turns.at(-1)!;
+
+  it('names each file it read and each it did not, with why, where an unreadable one vanished', async () => {
+    await withFiles(async (app) => {
+      const turn = await question(app, (await gatewayChat(app)).id);
+      expect(app.sentText()).toContain('Limit,4200 per tenant');
+      expect(turn.attachments?.read.map((r) => [r.name, r.as])).toEqual(
+        expect.arrayContaining([
+          ['limits.xlsx', 'Excel'],
+          ['sla.pdf', 'PDF'],
+        ]),
+      );
+      expect(turn.attachments?.unread).toEqual([
+        { page: 'Gateway Service', name: 'legacy-notes.doc', why: expect.stringMatching(/older binary format/) },
+      ]);
+      // What was sent counts what went and names what did not, rather than saying everything arrived.
+      expect(turn.sent?.attachments).toBe(2);
+      expect(turn.sent?.leftOut).toContainEqual(
+        expect.objectContaining({ label: 'Gateway Service / legacy-notes.doc', reason: 'not-read' }),
+      );
+    });
+  });
+
+  it("sends a PDF's text with the first question, where it waited for the next", async () => {
+    await withFiles(async (app) => {
+      await question(app, (await gatewayChat(app)).id);
+      expect(app.sentText()).toContain('The SLA is 99.95 percent');
+    });
+  });
+
+  it('reads pages only once the chat chooses, sending no attachment and saying why', async () => {
+    await withFiles(async (app) => {
+      const chat = await gatewayChat(app);
+      const patched = await app.call<AiSessionView>('PATCH', `/ai/sessions/${chat.id}`, { attachments: 'pages' });
+      expect(patched.body.attachments).toBe('pages');
+      expect((await app.call('PATCH', `/ai/sessions/${chat.id}`, { attachments: 'some' })).status).toBe(400);
+      const turn = await question(app, chat.id);
+      expect(app.sentText()).not.toContain('4200 per tenant');
+      expect(app.sentText()).not.toContain('99.95');
+      expect(turn.attachments?.choice).toBe('pages');
+      expect(new Set(turn.attachments?.unread.map((u) => u.why))).toEqual(new Set(['this chat reads pages only']));
+    });
+  });
+
+  it('names a file missing from this machine, which was dropped without a word', async () => {
+    await withFiles(async (app) => {
+      fs.rmSync(
+        path.join(
+          app.dataDir,
+          'spaces',
+          'PLAT',
+          'pages',
+          'Platform Engineering Home',
+          'Services',
+          'Gateway Service_attachments',
+          'limits.xlsx',
+        ),
+      );
+      const turn = await question(app, (await gatewayChat(app)).id);
+      expect(turn.attachments?.unread).toContainEqual({
+        page: 'Gateway Service',
+        name: 'limits.xlsx',
+        why: 'not on this machine: sync the space again to download it',
+      });
+    });
+  });
+
+  it("lists the attachments of chosen pages before any question, with the chat's choice", async () => {
+    await withFiles(async (app) => {
+      const chat = await gatewayChat(app);
+      const id = fake.page('PLAT', 'Gateway Service').id;
+      const preview = async (): Promise<AttachmentsReport | undefined> =>
+        (
+          await app.call<{ attachments?: AttachmentsReport }>('POST', '/space-cache/PLAT/metadata/coverage', {
+            pageIds: [id],
+            sessionId: chat.id,
+          })
+        ).body.attachments;
+      expect(await preview()).toMatchObject({
+        files: 3,
+        read: expect.arrayContaining([expect.objectContaining({ name: 'limits.xlsx', as: 'Excel' })]),
+        unread: [expect.objectContaining({ name: 'legacy-notes.doc' })],
+      });
+      expect((await preview())?.choice).toBeUndefined();
+      await app.call('PATCH', `/ai/sessions/${chat.id}`, { attachments: 'pages' });
+      expect((await preview())?.choice).toBe('pages');
+    });
+  });
+});
+
+describe('a review read in batches', () => {
+  it('sends the images the space chose to send, and says what it read, where it sent none and said nothing', async () => {
+    const app = await startTestApp(fake, reviewer, {}, { contextChars: 6000 });
+    try {
+      const { body: job } = await app.call<{ jobId: string }>('POST', '/space-cache/sync', { spaceKey: 'PLAT' });
+      for (let s = 'running'; s === 'running' || s === 'pending';)
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the sync
+        s = (await app.call<SyncProgress>('GET', `/space-cache/sync/status/${job.jobId}`)).body.status;
+      await app.call('POST', '/space-cache/PLAT/space-settings', { images: 'send' });
+      const chat = (
+        await app.call<AiSessionView>('POST', '/ai/sessions', { scope: { kind: 'space', spaceKey: 'PLAT' } })
+      ).body;
+      const started = await app.call<{ batch?: BatchProgress }>('POST', `/ai/sessions/${chat.id}/suggest`, {
+        kind: 'review',
+      });
+      expect(started.body.batch).toBeDefined();
+      for (let s = 'running'; s === 'running' || s === 'pending';)
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the batches
+        s = (await app.call<BatchProgress>('GET', `/ai/batches/${started.body.batch!.jobId}`)).body.status;
+      expect(app.sent.some((p) => p.images?.length === 1)).toBe(true);
+      const turn = (await app.call<AiSessionView>('GET', `/ai/sessions/${chat.id}`)).body.turns.at(-1)!;
+      expect(turn.images).toMatchObject({ found: 1, sent: 1, choice: 'send' });
+      expect(turn.attachments?.read).toContainEqual(
+        expect.objectContaining({ name: 'capacity-notes.txt', as: 'text' }),
+      );
+      expect(turn.sent?.images).toBe(1);
+    } finally {
+      await app.close();
+    }
   });
 });

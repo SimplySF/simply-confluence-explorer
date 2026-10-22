@@ -19,13 +19,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type {
   AiSessionView,
+  AttachmentChoice,
   DraftState,
   QueuedSuggestion,
   SessionFileInfo,
   SessionScope,
   SessionTurn,
 } from '../api/types.js';
-import { storageToBody } from '../parser/convert.js';
+import { documentText } from '../spaces/documentText.js';
 import { within } from '../util/paths.js';
 import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
 import { migrateQueue } from './chatQueue.js';
@@ -42,9 +43,6 @@ export const FILE_BYTE_LIMIT = 10 * 1024 * 1024;
 export const FILE_CHAR_LIMIT = 200_000;
 /** How much of the earlier conversation is sent with each new turn; the oldest turns go first. */
 export const HISTORY_CHAR_LIMIT = 200_000;
-
-const TEXT_TYPES = new Set(['.md', '.markdown', '.txt', '.csv', '.tsv', '.json', '.yaml', '.yml', '.log', '.xml']);
-const HTML_TYPES = new Set(['.html', '.htm']);
 
 type Stored = AiSessionView & {
   guardState: Array<[string, string]>;
@@ -71,14 +69,10 @@ export async function extractText(name: string, bytes: Buffer): Promise<string> 
     if (!text.trim()) throw new UploadRefused(`${name} has no extractable text (it may be a scan)`);
     return text;
   }
-  if (HTML_TYPES.has(ext)) return storageToBody(bytes.toString('utf8'));
-  if (TEXT_TYPES.has(ext)) {
-    if (bytes.includes(0)) throw new UploadRefused(`${name} looks like a binary file`);
-    return bytes.toString('utf8');
-  }
-  throw new UploadRefused(
-    `${ext || 'this file type'} is not supported: use PDF, HTML, Markdown, text, CSV, JSON or YAML`,
-  );
+  // Every other format is read as an attachment of that format is, so the two never differ (ADR-069).
+  const read = documentText(name, '', bytes);
+  if ('why' in read) throw new UploadRefused(`${name}: ${read.why}`);
+  return read.text;
 }
 
 /** The earlier turns that fit the history budget, newest kept, starting with a question. */
@@ -201,8 +195,11 @@ export class SessionStore {
     return viewOf(s);
   }
 
-  /** Renames a conversation, or changes what it reads. */
-  public update(id: string, patch: { title?: string; scope?: SessionScope }): AiSessionView {
+  /** Renames a conversation, or changes what it reads, or whether it reads its pages' attachments. */
+  public update(
+    id: string,
+    patch: { title?: string; scope?: SessionScope; attachments?: AttachmentChoice },
+  ): AiSessionView {
     const s = this.load(id);
     if (!s) throw new Error('no such session');
     if (patch.title !== undefined) {
@@ -210,6 +207,7 @@ export class SessionStore {
       s.named = true;
     }
     if (patch.scope) s.scope = patch.scope;
+    if (patch.attachments) s.attachments = patch.attachments;
     this.save(s);
     return viewOf(s);
   }
@@ -297,7 +295,7 @@ export class SessionStore {
 }
 
 function viewOf(s: Stored): AiSessionView {
-  const { id, scope, title, createdAt, updatedAt, turns, files, draft, suggestions, runIds } = s;
+  const { id, scope, title, createdAt, updatedAt, turns, files, draft, suggestions, runIds, attachments } = s;
   return {
     id,
     scope,
@@ -309,5 +307,6 @@ function viewOf(s: Stored): AiSessionView {
     ...(draft ? { draft } : {}),
     ...(suggestions ? { suggestions } : {}),
     ...(runIds ? { runIds } : {}),
+    ...(attachments ? { attachments } : {}),
   };
 }

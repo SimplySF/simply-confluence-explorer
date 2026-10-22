@@ -22,6 +22,8 @@ import type {
   AiSessionView,
   AiSettingsView,
   AnalyzeResponse,
+  AttachmentChoice,
+  AttachmentsReport,
   AuthVerifyResponse,
   BranchRun,
   ChatQueue,
@@ -109,6 +111,8 @@ export type Coverage = {
   indexing?: { done: number; total: number };
   /** How many images the pages hold, and the space's choice about sending them (ADR-066). */
   images?: { found: number; choice: ImageChoice };
+  /** Every attachment of the pages, and what will be read of them (ADR-069). */
+  attachments?: AttachmentsReport;
 };
 export type DraftSummary = AiSessionView & { turnCount: number };
 
@@ -164,7 +168,7 @@ export const api = {
     call<{ activeJob: MetadataProgress | null }>(`/space-cache/${key(spaceKey)}/metadata/active`).then(
       (r) => r.activeJob,
     ),
-  summaryCoverage: (spaceKey: string, body: { rootPageId?: string } & Chosen) =>
+  summaryCoverage: (spaceKey: string, body: { rootPageId?: string; sessionId?: string } & Chosen) =>
     call<Coverage>(`/space-cache/${key(spaceKey)}/metadata/coverage`, 'POST', body),
   cancelMetadata: (jobId: string) => call(`/space-cache/metadata/cancel/${key(jobId)}`, 'POST'),
 
@@ -231,7 +235,7 @@ export const sessions = {
     call<{ session: AiSessionView; run: BranchRun }>(`${SESSIONS}/${key(id)}/turns/${turn}/accept-edit`, 'POST'),
   dismissEdit: (id: string, turn: number) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}/turns/${turn}/close-proposal`, 'POST'),
-  update: (id: string, patch: { title?: string; scope?: Partial<SessionScope> }) =>
+  update: (id: string, patch: { title?: string; scope?: Partial<SessionScope>; attachments?: AttachmentChoice }) =>
     call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
   /** Asks a question; `thorough` reads many sections over several requests, as a job (design doc 0008). */

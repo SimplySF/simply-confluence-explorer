@@ -269,7 +269,9 @@ export class MetadataPipeline {
     const tags: string[] = [];
     const failed: Array<{ page: PageDetail; error: string }> = [];
     const needed = pack.filter((p) => !isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)));
-    // Each page is indexed with its text attachments, and its images when the space sends them (ADR-066).
+    // Each page is indexed with its text attachments, its PDFs read first (ADR-069), and its images when
+    // the space sends them (ADR-066).
+    await this.store.attachments.prepare(needed.map((page) => ({ spaceKey, page })));
     const markdownOf = (page: PageDetail): string => this.store.readableMarkdown(spaceKey, page);
     const choice = this.options.imageChoice?.(spaceKey) ?? 'ask';
     const imagesOf = (pages: PageDetail[]): ImageInput[] =>
