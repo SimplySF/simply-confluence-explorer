@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.7.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.7.0...%40simplysf%2Fsimply-confluence-explorer%400.7.1) (2026-10-22)
+
+### Bug Fixes
+
+- review names what only a person can do, shows a page's pictures, and leaves no edit stuck ([#43](https://github.com/SimplySF/simply-confluence-explorer/issues/43)) ([0096e17](https://github.com/SimplySF/simply-confluence-explorer/commit/0096e1715d55f5b34c7fd817da66a64cdb245fad))
+
 # [0.7.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.6.0...%40simplysf%2Fsimply-confluence-explorer%400.7.0) (2026-10-21)
 
 ### Features
