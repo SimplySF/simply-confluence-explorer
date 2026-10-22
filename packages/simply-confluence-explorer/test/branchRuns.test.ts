@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AiSessionView, BranchFinding, BranchItem, BranchRun } from '../src/api/types.js';
+import type { AiSessionView, BranchFinding, BranchItem, BranchRun, ChatQueue } from '../src/api/types.js';
 import type { GuardedPayload } from '../src/ai/guard.js';
 import { parseFindings, reviewPrompt } from '../src/branches/branchRuns.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
@@ -662,6 +662,28 @@ describe('a stopped run', () => {
       await app.call('POST', `/branches/runs/${started.id}/items/${interviews()}/redo`);
       const again = await settled(app, started.id);
       expect(itemOf(again, interviews()).status).toBe('proposed');
+    });
+  });
+});
+
+describe('an edit that changes nothing', () => {
+  it('was left at To decide forever with nothing to press, and is now not edited, with the AI’s reason', async () => {
+    const unchanged = (payload: GuardedPayload): string => {
+      const text = textOf(payload);
+      if (!text.includes('<<<PROPOSED_MARKDOWN>>>')) return answer(payload);
+      const page = /<<<PROPOSED_MARKDOWN>>>[\s\S]*?\n\n([\s\S]*)$/.exec(text)?.[1] ?? '';
+      return `<<<CRITIQUE>>>\n- The order is shown in a diagram, which only a person can redraw\n<<<CHANGELOG>>>\n<<<PROPOSED_MARKDOWN>>>\n${page}`;
+    };
+    await withApp(unchanged, async (app) => {
+      const c = await directoryChat(app);
+      await suggest(app, c.id);
+      const res = await recommend(app, c.id, [1]);
+      const item = itemOf(await settled(app, res.body.id), guide());
+      expect(item.changes).toEqual([]);
+      expect(item.status).toBe('skipped');
+      expect(item.message).toBe('No change written: The order is shown in a diagram, which only a person can redraw');
+      const queue = (await app.call<ChatQueue>('GET', `/ai/sessions/${c.id}/queue`)).body;
+      expect(queue.suggestions[1]).toMatchObject({ state: 'skipped', why: item.message });
     });
   });
 });

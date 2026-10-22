@@ -167,4 +167,10 @@ describe('reading a proposal', () => {
     );
     expect(parseRecommendationResponse('# Bare\n\nText').improvedMarkdown).toBe('# Bare\n\nText');
   });
+
+  it('never shows notes the model did not write, which read as its own critique', () => {
+    expect(parseRecommendationResponse('# Bare\n\nText')).toMatchObject({ critique: [], changelog: [] });
+    expect(parseRecommendationResponse('<<<PROPOSED_MARKDOWN>>>\n# T')).toMatchObject({ critique: [], changelog: [] });
+    expect(parseRecommendationResponse('{"critique": ["a",], "improvedMarkdown": "# K"}').critique).toEqual([]);
+  });
 });

@@ -28,7 +28,13 @@ import type {
 } from '../api/types.js';
 import { AiStopped, type AiEngine } from '../ai/engine.js';
 import { GuardBlockedError } from '../ai/guard.js';
-import { applyPrompt, freshnessPrompt, parseRecommendationResponse, parseVerdicts } from '../ai/improve.js';
+import {
+  applyPrompt,
+  freshnessPrompt,
+  parseRecommendationResponse,
+  parseVerdicts,
+  unappliedOf,
+} from '../ai/improve.js';
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
 import { stripFrontmatter } from '../parser/convert.js';
@@ -472,7 +478,12 @@ export class BranchRunner {
         guardSummary: answer.guard.summary,
       });
       refreshChanges(item);
-      step(item, `Ready to decide: ${plural(item.changes?.length ?? 0, 'change')}`);
+      if (item.changes?.length === 0) {
+        // An edit that changes nothing has nothing to decide or push, so it is not left waiting.
+        item.status = 'skipped';
+        item.message = `No change written: ${unappliedOf(parsed.critique) ?? 'the AI found nothing it could change in the page’s text.'}`;
+        step(item, item.message);
+      } else step(item, `Ready to decide: ${plural(item.changes?.length ?? 0, 'change')}`);
     } catch (error) {
       delete item.writing;
       if (error instanceof AiStopped) {

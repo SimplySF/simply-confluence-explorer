@@ -100,8 +100,8 @@ export function parseRecommendationResponse(raw: string): Recommendation {
     const changelog = /<<<CHANGELOG>>>([\s\S]*?)(?=<<<PROPOSED_MARKDOWN>>>|$)/i.exec(text)?.[1];
     const markdown = /<<<PROPOSED_MARKDOWN>>>([\s\S]*)$/i.exec(text)?.[1];
     return {
-      critique: critique ? bullets(critique) : ['Reviewed document against technical standards.'],
-      changelog: changelog ? bullets(changelog) : ['Refined documentation structure, prerequisites, and clarity.'],
+      critique: critique ? bullets(critique) : [],
+      changelog: changelog ? bullets(changelog) : [],
       improvedMarkdown: unfence(markdown ?? text),
     };
   }
@@ -122,19 +122,21 @@ export function parseRecommendationResponse(raw: string): Recommendation {
       // JSON with unescaped quotes or newlines inside it: the proposal is pulled out by pattern.
       const recovered = recoverMarkdown(text);
       if (recovered !== undefined) {
-        return {
-          critique: ['Extracted improved documentation from response.'],
-          changelog: ['Enhanced formatting, section headers, and clarity.'],
-          improvedMarkdown: recovered,
-        };
+        return { critique: [], changelog: [], improvedMarkdown: recovered };
       }
     }
   }
-  return {
-    critique: ['Reviewed document against technical standards.'],
-    changelog: ['Enhanced formatting, section headers, and clarity.'],
-    improvedMarkdown: unfence(text) || text,
-  };
+  return { critique: [], changelog: [], improvedMarkdown: unfence(text) || text };
+}
+
+/**
+ * What the model said it could not apply, or nothing when it said "None" or said nothing.
+ *
+ * @param critique The edit's critique, as `parseRecommendationResponse` reads it.
+ */
+export function unappliedOf(critique: string[]): string | undefined {
+  const said = critique.filter((c) => !/^none\.?$/i.test(c));
+  return said.length ? said.join(' ') : undefined;
 }
 
 /**
