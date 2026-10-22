@@ -94,6 +94,19 @@ const STDIN_INSTRUCTION =
   'Follow the instructions at the start of the input below, applying them to the document that follows.';
 
 /**
+ * What the CLI said on its error output, without its start-up timings and stack frames, which bury
+ * the reason, such as a used-up quota or an overloaded model. The reason comes first, so the start
+ * is kept when it is long.
+ */
+export function cliError(stderr: string): string {
+  return stderr
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.startsWith('[STARTUP]') && !/^\s+at /.test(line))
+    .join('\n')
+    .slice(0, 1500);
+}
+
+/**
  * Runs one guarded prompt with the document on standard input, in a scratch working directory.
  * Aborting `signal` ends the process.
  */
@@ -110,22 +123,30 @@ export function runGeminiCli(
     payload.messages.length === 1
       ? payload.messages[0].content
       : payload.messages.map((m) => `${m.role === 'user' ? 'USER' : 'ASSISTANT'}:\n${m.content}`).join('\n\n');
-  // Images the space chose to send are written to a folder made for this request, readable only by
-  // this account, and named in the fixed instruction with the CLI's @ syntax; page text never goes in
-  // the instruction, so no text on a page can make the CLI read a file (ADR-066).
+  // The CLI can search and read the files in its working folder, so every request runs in an empty
+  // folder made for it, readable only by this account and removed when it ends; a shared folder such
+  // as the system's temporary one would let it read other programs' files. Images the space chose to
+  // send are written there and named in the fixed instruction with the CLI's @ syntax; page text never
+  // goes in the instruction, so no text on a page can make the CLI read a file (ADR-066).
   const images = payload.images ?? [];
-  const folder = images.length > 0 ? fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-images-')) : undefined;
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-gemini-'));
   const names = images.map((im, i) => `img-${i + 1}${EXTENSIONS[im.mediaType] ?? '.png'}`);
-  if (folder) images.forEach((im, i) => fs.writeFileSync(path.join(folder, names[i]), Buffer.from(im.data, 'base64')));
-  const instruction = folder
+  images.forEach((im, i) => fs.writeFileSync(path.join(folder, names[i]), Buffer.from(im.data, 'base64')));
+  const instruction = images.length
     ? `${STDIN_INSTRUCTION} Also look at these images from the pages: ${names.map((n) => `@${n}`).join(' ')}`
     : STDIN_INSTRUCTION;
+  // Removed once the process has closed: Windows refuses to remove a folder a process still runs in.
   const tidy = (): void => {
-    if (folder) fs.rmSync(folder, { recursive: true, force: true });
+    try {
+      fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    } catch {
+      // A folder the system still holds is left in its temporary folder, private to this account;
+      // failing the request over it would hide the answer, or why there was none.
+    }
   };
   return new Promise<Reply>((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, '--skip-trust', '-p', instruction, '-o', 'text'], {
-      cwd: folder ?? os.tmpdir(),
+      cwd: folder,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...env, NO_COLOR: '1' },
       signal,
@@ -147,15 +168,18 @@ export function runGeminiCli(
       onText(soFar);
     });
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-    child.on('error', (err) =>
+    child.on('error', (err) => {
+      // A process that never started never closes, so its folder is removed here.
+      if (child.pid === undefined) tidy();
       reject(
         new Error(
           err.name === 'AbortError' ? 'the Gemini CLI was stopped' : `Failed to spawn Gemini CLI: ${err.message}`,
         ),
-      ),
-    );
+      );
+    });
 
     child.on('close', (code) => {
+      tidy();
       const stderrData = Buffer.concat(stderr).toString('utf8');
       const cleanOutput = Buffer.concat(stdout)
         .toString('utf8')
@@ -164,11 +188,14 @@ export function runGeminiCli(
         .replace(/YOLO mode is enabled[^\r\n]*\r?\n?/gi, '')
         .trim();
       if (!cleanOutput) {
+        // The CLI can end without an answer yet report success, saying why only on its error output.
+        const said = cliError(stderrData) || 'it printed no error';
+        const sent = images.length ? ` It was sent ${images.length} image${images.length === 1 ? '' : 's'}.` : '';
         reject(
           new Error(
             code === 0
-              ? 'the Gemini CLI gave no answer'
-              : `the Gemini CLI exited with code ${code ?? 'unknown'}: ${stderrData.slice(-2000) || 'it printed no error'}`,
+              ? `the Gemini CLI gave no answer: ${said}${sent}`
+              : `the Gemini CLI exited with code ${code ?? 'unknown'}: ${said}${sent}`,
           ),
         );
       } else {
@@ -176,5 +203,5 @@ export function runGeminiCli(
         resolve(code === 0 ? { text: cleanOutput } : { text: cleanOutput, cutOff: 'length' });
       }
     });
-  }).finally(tidy);
+  });
 }

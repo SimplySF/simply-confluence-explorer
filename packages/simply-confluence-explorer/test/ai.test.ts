@@ -367,7 +367,28 @@ process.stdin.on('end', () => {
   };
   assert.deepEqual(reply.files, ['img-1.png']);
   assert.match(reply.p, /@img-1\.png$/);
-  assert.match(path.basename(reply.cwd), /^cexp-images-/);
+  assert.match(path.basename(reply.cwd), /^cexp-gemini-/);
+  assert.equal(fs.existsSync(reply.cwd), false, 'the folder is removed once the CLI ends');
+});
+
+test('the Gemini CLI runs in an empty private folder without images too, where it searched the system temp folder', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  fs.writeFileSync(
+    script,
+    `import fs from 'node:fs';
+process.stdin.resume();
+process.stdin.on('end', () => {
+  process.stdout.write(JSON.stringify({ cwd: process.cwd(), files: fs.readdirSync('.'), mode: fs.statSync('.').mode & 0o777 }));
+});`,
+  );
+  const reply = JSON.parse((await runGeminiCli(script, guarded('S', 'D'), {})).text) as {
+    cwd: string;
+    files: string[];
+    mode: number;
+  };
+  assert.deepEqual(reply.files, []);
+  assert.match(path.basename(reply.cwd), /^cexp-gemini-/);
+  if (process.platform !== 'win32') assert.equal(reply.mode, 0o700);
   assert.equal(fs.existsSync(reply.cwd), false, 'the folder is removed once the CLI ends');
 });
 
