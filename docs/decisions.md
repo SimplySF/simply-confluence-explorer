@@ -1906,7 +1906,7 @@ the choice is asked for where the images are, and every image sent is named so i
 
 ## ADR-067 — The code budget rises to 17,500 lines, prose to 2,050 and the guides to 1,150 for attachments
 
-**Status:** accepted, 2026-10-21. Amends ADR-065, ADR-062 and ADR-042.
+**Status:** accepted, 2026-10-21. Amends ADR-065, ADR-062 and ADR-042. Amended by ADR-070.
 
 Reading attachments (ADR-066) took the code to 17,102 lines, over the 17,000 set by ADR-065; its
 design doc and guide paragraphs need room the prose (1,922 of 1,950) and the guides (1,099 of
@@ -1950,3 +1950,56 @@ exists, and a wrong diagram pushed silently is worse than one named as out of da
 **The argument against:** the model decides what is hand work, and can be wrong in either direction.
 That is accepted because an edit that changes nothing is still caught and explained, and a suggestion
 marked as hand work only can still be dismissed or asked about again in the chat.
+
+---
+
+## ADR-069 — Every attachment of a chat's pages is read, sent or named with why, a chat asks once whether to include them, and Office files are read with Node's own zlib instead of a new library
+
+**Status:** accepted, 2026-10-22. Amends ADR-066.
+
+ADR-066 read text attachments and offered images, but a file in any other format, an attachment too
+long or not downloaded, a PDF still being read, and every image in a thorough answer or a batched
+review were dropped with nothing said; What was sent then claimed everything reached the model. A
+team's pages hold Word, Excel and PowerPoint files, Visio and draw.io diagrams, and more, so whole
+answers were made without context the person assumed was there.
+
+- **Every attachment is accounted for.** Each answer, and the chat before its first question, lists
+  every attachment of the pages it reads: what was read and as what, the images sent or waiting on
+  the space's choice, and each file not read with why: its format, its size, a download missing, a
+  PDF still being read, or the chat reading pages only. Unread files are left-out entries in the
+  manifest (ADR-054), so What was sent names them.
+- **A chat asks once.** When its pages hold attachments it asks whether to include them, and keeps
+  the answer: Include all, or Pages only. Until it is answered, attachments are read, so none is left
+  behind unasked. Images still follow the space's choice (ADR-066).
+- **Many more formats are read as text**, through the outbound guard: Word, Excel, PowerPoint,
+  OpenDocument, Visio, Gliffy and draw.io diagrams (their labels), SVG, Mermaid, PlantUML, BPMN, RTF,
+  email, calendar files, notebooks, code and configuration files, and the text files inside a zip.
+  Uploaded files are read by the same readers. Formats that cannot be read, such as older binary
+  Office files, are named with how to make them readable.
+- **PDFs are read before the request**, waiting up to 30 seconds, rather than from the next question.
+
+**Declined: a document-parsing library.** Office, OpenDocument and Visio files are zip archives of
+XML, which a short reader built on Node's `zlib` opens (`src/util/zip.ts`), with limits on entries
+and inflated size so a hostile archive cannot exhaust memory. A library would read more of each
+format's detail, such as formulas, but would raise the runtime-dependency budget (ADR-014) for
+little the AI needs.
+
+**The argument against:** reading more formats sends more of a page's surroundings to an AI. That is
+accepted because every attachment's text passes the outbound guard like page text, an excluded
+page's attachments are never read, and a chat can choose to read its pages only.
+
+---
+
+## ADR-070 — The code budget rises to 18,500 lines and prose to 2,150 to account for every attachment
+
+**Status:** accepted, 2026-10-22. Amends ADR-067.
+
+Accounting for every attachment and reading many more formats (ADR-069) took the code to 18,201
+lines, over the 17,500 set by ADR-067: the readers for Office, OpenDocument, Visio, diagram and
+other formats, the zip reader, the account carried by every answer, and the list a chat shows before
+its first question. Its design doc and records take prose to about 2,100 lines, over 2,050. The
+limits rise to 18,500 and 2,150, each keeping the usual small headroom; the guides stay within 1,150.
+
+**The argument against:** a budget raised each time it is reached is no limit. This is accepted
+because the increase is sized to the measured change, and the formats read could each be removed on
+their own if one proved not worth its lines.
