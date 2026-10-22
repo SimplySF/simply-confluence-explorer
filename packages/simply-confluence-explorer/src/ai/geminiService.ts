@@ -95,14 +95,15 @@ const STDIN_INSTRUCTION =
 
 /**
  * What the CLI said on its error output, without its start-up timings and stack frames, which bury
- * the reason, such as a quota or an overloaded model.
+ * the reason, such as a used-up quota or an overloaded model. The reason comes first, so the start
+ * is kept when it is long.
  */
 export function cliError(stderr: string): string {
   return stderr
     .split(/\r?\n/)
     .filter((line) => line.trim() && !line.startsWith('[STARTUP]') && !/^\s+at /.test(line))
     .join('\n')
-    .slice(-1500);
+    .slice(0, 1500);
 }
 
 /**

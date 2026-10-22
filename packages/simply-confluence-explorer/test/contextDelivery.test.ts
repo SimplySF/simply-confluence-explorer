@@ -198,6 +198,18 @@ process.stdin.on('end', async () => {
     ].join('\n');
     expect(cliError(stderr)).toBe('Error when talking to Gemini API: The model is overloaded.\n  status: 503\n}');
   });
+
+  it('keeps the start of a long error, where the CLI names a used-up quota, and drops the detail after', () => {
+    const stderr = [
+      'Error when talking to Gemini API TerminalQuotaError: You have exhausted your daily quota on this model.',
+      ...Array.from({ length: 200 }, (_, i) => `  detail line ${i} of the provider's report`),
+      'An unexpected critical error occurred:[object Object]',
+    ].join('\n');
+    expect(cliError(stderr)).toMatch(
+      /^Error when talking to Gemini API TerminalQuotaError: You have exhausted your daily quota/,
+    );
+    expect(cliError(stderr).length).toBeLessThanOrEqual(1500);
+  });
 });
 
 let fake: FakeConfluence;
