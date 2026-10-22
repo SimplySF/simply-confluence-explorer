@@ -1923,9 +1923,12 @@ because each increase is sized to the measured change, and the next one needs it
 **Status:** accepted, 2026-10-22.
 
 Since ADR-066 the AI reads a page's images, so a review can see that a diagram is out of date. An
-edit can only change a page's text: an image or a draw.io, Gliffy or chart macro is a marker the
-edit may keep, move or remove, never change (ADR-058), and the app does not upload attachments. A
-suggestion about a diagram therefore produced an edit with nothing in it, and nothing said why.
+edit can only change a page's text: an image or a draw.io or Gliffy diagram is a marker the edit
+may keep, move or remove, never change (ADR-058), and the app does not upload attachments. A chart
+is text, because Confluence draws it from the table inside it, so an edit changes a chart by
+changing that table, as it does a diagram drawn with characters; only a chart's type and colours are
+settings it cannot change. A suggestion about a picture produced an edit with nothing in it, and
+nothing said why.
 
 - **A suggestion names the part only a person can do.** The review and the chat's queue ask the model
   to say, for each suggestion, what must be changed by hand in Confluence (`byHand`) and whether that

@@ -45,6 +45,8 @@ Every suggestion that cannot be ticked says why:
   a person can do: an edit changes only text. Such a suggestion says "The AI cannot make this
   change" and what to change in Confluence. When only part of a suggestion is like that, it can
   still be ticked, says which part is yours, and its edit lists it under **To do in Confluence**.
+  A chart's numbers are the table inside it, and a diagram drawn with characters such as `|` is
+  text, so the AI edits both.
 - **A page the chat did not read** is named, with a reminder to ask about that page to edit it.
 
 ## Recommend changes
