@@ -165,6 +165,24 @@ export const REVIEW_GUIDE = [
           "A page's images are read and sent only when the space's choice is send; otherwise none is, and the answer only counts them.",
       },
       {
+        file: `${SRC}/spaces/attachments.ts`,
+        symbol: 'attachmentsFor',
+        check:
+          'Every attachment of the pages read is either read, sent, or named with why it was not; with the chat set to pages only, none is read or sent (ADR-069).',
+      },
+      {
+        file: `${SRC}/spaces/documentText.ts`,
+        symbol: 'documentText',
+        check:
+          'Turns an attachment or upload into text, which then passes the outbound guard like page text; a format it cannot read is named, never sent as bytes.',
+      },
+      {
+        file: `${SRC}/util/zip.ts`,
+        symbol: 'zipEntries',
+        check:
+          'Opens Office and OpenDocument files, which come from whoever uploaded them: entries and inflated bytes are capped, and an understated size is not trusted.',
+      },
+      {
         file: `${SRC}/ai/providers.ts`,
         symbol: 'embed',
         check:
