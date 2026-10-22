@@ -20,7 +20,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { spaces, type DatasetPage } from '../../../test-env/fixtures/dataset.mjs';
-import { buildStorage, toEditForm } from '../src/parser/editForm.js';
+import { buildStorage, pictureOf, toEditForm } from '../src/parser/editForm.js';
 
 const bodies = new Map<string, string>();
 const walk = (key: string, nodes: DatasetPage[] = []): void => {
@@ -196,5 +196,35 @@ describe('a removal a person accepted', () => {
   it('is written, and only the removed part is gone', () => {
     const form = toEditForm(`${TOC}<p>Text.</p>`);
     expect(buildStorage(form, 'Text.', [1])).toBe('<p>Text.</p>');
+  });
+});
+
+describe("a part's picture", () => {
+  const partsOf = (xml: string): Array<{ label: string; picture?: string }> =>
+    toEditForm(xml).parts.map((p) => ({ label: p.label, picture: pictureOf(p) }));
+
+  it('is the attached image, or the preview Confluence keeps of a draw.io or Gliffy diagram', () => {
+    expect(
+      partsOf(
+        '<p>See <ac:image><ri:attachment ri:filename="loop &amp; flow.png" /></ac:image>.</p>' +
+          '<ac:structured-macro ac:name="drawio"><ac:parameter ac:name="diagramName">Hiring loop</ac:parameter></ac:structured-macro>' +
+          '<ac:structured-macro ac:name="gliffy"><ac:parameter ac:name="name">Org</ac:parameter></ac:structured-macro>',
+      ),
+    ).toEqual([
+      { label: 'image: loop flow.png', picture: 'loop & flow.png' },
+      { label: 'drawio: Hiring loop', picture: 'Hiring loop.png' },
+      { label: 'gliffy: Org', picture: 'Org.png' },
+    ]);
+  });
+
+  it('is none for an image on another page or the web, a chart, or any other part', () => {
+    const parts = partsOf(
+      '<p><ac:image><ri:attachment ri:filename="x.png"><ri:page ri:content-title="Other" /></ri:attachment></ac:image>' +
+        ' <ac:image><ri:url ri:value="https://example.com/y.png" /></ac:image></p>' +
+        '<ac:structured-macro ac:name="chart"><ac:parameter ac:name="title">Load</ac:parameter><ac:rich-text-body><table><tbody><tr><td>1</td></tr></tbody></table></ac:rich-text-body></ac:structured-macro>' +
+        '<ac:structured-macro ac:name="toc" />',
+    );
+    expect(parts.map((p) => p.picture)).toEqual(parts.map(() => undefined));
+    expect(parts.length).toBeGreaterThanOrEqual(3);
   });
 });

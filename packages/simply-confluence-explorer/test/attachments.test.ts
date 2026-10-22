@@ -227,3 +227,55 @@ describe("a space's images", () => {
     });
   });
 });
+
+describe("a page's pictures in the edit view", () => {
+  const picture = (app: TestApp, pageId: string, n: string): Promise<Response> =>
+    fetch(`${app.base}/space-cache/PLAT/pages/${pageId}/attachments/${n}`);
+
+  it('are served from the synced page as images, where the edit showed only a chip', async () => {
+    await withSynced(async (app) => {
+      const page = fake.page('PLAT', 'Architecture Overview');
+      const res = await picture(app, page.id, '0');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('image/png');
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(
+        fs.readFileSync(attachment(app, 'architecture-diagram.png')),
+      );
+    });
+  });
+
+  it('are never a file that is not an image, one past the list, a page not synced, or an excluded page', async () => {
+    await withSynced(async (app) => {
+      const id = fake.page('PLAT', 'Architecture Overview').id;
+      expect((await picture(app, id, '1')).status).toBe(404);
+      expect((await picture(app, id, '2')).status).toBe(404);
+      expect((await picture(app, id, 'readme.txt')).status).toBe(400);
+      expect((await picture(app, id, 'readme.txt')).status).toBe(400);
+      expect((await picture(app, fake.page('PEOPLE', 'Interviews').id, '0')).status).toBe(404);
+      await app.call('POST', '/space-cache/PLAT/ignore', {
+        patterns: ['Platform Engineering Home/Architecture Overview'],
+        purge: false,
+      });
+      expect((await picture(app, id, '0')).status).toBe(404);
+    });
+  });
+
+  it('are named on the edit, so each marker for an image can show it', async () => {
+    await withSynced(async (app) => {
+      const chat = await pageChat(app, 'Architecture Overview');
+      const reviewed = (await app.call<AiSessionView>('POST', `/ai/sessions/${chat.id}/suggest`, { kind: 'review' }))
+        .body;
+      const { body } = await app.call<BranchRun>('POST', `/ai/sessions/${chat.id}/suggestions/recommend`, {
+        ids: [reviewed.suggestions![0].id],
+      });
+      let run = body;
+      while (run.status === 'running')
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the edit
+        run = (await app.call<BranchRun>('GET', `/branches/runs/${body.id}`)).body;
+      const parts = run.items[0].parts ?? [];
+      expect(parts.filter((p) => p.picture !== undefined)).toEqual([
+        expect.objectContaining({ label: 'image: architecture-diagram.png', picture: 0 }),
+      ]);
+    });
+  });
+});

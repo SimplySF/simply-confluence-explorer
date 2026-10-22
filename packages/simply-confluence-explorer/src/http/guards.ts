@@ -44,6 +44,7 @@ export const PARAMS: Readonly<Record<string, { label: string; valid: (value: str
   traceId: { label: 'trace id', valid: (v) => /^[0-9a-f]{16}$/.test(v) },
   changeId: { label: 'change id', valid: (v) => /^[0-9a-f]{12}$/.test(v) },
   suggestionId: { label: 'suggestion id', valid: (v) => /^[0-9a-f]{12}$/.test(v) },
+  attachment: { label: 'attachment number', valid: (v) => /^\d{1,4}$/.test(v) },
 };
 
 /**

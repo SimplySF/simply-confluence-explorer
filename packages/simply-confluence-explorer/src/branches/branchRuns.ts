@@ -39,7 +39,7 @@ import {
 import { writePage } from '../confluence/pagePush.js';
 import { HttpError } from '../http/router.js';
 import { stripFrontmatter } from '../parser/convert.js';
-import { toEditForm } from '../parser/editForm.js';
+import { pictureOf, toEditForm } from '../parser/editForm.js';
 import { EXCLUDED_MESSAGE, gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { imagesFor } from '../spaces/attachments.js';
 import { loadSpaceSettings } from '../spaces/spaceSettings.js';
@@ -596,7 +596,14 @@ function step(item: BranchItem, text: string): void {
  */
 function editOf(page: PageDetail): Pick<BranchItem, 'original' | 'parts' | 'drops'> {
   const form = toEditForm(page.storageXml);
-  return { original: `${form.markdown}\n`, ...partsOf(form) };
+  const { parts, drops } = partsOf(form);
+  const titles = page.attachments.map((a) => a.title);
+  const pictured = parts.map((p) => {
+    const file = form.parts.find((f) => f.n === p.n);
+    const at = file ? titles.indexOf(pictureOf(file) ?? '') : -1;
+    return at >= 0 ? { ...p, picture: at } : p;
+  });
+  return { original: `${form.markdown}\n`, parts: pictured, drops };
 }
 
 function newRun(

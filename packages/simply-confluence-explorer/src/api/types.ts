@@ -502,7 +502,13 @@ export type BranchFix = {
 };
 
 /** A part of a page the text stands in for with a marker, such as a macro or an image (ADR-058). */
-export type PagePart = { n: number; label: string; kind: 'inline' | 'block' | 'container' };
+export type PagePart = {
+  n: number;
+  label: string;
+  kind: 'inline' | 'block' | 'container';
+  /** Its picture's place in the page's attachments, an image or a diagram's preview (ADR-068). */
+  picture?: number;
+};
 
 /** One change in an edit of a page, decided on its own (ADR-059). */
 export type PageChange = {

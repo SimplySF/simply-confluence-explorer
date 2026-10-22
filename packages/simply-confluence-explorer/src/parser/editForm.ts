@@ -109,6 +109,34 @@ const param = (xml: string, node: Node, name: string): string | undefined => {
   return p ? textOf(inner(xml, p)) : undefined;
 };
 
+/** Diagram macros whose picture Confluence keeps as a PNG attachment named after the diagram. */
+const DIAGRAMS = new Set(['drawio', 'inc-drawio', 'gliffy']);
+
+/**
+ * The name of the page's own attachment that shows a part, so a reviewer can see what its marker
+ * stands for: an attached image, or the preview of a draw.io or Gliffy diagram (ADR-068). An image
+ * on another page or on the web has none.
+ *
+ * @param part A part of the page's edit form.
+ */
+export function pictureOf(part: Part): string | undefined {
+  if (part.kind === 'container') return undefined;
+  const image = /^<ac:image\b[\s\S]*?<ri:attachment\s+ri:filename="([^"]+)"\s*\/>/.exec(part.xml)?.[1];
+  if (image) return decodeEntities(image);
+  const macro = /^<ac:structured-macro\b[^>]*\bac:name="([^"]+)"/.exec(part.xml)?.[1];
+  if (!macro || !DIAGRAMS.has(macro)) return undefined;
+  const name = /<ac:parameter\s+ac:name="(?:diagramName|name)">([^<]+)<\/ac:parameter>/.exec(part.xml)?.[1]?.trim();
+  return name ? `${decodeEntities(name)}.png` : undefined;
+}
+
+const decodeEntities = (text: string): string =>
+  text
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+
 /** Words a person can read a marker by; the number alone is what the marker means. */
 function clean(label: string): string {
   const words = label
@@ -133,12 +161,15 @@ function labelOf(xml: string, node: Node): string {
   switch (node.tag) {
     case 'ac:structured-macro': {
       const name = attr(node, 'ac:name') ?? 'macro';
-      const detail = param(xml, node, 'title') ?? param(xml, node, 'key');
+      const detail =
+        param(xml, node, 'title') ??
+        param(xml, node, 'key') ??
+        (DIAGRAMS.has(name) ? (param(xml, node, 'diagramName') ?? param(xml, node, 'name')) : undefined);
       return clean(detail ? `${name}: ${detail}` : name);
     }
     case 'ac:image': {
       const file = /ri:(?:filename|value)="([^"]*)"/.exec(inner(xml, node))?.[1];
-      return clean(file === undefined ? 'image' : `image: ${file}`);
+      return clean(file === undefined ? 'image' : `image: ${decodeEntities(file)}`);
     }
     case 'ac:link':
       return linkLabel(inner(xml, node), attr(node, 'ac:anchor'));
