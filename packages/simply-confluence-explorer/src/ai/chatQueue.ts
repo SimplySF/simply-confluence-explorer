@@ -47,9 +47,25 @@ export const SUGGESTION_ID = /^[0-9a-f]{12}$/;
 
 type PageRef = { id: string; title: string; version?: number };
 
-/** New suggestions from an answer's findings, each with the version of the pages it names. */
+/** A title as compared: a model often changes its capitals, spacing, quotes or dashes. */
+const titleKey = (title: string): string =>
+  title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[‘’`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[‐-―−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * New suggestions from an answer's findings, each with the version of the pages it names. A page
+ * named a little differently from its title is matched and named by its title.
+ */
 export function toSuggestions(findings: BranchFinding[], pages: PageRef[], fromTurn: number): QueuedSuggestion[] {
-  return findings.map((f) => {
+  const byKey = new Map(pages.map((p) => [titleKey(p.title), p]));
+  return findings.map((raw) => {
+    const f = { ...raw, pages: raw.pages.map((name) => byKey.get(titleKey(name))?.title ?? name) };
     const named = pages.filter((p) => f.pages.includes(p.title));
     return {
       ...f,

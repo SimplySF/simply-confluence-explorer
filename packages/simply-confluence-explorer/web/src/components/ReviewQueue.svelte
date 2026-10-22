@@ -1,6 +1,7 @@
 <script lang="ts">
   import { FilePlus2, History, RefreshCw, Sparkles, X } from '@lucide/svelte';
   import type { BranchFinding, SuggestionView } from '../../../src/api/types.js';
+  import { canEdit, editNote } from '../support/suggestions.js';
 
   // A chat's review queue (ADR-060), in three parts: suggestions to recommend, those whose edits are
   // in progress, and those that are closed. Ticked suggestions become one edit for each page they
@@ -45,8 +46,6 @@
     dismissed: 'Dismissed',
   };
   const IN_PROGRESS = new Set<SuggestionView['state']>(['writing', 'to-decide', 'staged', 'failed']);
-  const canEdit = (s: SuggestionView): boolean =>
-    s.kind !== 'placement' && s.kind !== 'gap' && Object.keys(s.pageIds).length > 0;
   // A closed or failed suggestion, or one the chat reworded after its edit, can be recommended again.
   const again = (s: SuggestionView): boolean =>
     canEdit(s) &&
@@ -134,11 +133,9 @@
         {/each}
       </details>
     {/if}
-    {#if s.kind === 'gap' || s.kind === 'placement'}
+    {#if s.state === 'open' && editNote(s)}
       <p class="branch-note">
-        {s.kind === 'gap'
-          ? 'This needs a new page, so it cannot be applied as an edit.'
-          : 'This needs a page moved, split or merged: do it in Confluence.'}
+        {editNote(s)}
         {#if s.kind === 'gap' && onWriteNewPage}
           <button class="btn btn-secondary btn-sm" onclick={() => onWriteNewPage(s)}>
             <FilePlus2 size={12} /> Write a new page
