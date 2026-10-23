@@ -10,7 +10,7 @@ Every change Confluence Explorer makes to a page starts in a chat (see
 or the whole space. A bar above the chat's question box says what its review holds, such as "4
 suggestions · 1 edit to decide", and **Open the review** opens it over the whole window, in four
 steps: **Review**, **Edit**, **Stage** and **Push**. **Review** in the sidebar lists every chat with a
-review waiting, and opens each the same way. The question box stays at the bottom of the review, so
+review waiting, and opens each the same way; its **⋯** menu, there or in a review, clears the review or deletes the chat. The question box stays at the bottom of the review, so
 you can ask the chat to rework a suggestion or an edit, and **Exit to chat** or **Back to Review**,
 or Esc, goes back. Nothing changes in Confluence until you confirm a push.
 

@@ -78,6 +78,25 @@ function seeded(): ReturnType<typeof open> {
 const tagsIn = async (store: SpaceStore): Promise<Record<string, string[]>> =>
   Object.fromEntries((await tagIndex(store, 'PLAT')).map((t) => [t.tag, t.pages.map((p) => p.title)]));
 
+describe('saving the page catalog later', () => {
+  it('a catalog save after its space folder was deleted does not throw, where it stopped the test run and would stop the app', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-cat-'));
+    const logged: string[] = [];
+    const store = new SpaceStore(dataDir, new ExclusionManager(dataDir, () => undefined), (m) => logged.push(m));
+    store.writePage('PLAT', page('1', 'Runbooks'), '', []);
+    await store.catalog.ready('PLAT');
+    vi.useFakeTimers();
+    try {
+      store.writePage('PLAT', page('2', 'Failover'), '', []);
+      fs.rmSync(path.join(dataDir, 'spaces', 'PLAT'), { recursive: true });
+      expect(() => vi.advanceTimersByTime(5_000)).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(logged).toEqual([expect.stringMatching(/^could not save the page catalog of PLAT: /)]);
+    expect(fs.existsSync(path.join(dataDir, 'spaces', 'PLAT'))).toBe(false);
+  });
+});
 describe("a space's tags", () => {
   it('come from its catalog, so a second look reads no page file, which took minutes on a large space', async () => {
     const { store } = seeded();
