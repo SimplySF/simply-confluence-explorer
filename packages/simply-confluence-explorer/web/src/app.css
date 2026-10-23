@@ -468,66 +468,99 @@ body {
 }
 
 .document-toolbar {
-  padding: 0.8rem 1.4rem;
+  padding: 16px 28px 12px;
   background-color: var(--bg-panel);
-  border-bottom: 1px solid var(--border-color);
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 12px 16px;
 }
 
 .document-title-group {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 4px;
+  min-width: 0;
 }
 
 .document-title {
-  font-size: 1.25rem;
+  font-size: 22px;
   font-weight: 700;
+  line-height: 1.3;
   color: var(--text-main);
 }
 
 .document-breadcrumbs {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
+  gap: 6px;
+  font-size: 12px;
   color: var(--text-dim);
 }
 
-.document-meta-chips {
+.document-breadcrumbs > * {
+  white-space: nowrap;
+}
+
+.document-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
+  gap: 4px 12px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.meta-chip {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  background-color: var(--bg-panel-secondary);
-  border: 1px solid var(--border-subtle);
+.document-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .toolbar-buttons {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
+}
+
+/* A bordered button holding one icon, as tall as a standard button. */
+.btn-square {
+  width: 32px;
+  height: 32px;
+  padding: 0;
 }
 
 /* Tabs */
 .view-tabs {
   display: flex;
-  background-color: var(--bg-panel-secondary);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-color);
-  padding: 0 1.4rem;
+  padding: 0 28px;
+}
+
+.view-tabs-list {
+  display: flex;
+}
+
+.tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent-light);
+  color: var(--accent-primary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 
 .tab-btn {
-  padding: 0.65rem 1.1rem;
+  height: 40px;
+  padding: 0 12px;
   border: none;
   background: none;
   font-size: 0.85rem;
@@ -2075,6 +2108,7 @@ body {
 .document-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 .document-breadcrumbs {
@@ -2082,17 +2116,43 @@ body {
 }
 .document-breadcrumbs .link-btn {
   color: var(--text-dim);
+  font-size: inherit;
 }
-.document-meta-chips {
-  flex-wrap: wrap;
-  padding: 0.4rem 1.4rem;
-  background-color: var(--bg-panel);
-  border-bottom: 1px solid var(--border-subtle);
+.tab-pane-read {
+  padding: 28px;
 }
-.meta-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.read-article {
+  max-width: 760px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.markdown-preview blockquote {
+  margin: 0 0 0.9rem;
+  padding: 0.2rem 0 0.2rem 1rem;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-muted);
+}
+.callout {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 0.9rem;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--accent-light);
+}
+.callout-icon {
+  flex-shrink: 0;
+  margin-top: 0.2em;
+  color: var(--accent-primary);
+}
+.callout-warning {
+  background: var(--status-warning-bg);
+}
+.callout-warning .callout-icon {
+  color: var(--status-warning);
+}
+.callout-body > :last-child {
+  margin-bottom: 0;
 }
 .tab-btn {
   display: inline-flex;

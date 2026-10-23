@@ -47,7 +47,8 @@ page's latest version, sync the space again.
 - **Filter pages**: type in the box above the tree. A page stays visible if it, or any page under it,
   matches.
 - **Read it three ways**: the **Read** tab shows the page **Rendered**, as **Markdown**, or as
-  **Storage XML**, Confluence's own format. **Copy Markdown** copies the text.
+  **Storage XML**, Confluence's own format, chosen at the right of the tabs. **Copy Markdown**, in the
+  **⋯** menu at the top of the page, copies the text.
 
 ![A page shown as Markdown, with its frontmatter at the top](../images/read-markdown.webp)
 

@@ -30,6 +30,7 @@
     top?: Snippet;
     onPushed: () => void;
     onWriteNewPage?: (finding: BranchFinding) => void;
+    onOpenCount?: (n: number) => void;
   };
 
   let {
@@ -44,6 +45,7 @@
     top,
     onPushed,
     onWriteNewPage,
+    onOpenCount,
   }: Props = $props();
   let tab = $state<Tab>('chat');
   let queue = $state<ChatQueue | null>(null);
@@ -122,6 +124,7 @@
   const openRun = $derived(open ? queue?.runs.find((r) => r.id === open!.runId) : undefined);
   const openItem = $derived(openRun?.items.find((i) => i.pageId === open!.pageId));
   const openCount = $derived(queue?.suggestions.filter((s) => s.state === 'open').length ?? 0);
+  $effect(() => onOpenCount?.(openCount));
   const turns = $derived(chat.session?.turns ?? []);
   const proposal = $derived.by(() => {
     if (!open) return null;

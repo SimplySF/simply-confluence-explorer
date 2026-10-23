@@ -2,19 +2,16 @@
   import {
     AlertTriangle,
     BookOpen,
-    Calendar,
     Copy,
     Download,
+    Ellipsis,
     ExternalLink,
     FilePlus2,
     Info,
-    MoreHorizontal,
-    Paperclip,
     ShieldOff,
     Sparkles,
     Tag,
     Trash2,
-    User,
   } from '@lucide/svelte';
   import type { BranchFinding, PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
@@ -24,13 +21,14 @@
   import AskAiPanel, { type AiScope } from './AskAiPanel.svelte';
   import DetailsPanel from './DetailsPanel.svelte';
   import PurgePageDialog from './PurgePageDialog.svelte';
-  import ReadPanel from './ReadPanel.svelte';
+  import ReadPanel, { type ReadView } from './ReadPanel.svelte';
   import Menu from './ui/Menu.svelte';
+  import Segmented from './ui/Segmented.svelte';
 
   type Tab = 'read' | 'ai' | 'details';
   const TABS = [
     { id: 'read', label: 'Read', icon: BookOpen },
-    { id: 'ai', label: 'Chat', icon: Sparkles },
+    { id: 'ai', label: 'Chat & review', icon: Sparkles },
     { id: 'details', label: 'Details', icon: Info },
   ] as const;
 
@@ -61,6 +59,9 @@
     onNewPage,
   }: Props = $props();
   let tab = $state<Tab>('read');
+  let readView = $state<ReadView>('rendered');
+  // Suggestions in this page's chat waiting to be recommended, counted on its tab.
+  let openSuggestions = $state(0);
   // A page with sub-pages is asked about together with them unless the person chooses the page alone.
   let scope = $state<AiScope>('branch');
   let purging = $state(false);
@@ -73,6 +74,20 @@
   let descendantCount = $state(0);
 
   const detail = $derived(page?.detail);
+  const metaLine = $derived(
+    detail
+      ? [
+          detail.author || 'Unknown author',
+          `Updated ${new Date(detail.lastModified).toLocaleDateString()}`,
+          `v${detail.version}`,
+          detail.attachments.length
+            ? `${detail.attachments.length} attachment${detail.attachments.length === 1 ? '' : 's'}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : '',
+  );
   const spaceKey = $derived((detail?.spaceKey || activeSpace).trim().toUpperCase());
 
   $effect(() => {
@@ -140,8 +155,9 @@
 
   function copyMarkdown(): void {
     if (!page) return;
-    navigator.clipboard.writeText(page.parsed.markdown).then(
-      () => toast('Markdown copied.', 'success'),
+    const xml = readView === 'xml';
+    navigator.clipboard.writeText(xml ? page.detail.storageXml : page.parsed.markdown).then(
+      () => toast(xml ? 'Storage XML copied.' : 'Markdown copied.', 'success'),
       () => toast('The browser blocked the clipboard; use Read → Markdown and copy from there.', 'error'),
     );
   }
@@ -157,21 +173,25 @@
   <div class="workbench-main">
     <div class="document-toolbar">
       <div class="document-title-group">
-        <div class="document-title">
+        <nav class="document-breadcrumbs" aria-label="Where this page is">
+          <span>{detail.spaceKey}</span>
+          {#each detail.ancestors as a (a.id)}
+            <span aria-hidden="true">/</span>
+            <button class="link-btn" onclick={() => onSelectPage(a.id)}>{a.title}</button>
+          {/each}
+        </nav>
+        <h2 class="document-title">
           <span>{detail.title}</span>
           {#if excluded}
             <span class="pill pill-warn" title="Listed in .confluenceignore: never sent to an AI">
               <ShieldOff size={12} /> Excluded from AI
             </span>
           {/if}
-        </div>
-        <nav class="document-breadcrumbs" aria-label="Where this page is">
-          <span>{detail.spaceKey}</span>
-          {#each detail.ancestors as a (a.id)}
-            <span>/</span>
-            <button class="link-btn" onclick={() => onSelectPage(a.id)}>{a.title}</button>
-          {/each}
-        </nav>
+        </h2>
+        <p class="document-meta">
+          <span>{metaLine}</span>
+          {#each detail.labels as l (l)}<span class="document-label"><Tag size={12} /> {l}</span>{/each}
+        </p>
       </div>
       <div class="toolbar-buttons">
         {#if detail.webUrl}
@@ -179,16 +199,18 @@
             href={detail.webUrl}
             target="_blank"
             rel="noreferrer"
-            class="btn btn-secondary btn-sm"
+            class="btn btn-secondary btn-square"
             title="Open in Confluence"
+            aria-label="Open in Confluence"
           >
-            <ExternalLink size={13} />
+            <ExternalLink size={14} />
           </a>
         {/if}
         <Menu
           title="More for this page"
+          buttonClass="btn btn-secondary btn-square"
           items={[
-            { label: 'Copy Markdown', icon: Copy, onSelect: copyMarkdown },
+            { label: readView === 'xml' ? 'Copy Storage XML' : 'Copy Markdown', icon: Copy, onSelect: copyMarkdown },
             { label: 'Download .md', icon: Download, onSelect: download },
             'divider',
             {
@@ -200,45 +222,54 @@
             },
           ]}
         >
-          {#snippet label()}<MoreHorizontal size={14} />{/snippet}
+          {#snippet label()}<Ellipsis size={14} />{/snippet}
         </Menu>
-        <button class="btn btn-secondary btn-sm" onclick={onNewPage} title="Write a new page under “{detail.title}”">
+        <button class="btn btn-secondary" onclick={onNewPage} title="Write a new page under “{detail.title}”">
           <FilePlus2 size={14} /> New sub-page
+        </button>
+        <button
+          class="btn btn-primary"
+          onclick={() => (tab = 'ai')}
+          title="Ask about this page, and review it for problems, in its chat"
+        >
+          <Sparkles size={14} /> Review with AI
         </button>
       </div>
     </div>
 
-    <div class="document-meta-chips">
-      <span class="meta-chip"><User size={12} /> {detail.author || 'Unknown'}</span>
-      <span class="meta-chip">
-        <Calendar size={12} />
-        {new Date(detail.lastModified).toLocaleDateString()} (v{detail.version})
-      </span>
-      {#each detail.labels as l (l)}<span class="meta-chip"><Tag size={12} /> {l}</span>{/each}
-      {#if detail.attachments.length > 0}
-        <span class="meta-chip">
-          <Paperclip size={12} />
-          {detail.attachments.length} attachment{detail.attachments.length === 1 ? '' : 's'}
-        </span>
+    <div class="view-tabs">
+      <div class="view-tabs-list" role="tablist">
+        {#each TABS as t (t.id)}
+          <button
+            role="tab"
+            aria-selected={tab === t.id}
+            class={['tab-btn', tab === t.id && 'active']}
+            onclick={() => (tab = t.id)}
+          >
+            <t.icon size={14} />
+            {t.label}
+            {#if t.id === 'ai' && openSuggestions}<span class="tab-count" title="Suggestions to recommend"
+                >{openSuggestions}</span
+              >{/if}
+          </button>
+        {/each}
+      </div>
+      {#if tab === 'read'}
+        <Segmented
+          label="View"
+          value={readView}
+          onChange={(v) => (readView = v)}
+          options={[
+            { value: 'rendered', label: 'Rendered' },
+            { value: 'markdown', label: 'Markdown' },
+            { value: 'xml', label: 'Storage XML', title: 'The page as Confluence stores it' },
+          ]}
+        />
       {/if}
     </div>
 
-    <div class="view-tabs" role="tablist">
-      {#each TABS as t (t.id)}
-        <button
-          role="tab"
-          aria-selected={tab === t.id}
-          class={['tab-btn', tab === t.id && 'active']}
-          onclick={() => (tab = t.id)}
-        >
-          <t.icon size={14} />
-          {t.label}
-        </button>
-      {/each}
-    </div>
-
     <!-- Every panel stays mounted, so a question being typed or a proposal being edited survives a tab switch. -->
-    <div class="tab-pane" hidden={tab !== 'read'}><ReadPanel {page} /></div>
+    <div class="tab-pane tab-pane-read" hidden={tab !== 'read'}><ReadPanel {page} view={readView} /></div>
     <div class="tab-pane tab-pane-fill" hidden={tab !== 'ai'}>
       <AskAiPanel
         {detail}
@@ -251,6 +282,7 @@
         {onSelectPage}
         onPushed={onPagesChanged}
         {onWriteNewPage}
+        onOpenCount={(n) => (openSuggestions = n)}
       />
     </div>
     <div class="tab-pane" hidden={tab !== 'details'}>

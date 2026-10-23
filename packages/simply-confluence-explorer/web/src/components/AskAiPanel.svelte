@@ -37,6 +37,8 @@
     /** Pages were written from a queue, so the tree and the page reload. */
     onPushed: () => void;
     onWriteNewPage: (finding: BranchFinding) => void;
+    /** How many suggestions wait to be recommended, for the page's tab to count. */
+    onOpenCount?: (n: number) => void;
   };
 
   let {
@@ -50,6 +52,7 @@
     onSelectPage,
     onPushed,
     onWriteNewPage,
+    onOpenCount,
   }: Props = $props();
 
   // Questions to begin with, offered beside the review until the first question is asked.
@@ -187,6 +190,7 @@
     {onSelectPage}
     {onPushed}
     {onWriteNewPage}
+    {onOpenCount}
     starters={[review, ...QUICK]}
   >
     {#snippet empty()}

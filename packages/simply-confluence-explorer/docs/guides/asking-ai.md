@@ -43,7 +43,7 @@ environment.
 
 ## Chat about a page or a directory
 
-Open a page and choose the **Chat** tab.
+Open a page and click **Review with AI**, or choose its **Chat & review** tab.
 
 ![A chat about a page and the pages under it, with the leak guard note above the answer](../images/ask-ai.webp)
 
