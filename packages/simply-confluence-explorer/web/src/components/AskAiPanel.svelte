@@ -15,10 +15,11 @@
     UserCheck,
   } from '@lucide/svelte';
   import type { BranchFinding, PageDetail } from '../../../src/api/types.js';
-  import { api } from '../support/api.js';
+  import { api, type Coverage } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import { type Starter } from './ChatThread.svelte';
   import ChatWorkspace from './ChatWorkspace.svelte';
+  import AttachmentsNote from './AttachmentsNote.svelte';
   import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
 
@@ -94,6 +95,8 @@
   ];
 
   let engine = $state<{ available: boolean; engine: string } | null>(null);
+  // What the chat's pages hold, shared by the scope bar's count and the attachments note under it.
+  let counts = $state<Coverage | null>(null);
   const chat = new AiChat();
 
   const effective = $derived<AiScope>(scope === 'branch' && descendantCount === 0 ? 'page' : scope);
@@ -135,53 +138,6 @@
 </script>
 
 <div class="ask-ai">
-  <div class="panel-bar">
-    <Segmented
-      label="Ask about"
-      value={effective}
-      onChange={onScopeChange}
-      options={[
-        {
-          value: 'branch',
-          label: `With sub-pages${descendantCount ? ` (${descendantCount})` : ''}`,
-          disabled: descendantCount === 0,
-          title: descendantCount ? 'This page and everything under it' : 'This page has no sub-pages',
-        },
-        { value: 'page', label: 'This page' },
-      ]}
-    />
-    <span class="pill pill-plain" title="Choose the AI provider in Settings">
-      {engine?.available ? engine.engine : 'No AI configured'}
-    </span>
-    {#if turns.length > 0}
-      <button
-        class="btn btn-secondary btn-sm"
-        onclick={() => chat.startNew()}
-        title="Start a new conversation; this one stays saved"
-      >
-        <RotateCcw size={12} /> New conversation
-      </button>
-    {/if}
-  </div>
-
-  {#if !blocked}
-    <SummaryCoverage
-      {spaceKey}
-      rootPageId={effective === 'branch' ? detail.id : undefined}
-      chosen={effective === 'page' ? { pageIds: [detail.id] } : undefined}
-      {chat}
-    />
-  {/if}
-  {#if engine && !engine.available}
-    <div class="alert alert-warning">No AI provider is set up. Choose one under Settings → AI provider.</div>
-  {/if}
-  {#if blocked}
-    <div class="alert alert-warning">
-      <ShieldOff size={14} /> This page is excluded by <code>.confluenceignore</code>, so it is never sent to an AI. Ask
-      about the whole space in Space chat instead, or change the space's rules.
-    </div>
-  {/if}
-
   <ChatWorkspace
     {chat}
     {subject}
@@ -193,12 +149,71 @@
     {onOpenCount}
     starters={[review, ...QUICK]}
   >
+    {#snippet top()}
+      <div class="scope-bar">
+        <span>Asking about</span>
+        <Segmented
+          label="Ask about"
+          value={effective}
+          onChange={onScopeChange}
+          options={[
+            {
+              value: 'branch',
+              label: descendantCount
+                ? `This page + ${descendantCount} sub-page${descendantCount === 1 ? '' : 's'}`
+                : 'With sub-pages',
+              disabled: descendantCount === 0,
+              title: descendantCount ? 'This page and everything under it' : 'This page has no sub-pages',
+            },
+            { value: 'page', label: 'This page only' },
+          ]}
+        />
+        <span class="spacer"></span>
+        {#if !blocked}
+          <SummaryCoverage
+            {spaceKey}
+            rootPageId={effective === 'branch' ? detail.id : undefined}
+            chosen={effective === 'page' ? { pageIds: [detail.id] } : undefined}
+            {chat}
+            inline
+            bind:counts
+          />
+        {/if}
+        <span class="pill pill-plain" title="Choose the AI provider in Settings">
+          {engine?.available ? engine.engine : 'No AI configured'}
+        </span>
+        {#if turns.length > 0}
+          <button
+            class="btn-icon btn-icon-sm"
+            onclick={() => chat.startNew()}
+            title="New conversation; this one stays saved"
+            aria-label="New conversation"
+          >
+            <RotateCcw size={13} />
+          </button>
+        {/if}
+      </div>
+    {/snippet}
+    {#snippet notes()}
+      {#if engine && !engine.available}
+        <div class="alert alert-warning">No AI provider is set up. Choose one under Settings → AI provider.</div>
+      {/if}
+      {#if blocked}
+        <div class="alert alert-warning">
+          <ShieldOff size={14} /> This page is excluded by <code>.confluenceignore</code>, so it is never sent to an AI.
+          Ask about the whole space in Space chat instead, or change the space's rules.
+        </div>
+      {/if}
+      {#if !blocked && counts?.attachments}
+        <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
+      {/if}
+    {/snippet}
     {#snippet empty()}
       <Bot size={32} />
       <strong>Ask about {subject}</strong>
       <p>
         Start with one of these, or ask your own question below. The conversation is saved and picks up where you left
-        off; <strong>New conversation</strong> brings these back.
+        off; <strong>New conversation</strong>, beside the AI's name above, brings these back.
       </p>
     {/snippet}
   </ChatWorkspace>

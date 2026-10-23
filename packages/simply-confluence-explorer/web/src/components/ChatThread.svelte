@@ -11,10 +11,12 @@
 <script lang="ts">
   import {
     Activity,
+    Bot,
     Check,
     Clock,
     Code2,
     Copy,
+    FileText,
     Info,
     Layers,
     ListChecks,
@@ -24,7 +26,6 @@
     ShieldCheck,
     Sparkles,
     Square,
-    Wand2,
     X,
   } from '@lucide/svelte';
   import type { Snippet } from 'svelte';
@@ -42,7 +43,7 @@
   // A conversation with the AI: its turns, the files added to it, and the box to ask the next question,
   // with Stop while an answer is coming (ADR-047). Suggestions an answer makes go to the chat's review
   // queue, which the answer links to; an answer about an open edit can propose a revision of it, to
-  // accept or dismiss (ADR-060). The page's Chat tab and Space chat both show one.
+  // accept or dismiss (ADR-060). The page's Chat & review tab and Space chat both show one.
   type Props = {
     chat: AiChat;
     /** What the conversation is about, as the thinking note and the question box name it. */
@@ -57,8 +58,10 @@
     empty?: Snippet;
     /** Ways to begin, shown until the first question is asked. */
     starters?: Starter[];
-    /** Shown in place of the conversation, such as one of the chat's queues; the question box stays. */
+    /** Shown in place of the conversation, such as an open edit; the question box stays. */
     view?: Snippet;
+    /** Shown at the top of the conversation and scrolled with it, such as notes on what it reads. */
+    lead?: Snippet;
     /** The edit the next question is about, while the person has it open. */
     focus?: Focus | null;
     onLeaveFocus?: () => void;
@@ -68,6 +71,8 @@
     currentText?: (runId: string, pageId: string) => string | undefined;
     /** A revision was accepted or dismissed, so the queues are read again. */
     onEditDecided?: () => void;
+    /** The question box as one row, for a chat with less room. */
+    compact?: boolean;
   };
 
   let {
@@ -80,11 +85,13 @@
     empty,
     starters = [],
     view,
+    lead,
     focus = null,
     onLeaveFocus,
     onOpenTab,
     currentText,
     onEditDecided,
+    compact = false,
   }: Props = $props();
   let deciding = $state<number | null>(null);
 
@@ -199,6 +206,7 @@
   <div class="chat-view">{@render view()}</div>
 {/if}
 <div class="chat-stream" hidden={!!view}>
+  {@render lead?.()}
   {#if turns.length === 0 && !chat.pending && !batch}
     <div class="empty-state">{@render empty?.()}</div>
     {#if starters.length && !blocked}
@@ -222,130 +230,145 @@
       <div class="chat-msg chat-user">{t.text}</div>
     {:else}
       <div class="chat-msg chat-ai">
-        <div class="chat-msg-head">
-          <span>
-            <Sparkles size={13} />
-            {t.engine || 'AI'} · {new Date(t.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-          <span class="chat-msg-tools">
-            {#if t.traceId}
+        <span class="chat-avatar" aria-hidden="true"><Bot size={15} /></span>
+        <div class="chat-ai-body">
+          <div class="chat-msg-head">
+            <span>
+              <Sparkles size={13} />
+              {t.engine || 'AI'} · {new Date(t.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span class="chat-msg-tools">
+              {#if t.traceId}
+                <button
+                  class="btn btn-secondary btn-xs"
+                  title="How this answer was made: what was searched, what was sent, and how long each step took"
+                  onclick={() => observe.show('trace', { traceId: t.traceId })}
+                >
+                  <Activity size={11} /> Trace
+                </button>
+              {/if}
+              <button class="btn btn-secondary btn-xs" onclick={() => (raw[i] = !raw[i])}>
+                <Code2 size={11} />
+                {raw[i] ? 'Formatted' : 'Markdown'}
+              </button>
+              <button class="btn btn-secondary btn-xs" onclick={() => copy(i, t.text)}>
+                {#if copied === i}<Check size={11} />{:else}<Copy size={11} />{/if}
+                {copied === i ? 'Copied' : 'Copy'}
+              </button>
+            </span>
+          </div>
+          {#if t.guardSummary}
+            <div class="guard-note" title="Checked by the outbound guard before anything was sent">
+              <ShieldCheck size={12} />
+              {t.guardSummary}
+            </div>
+          {/if}
+          {#if t.images && chat.session}<ImagesNote spaceKey={chat.session.scope.spaceKey} report={t.images} />{/if}
+          {#if t.attachments && chat.session}<AttachmentsNote
+              spaceKey={chat.session.scope.spaceKey}
+              report={t.attachments}
+            />{/if}
+          {#if t.weakMatch}
+            <div class="alert alert-warning chat-weak">
+              Weak matches: the pages found share few words with the question, so this answer may not be about it. Try
+              naming the system or page, or choose the pages to read under Reading.
+            </div>
+          {/if}
+          {#if t.sent}
+            {@const lines = sentLines(t.sent)}
+            <details class="chat-read">
+              <summary
+                >What was sent: {lines.summary}{lines.leftOut.length
+                  ? ` · ${lines.leftOut.length} left out`
+                  : ''}</summary
+              >
+              {#if lines.leftOut.length}
+                <ul>
+                  {#each lines.leftOut as l (l)}<li>{l}</li>{/each}
+                </ul>
+              {:else}
+                <p class="muted">Everything this answer was meant to read reached the model.</p>
+              {/if}
+            </details>
+          {/if}
+          {#if t.corpus?.mode === 'retrieved' && !t.corpus.batches && i === turns.length - 1 && turns[i - 1]?.role === 'user' && !batch}
+            <div class="chat-thorough-offer">
+              <span class="muted">This answer read {plural(sectionsOf(t), 'section')} of many.</span>
               <button
                 class="btn btn-secondary btn-xs"
-                title="How this answer was made: what was searched, what was sent, and how long each step took"
-                onclick={() => observe.show('trace', { traceId: t.traceId })}
+                disabled={chat.sending}
+                title="Read many more sections over several requests and combine what each found"
+                onclick={() => void chat.send(turns[i - 1].text, true)}
               >
-                <Activity size={11} /> Trace
+                <Layers size={11} /> Answer this thoroughly
               </button>
-            {/if}
-            <button class="btn btn-secondary btn-xs" onclick={() => (raw[i] = !raw[i])}>
-              <Code2 size={11} />
-              {raw[i] ? 'Formatted' : 'Markdown'}
-            </button>
-            <button class="btn btn-secondary btn-xs" onclick={() => copy(i, t.text)}>
-              {#if copied === i}<Check size={11} />{:else}<Copy size={11} />{/if}
-              {copied === i ? 'Copied' : 'Copy'}
-            </button>
-          </span>
-        </div>
-        {#if t.guardSummary}
-          <div class="guard-note" title="Checked by the outbound guard before anything was sent">
-            <ShieldCheck size={12} />
-            {t.guardSummary}
-          </div>
-        {/if}
-        {#if t.images && chat.session}<ImagesNote spaceKey={chat.session.scope.spaceKey} report={t.images} />{/if}
-        {#if t.attachments && chat.session}<AttachmentsNote
-            spaceKey={chat.session.scope.spaceKey}
-            report={t.attachments}
-          />{/if}
-        {#if t.weakMatch}
-          <div class="alert alert-warning chat-weak">
-            Weak matches: the pages found share few words with the question, so this answer may not be about it. Try
-            naming the system or page, or choose the pages to read under Reading.
-          </div>
-        {/if}
-        {#if t.sent}
-          {@const lines = sentLines(t.sent)}
-          <details class="chat-read">
-            <summary
-              >What was sent: {lines.summary}{lines.leftOut.length
-                ? ` · ${lines.leftOut.length} left out`
-                : ''}</summary
-            >
-            {#if lines.leftOut.length}
-              <ul>
-                {#each lines.leftOut as l (l)}<li>{l}</li>{/each}
-              </ul>
-            {:else}
-              <p class="muted">Everything this answer was meant to read reached the model.</p>
-            {/if}
-          </details>
-        {/if}
-        {#if t.corpus?.mode === 'retrieved' && !t.corpus.batches && i === turns.length - 1 && turns[i - 1]?.role === 'user' && !batch}
-          <div class="chat-thorough-offer">
-            <span class="muted">This answer read {plural(sectionsOf(t), 'section')} of many.</span>
-            <button
-              class="btn btn-secondary btn-xs"
-              disabled={chat.sending}
-              title="Read many more sections over several requests and combine what each found"
-              onclick={() => void chat.send(turns[i - 1].text, true)}
-            >
-              <Layers size={11} /> Answer this thoroughly
-            </button>
-          </div>
-        {/if}
-        {#if t.corpus?.mode === 'batched'}
-          <p class="chat-read">{readLabel(t)}</p>
-        {:else if t.matchedPages?.length}
-          <details class="chat-read">
-            <summary>{readLabel(t)}</summary>
-            <ul>
-              {#each t.matchedPages as p (p.id)}
-                <li>
-                  <button class="link-btn" onclick={() => onSelectPage(p.id)} title="Open this page">{p.title}</button>
-                  {#if p.sections?.length}<span> › {p.sections.map((s) => s.heading).join(', ')}</span>{/if}
-                  {#if p.why}<span class="muted">: {p.why}</span>{/if}
-                </li>
-              {/each}
-            </ul>
-          </details>
-        {/if}
-        {#if raw[i]}
-          <pre class="code-viewer-box">{t.text}</pre>
-        {:else}
-          <Markdown source={t.text} extraClass="ai-response-rendered" />
-        {/if}
-        {#if t.queued}
-          <div class="chat-queued">
-            <ListChecks size={13} /> Review queue: {queuedLine(t.queued)}.
-            <button class="link-btn" onclick={() => onOpenTab?.('review')}>Review</button>
-          </div>
-        {/if}
-        {#if t.proposedEdit}
-          {@const p = t.proposedEdit}
-          <div class="chat-proposal">
-            <div class="chat-queued">
-              <PenLine size={13} /> A revised edit of {p.title}
-              {#if t.proposalClosed}<span class="muted">· decided</span>{/if}
-              <button class="link-btn" onclick={() => onOpenTab?.('changes')}>Open the edit</button>
             </div>
-            {#if !t.proposalClosed}
-              <Diff before={currentText?.(p.runId, p.pageId) ?? ''} after={p.text} />
-              <div class="branch-actions">
-                <button class="btn btn-primary btn-sm" disabled={deciding !== null} onclick={() => decideEdit(i, true)}>
-                  <Check size={13} /> Accept into the edit
-                </button>
+          {/if}
+          {#if t.corpus?.mode === 'batched'}
+            <p class="chat-read">{readLabel(t)}</p>
+          {/if}
+          {#if raw[i]}
+            <pre class="code-viewer-box">{t.text}</pre>
+          {:else}
+            <Markdown source={t.text} extraClass="ai-response-rendered" />
+          {/if}
+          {#if t.corpus?.mode !== 'batched' && t.matchedPages?.length}
+            <div class="chat-sources">
+              <span class="chat-sources-label">{readLabel(t)}</span>
+              {#each t.matchedPages as p (p.id)}
                 <button
-                  class="btn btn-secondary btn-sm"
-                  disabled={deciding !== null}
-                  onclick={() => decideEdit(i, false)}
+                  class="chat-source"
+                  onclick={() => onSelectPage(p.id)}
+                  title={[
+                    `Open ${p.title}`,
+                    p.sections?.length ? `Sections: ${p.sections.map((s) => s.heading).join(', ')}` : '',
+                    p.why ?? '',
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
                 >
-                  <X size={13} /> Dismiss
+                  <FileText size={12} />
+                  {p.title}{#if p.sections?.length}<span class="chat-source-more"> › {p.sections.length}</span>{/if}
                 </button>
+              {/each}
+            </div>
+          {/if}
+          {#if t.queued}
+            <div class="chat-queued">
+              <ListChecks size={13} /> Review queue: {queuedLine(t.queued)}.
+              <button class="link-btn" onclick={() => onOpenTab?.('review')}>Review</button>
+            </div>
+          {/if}
+          {#if t.proposedEdit}
+            {@const p = t.proposedEdit}
+            <div class="chat-proposal">
+              <div class="chat-queued">
+                <PenLine size={13} /> A revised edit of {p.title}
+                {#if t.proposalClosed}<span class="muted">· decided</span>{/if}
+                <button class="link-btn" onclick={() => onOpenTab?.('changes')}>Open the edit</button>
               </div>
-            {/if}
-          </div>
-        {/if}
+              {#if !t.proposalClosed}
+                <Diff before={currentText?.(p.runId, p.pageId) ?? ''} after={p.text} />
+                <div class="branch-actions">
+                  <button
+                    class="btn btn-primary btn-sm"
+                    disabled={deciding !== null}
+                    onclick={() => decideEdit(i, true)}
+                  >
+                    <Check size={13} /> Accept into the edit
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    disabled={deciding !== null}
+                    onclick={() => decideEdit(i, false)}
+                  >
+                    <X size={13} /> Dismiss
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
   {/each}
@@ -376,23 +399,7 @@
   <div bind:this={bottom}></div>
 </div>
 
-<!-- Once a conversation has begun, what it found or agreed can become suggestions; a fresh review
-     belongs in a new chat, where the starters offer it. -->
-{#if !blocked && turns.length > 0}
-  <div class="chat-actions">
-    <button
-      class="btn btn-secondary btn-sm"
-      disabled={chat.sending || !!batch}
-      onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
-      title="Add the changes this conversation found or agreed to the review queue"
-    >
-      <Wand2 size={13} /> Turn this into changes
-    </button>
-    <span class="muted chat-actions-note">Adds what this chat found or agreed to its review queue.</span>
-  </div>
-{/if}
-
-<!-- On a queue tab the conversation is out of sight, so its state is shown above the question box. -->
+<!-- While an edit is open the conversation is out of sight, so its state is shown above the question box. -->
 {#if view && (chat.sending || chat.error || turns.at(-1)?.role === 'assistant')}
   <div class="chat-peek">
     {#if chat.sending}
@@ -431,7 +438,7 @@
 {/if}
 
 <form
-  class="chat-input"
+  class={['chat-composer', compact && 'compact']}
   onsubmit={(e) => {
     e.preventDefault();
     ask(input);
@@ -449,33 +456,33 @@
       if (picked.length) void chat.addFiles(picked);
     }}
   />
-  <button
-    type="button"
-    class="btn btn-secondary"
-    onclick={() => files.click()}
-    disabled={chat.sending}
-    title="Add files (PDF, Markdown, text, CSV, JSON, YAML, HTML) to this conversation"
-    aria-label="Add files"
-  >
-    <Paperclip size={15} />
-  </button>
-  <input
-    class="form-input"
+  <textarea
+    class="chat-composer-input"
+    rows={compact ? 1 : 2}
     placeholder={focus ? `Ask for a change to ${focus.title}…` : (placeholder ?? `Ask about ${subject}…`)}
+    aria-label="Your question"
     bind:value={input}
     disabled={chat.sending || blocked}
-  />
-  {#if chat.sending}
+    onkeydown={(e) => {
+      // Enter asks; Shift+Enter starts a new line.
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        ask(input);
+      }
+    }}
+  ></textarea>
+  <div class="chat-composer-row">
     <button
       type="button"
-      class="btn btn-secondary"
-      onclick={() => (input = chat.stop() ?? input)}
-      title="Stop the answer and put the question back to edit"
+      class="btn-icon"
+      onclick={() => files.click()}
+      disabled={chat.sending}
+      title="Add files (PDF, Markdown, text, CSV, JSON, YAML, HTML) to this conversation"
+      aria-label="Add files"
     >
-      <Square size={13} /> Stop
+      <Paperclip size={16} />
     </button>
-  {:else}
-    {#if canBeThorough}
+    {#if canBeThorough && !chat.sending}
       <label class="chat-thorough">
         <input type="checkbox" bind:checked={thorough} disabled={blocked || !!batch} aria-describedby="thorough-hint" />
         Thorough
@@ -488,8 +495,20 @@
         </span>
       </button>
     {/if}
-    <button type="submit" class="btn btn-primary" disabled={!input.trim() || blocked || (thorough && !!batch)}>
-      <Send size={15} /> Send
-    </button>
-  {/if}
+    <span class="spacer"></span>
+    {#if chat.sending}
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm"
+        onclick={() => (input = chat.stop() ?? input)}
+        title="Stop the answer and put the question back to edit"
+      >
+        <Square size={13} /> Stop
+      </button>
+    {:else}
+      <button type="submit" class="btn btn-primary btn-sm" disabled={!input.trim() || blocked || (thorough && !!batch)}>
+        <Send size={14} /> Send
+      </button>
+    {/if}
+  </div>
 </form>

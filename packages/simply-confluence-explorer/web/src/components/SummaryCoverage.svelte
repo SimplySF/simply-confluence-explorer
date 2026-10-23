@@ -17,9 +17,11 @@
     counts?: Coverage | null;
     /** The chat, which keeps its choice about attachments. */
     chat?: AiChat;
+    /** Only the count, as a short phrase for a chat's scope bar; the chat shows the attachments itself. */
+    inline?: boolean;
   };
 
-  let { spaceKey, rootPageId, chosen, counts = $bindable(null), chat }: Props = $props();
+  let { spaceKey, rootPageId, chosen, counts = $bindable(null), chat, inline = false }: Props = $props();
   let finished = $state(0);
 
   $effect(() => jobs.onFinished((j) => j.kind === 'summaries' && j.spaceKey === spaceKey && finished++));
@@ -48,23 +50,43 @@
   const running = $derived(jobs.list.some((j) => j.kind === 'summaries' && j.spaceKey === spaceKey));
 </script>
 
-{#if counts?.attachments}
-  <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
-{/if}
-{#if counts && counts.missing > 0}
-  <div class="summary-coverage">
-    <Sparkles size={12} />
-    <span>
-      Chats find more in indexed pages: {counts.pages - counts.missing} of {counts.pages}
-      {counts.pages === 1 ? 'page here is' : 'pages here are'} indexed.
+{#if inline}
+  {#if counts && counts.pages > 0}
+    <span class="scope-coverage">
+      {counts.pages - counts.missing} of {counts.pages} indexed
+      {#if counts.missing > 0}
+        ·
+        <button
+          type="button"
+          class="link-btn"
+          disabled={running}
+          onclick={() => jobs.startSummaries(spaceKey, rootPageId, chosen)}
+          title="Chats find more in indexed pages: summaries, topics and the questions each page answers"
+        >
+          {running ? 'Indexing…' : counts.missing === counts.pages ? 'Index them' : 'Index the rest'}
+        </button>
+      {/if}
     </span>
-    <button
-      type="button"
-      class="btn btn-secondary btn-xs"
-      disabled={running}
-      onclick={() => jobs.startSummaries(spaceKey, rootPageId, chosen)}
-    >
-      {running ? 'Indexing…' : 'Index the rest'}
-    </button>
-  </div>
+  {/if}
+{:else}
+  {#if counts?.attachments}
+    <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
+  {/if}
+  {#if counts && counts.missing > 0}
+    <div class="summary-coverage">
+      <Sparkles size={12} />
+      <span>
+        Chats find more in indexed pages: {counts.pages - counts.missing} of {counts.pages}
+        {counts.pages === 1 ? 'page here is' : 'pages here are'} indexed.
+      </span>
+      <button
+        type="button"
+        class="btn btn-secondary btn-xs"
+        disabled={running}
+        onclick={() => jobs.startSummaries(spaceKey, rootPageId, chosen)}
+      >
+        {running ? 'Indexing…' : 'Index the rest'}
+      </button>
+    </div>
+  {/if}
 {/if}
