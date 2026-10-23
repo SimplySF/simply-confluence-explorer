@@ -80,6 +80,8 @@ export class SpaceStore {
   // changes whenever a file is added to it or removed, so one look at it replaces listing thousands of
   // files, and a change made outside the app is still seen.
   private readonly idsListed = new Map<string, { mtimeMs: number; revision: number; ids: string[] }>();
+  // Each page's attachments as last listed, until its folder or the store changes (attachmentEntries).
+  private readonly attachmentsListed = new Map<string, { stamp: string; entries: AttachmentFile[] }>();
 
   public constructor(
     dataDir: string,
@@ -187,19 +189,18 @@ export class SpaceStore {
 
   /** Every attachment a page lists, each marked missing when its file is not on this machine. */
   public attachmentEntries(spaceKey: string, page: PageDetail): AttachmentFile[] {
+    if (page.attachments.length === 0) return [];
     const dir = this.attachmentsDir(spaceKey, page);
-    const names = attachmentFileNames(page.attachments.map((a) => a.title));
-    return page.attachments.map((a, i) => {
-      const file = within(dir, names[i]);
-      const stat = fs.statSync(file, { throwIfNoEntry: false });
-      return {
-        title: a.title,
-        mediaType: a.mediaType,
-        file,
-        bytes: stat?.size ?? 0,
-        ...(stat ? {} : { missing: true }),
-      };
-    });
+    // Kept until the page's folder or the store changes, so a page asked about again costs one look
+    // at its folder rather than one for each of its files.
+    const folder = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+    const stamp = `${this.revision(spaceKey)}|${folder}|${page.version}`;
+    const id = `${spaceKey.toUpperCase()}/${page.id}`;
+    const kept = this.attachmentsListed.get(id);
+    if (kept?.stamp === stamp) return kept.entries;
+    const entries = listAttachments(dir, page);
+    this.attachmentsListed.set(id, { stamp, entries });
+    return entries;
   }
 
   /** The version of a page on disk, or 0 when it is not synced. */
@@ -559,6 +560,22 @@ export class SpaceStore {
  * The file name each attachment is kept under: its title made safe for the disk, with a number added
  * when two titles become the same name, so neither file overwrites the other.
  */
+/** A page's attachments as its folder holds them, each with its size, or marked missing. */
+function listAttachments(dir: string, page: PageDetail): AttachmentFile[] {
+  const names = attachmentFileNames(page.attachments.map((a) => a.title));
+  return page.attachments.map((a, i) => {
+    const file = within(dir, names[i]);
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    return {
+      title: a.title,
+      mediaType: a.mediaType,
+      file,
+      bytes: stat?.size ?? 0,
+      ...(stat ? {} : { missing: true }),
+    };
+  });
+}
+
 export function attachmentFileNames(titles: string[]): string[] {
   const used = new Set<string>();
   return titles.map((title) => {
