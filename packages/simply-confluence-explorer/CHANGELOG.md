@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.2](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.1...%40simplysf%2Fsimply-confluence-explorer%400.9.2) (2026-10-23)
+
+### Bug Fixes
+
+- an image the AI did not read says why the AI gave no answer with it ([#56](https://github.com/SimplySF/simply-confluence-explorer/issues/56)) ([257a4aa](https://github.com/SimplySF/simply-confluence-explorer/commit/257a4aa1c7152d626c130039f30be5987fdb57e3))
+
 ## [0.9.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.0...%40simplysf%2Fsimply-confluence-explorer%400.9.1) (2026-10-23)
 
 ### Performance Improvements
