@@ -11,16 +11,16 @@ your disk instead of from Confluence, and the AI features that work across many 
 
 ## Sync a space
 
-Choose a space in the sidebar, open the **Space** menu, and choose **Sync space**.
+Choose a space in the sidebar and click **Sync**, under the space's name.
 
 ![The Space menu, with Sync space at the top](../images/space-menu.webp)
 
-The menu shows progress as the pages arrive, with a **Stop** button, and the header shows it too
+The sidebar shows progress as the pages arrive, with a **Stop** button, and the header shows it too
 while you browse; if you reload the page, the progress comes back. When the sync finishes, a
 message says how many pages were downloaded and how many were already current or excluded, and the
-badge under the space picker changes from **Not synced** to the number of pages synced.
+line under the space's name changes from **Not synced** to the number of pages synced and when.
 
-Run it again at any time with **Update space**. Only pages that changed in Confluence since the last
+Run it again at any time with **Update**, which takes the place of **Sync**. Only pages that changed in Confluence since the last
 sync are downloaded again. A page about to be edited is always read from Confluence first, and its
 copy here is updated if it is older (see [Changing pages](/guides/changing-pages/)).
 
@@ -41,12 +41,14 @@ A synced space behaves the same as a live one, but faster and without asking Con
 page. The tree on the left is read from your disk, and the page view shows the copy. To see a
 page's latest version, sync the space again.
 
-- **Filter pages**: type in the box above the tree, or press `/` to jump to it. A page stays visible
-  if it, or any page under it, matches.
-- **Jump to a page**: paste a Confluence page address or a page id into **Jump to a page URL or id**.
-  The app finds the page and switches to its space.
+- **Find a page**: type part of its title into the search at the top of the window, or press `/` to
+  jump to it, and pick the page from the list. Paste a Confluence page address or a page id there
+  instead, and the app finds the page and switches to its space.
+- **Filter pages**: type in the box above the tree. A page stays visible if it, or any page under it,
+  matches.
 - **Read it three ways**: the **Read** tab shows the page **Rendered**, as **Markdown**, or as
-  **Storage XML**, Confluence's own format. **Copy Markdown** copies the text.
+  **Storage XML**, Confluence's own format, chosen at the right of the tabs. **Copy Markdown**, in the
+  **⋯** menu at the top of the page, copies the text.
 
 ![A page shown as Markdown, with its frontmatter at the top](../images/read-markdown.webp)
 
@@ -75,7 +77,7 @@ A change to a page keeps these parts as markers instead and writes each one back
 
 ## The table of contents
 
-**Table of contents** in the Space menu shows every synced page as a tree, with its AI summary and
+**Table of contents**, in the **⋯** menu beside **Exclusions**, shows every synced page as a tree, with its AI summary and
 topics once those exist. Click a title to open the page. The same table is saved as `TOC.md` and
 `toc.json` in the space's folder, so other tools can use it.
 
@@ -104,7 +106,7 @@ Removing a page here deletes only your copy. Nothing changes in Confluence.
 - **One page**: open it, choose **⋯ → Remove from this machine…**, and decide whether to remove the
   pages under it as well. By default the app also adds a rule to the space's exclusions, so the next
   sync does not download the page again.
-- **Stale copies**: **Remove stale cached pages…** in the Space menu removes copies that the space's
+- **Stale copies**: **Remove stale cached pages…** in the **⋯** menu removes copies that the space's
   rules now exclude, and copies whose Markdown file you deleted yourself.
 
 ## Where the files are

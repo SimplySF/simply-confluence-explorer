@@ -1,12 +1,13 @@
 <script lang="ts">
   import {
     AlertTriangle,
-    ArrowRight,
     Check,
     ChevronDown,
     ChevronRight,
-    ChevronsDown,
-    ChevronsUp,
+    ChevronsDownUp,
+    ChevronsUpDown,
+    CircleCheck,
+    ListFilter,
     MessagesSquare,
     FileText,
     Upload,
@@ -18,7 +19,7 @@
   } from '@lucide/svelte';
   import type { ConfluenceSpace, PageTreeNode, SyncedSpace, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
-  import { messageOf } from '../support/toast.svelte.js';
+  import { syncLine } from '../support/spaceStatus.js';
   import { ancestorsOf, collapsedFor } from '../support/tree.js';
   import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
@@ -32,7 +33,6 @@
     tree: PageTreeNode[];
     selectedPageId: string | null;
     onSelectPage: (pageId: string) => void;
-    onJump: (target: { spaceKey: string; pageId?: string }) => void;
     loading: boolean;
     /** The list of Confluence's spaces is still on its way. */
     spacesLoading: boolean;
@@ -56,7 +56,6 @@
     tree,
     selectedPageId,
     onSelectPage,
-    onJump,
     loading,
     spacesLoading,
     error,
@@ -99,9 +98,6 @@
     return into;
   };
 
-  let jump = $state('');
-  let resolving = $state(false);
-  let jumpError = $state<string | null>(null);
   let switcherOpen = $state(false);
   let spaceFilter = $state('');
   let pageFilter = $state('');
@@ -168,26 +164,6 @@
     spaceFilter = '';
   }
 
-  async function resolve(e: SubmitEvent): Promise<void> {
-    e.preventDefault();
-    if (!jump.trim()) return;
-    resolving = true;
-    jumpError = null;
-    try {
-      const res = await api.resolve(jump.trim());
-      if (res.spaceKey) {
-        onJump({ spaceKey: res.spaceKey, pageId: res.pageId });
-        jump = '';
-      } else {
-        jumpError = 'No space found for this URL or id.';
-      }
-    } catch (err) {
-      jumpError = messageOf(err);
-    } finally {
-      resolving = false;
-    }
-  }
-
   function toggle(id: string): void {
     const next = new Set(collapsed);
     if (next.has(id)) next.delete(id);
@@ -234,25 +210,6 @@
 
 <div class="sidebar-panel">
   <div class="sidebar-header">
-    <form onsubmit={resolve} class="row">
-      <input
-        class="form-input input-sm"
-        placeholder="Jump to a page URL or id"
-        aria-label="Jump to a page URL or id"
-        bind:value={jump}
-        disabled={resolving}
-      />
-      <button
-        type="submit"
-        class="btn btn-secondary btn-sm"
-        disabled={!jump.trim() || resolving}
-        title="Open that page"
-      >
-        {#if resolving}<RefreshCw size={13} class="spin" />{:else}<ArrowRight size={13} />{/if}
-      </button>
-    </form>
-    {#if jumpError}<div class="field-error">{jumpError}</div>{/if}
-
     <div
       class="space-switcher"
       bind:this={switcher}
@@ -272,8 +229,21 @@
         onclick={() => (switcherOpen = !switcherOpen)}
       >
         <span class={['space-key', savedKeys.has(upper) && 'space-key-synced']}>{selectedSpace || '—'}</span>
-        <span class="space-name">{active?.name || manifest?.name || selectedSpace || 'Choose a space'}</span>
-        <ChevronDown size={14} />
+        <span class="space-switcher-text">
+          <span class="space-name">{active?.name || manifest?.name || selectedSpace || 'Choose a space'}</span>
+          {#if selectedSpace}
+            <span
+              class="space-switcher-status"
+              title={manifest
+                ? `Synced ${new Date(manifest.lastSynced).toLocaleString()}`
+                : 'Read live from Confluence'}
+            >
+              {#if manifest}<CircleCheck size={12} />{:else}<HardDrive size={12} />{/if}
+              {syncLine(manifest)}
+            </span>
+          {/if}
+        </span>
+        <ChevronsUpDown size={14} />
       </button>
       {#if switcherOpen}
         <div class="space-switcher-list">
@@ -344,28 +314,34 @@
       />
     {/if}
 
-    <button
-      type="button"
-      class={['btn btn-secondary btn-sm space-chat-open', chatOpen && 'active']}
-      disabled={!selectedSpace}
-      onclick={onOpenChat}
-      title="Ask about the whole space, in conversations kept on this machine"
-    >
-      <MessagesSquare size={13} /> Space chat
-    </button>
-    <button
-      type="button"
-      class={['btn btn-secondary btn-sm space-chat-open', pushOpen && 'active']}
-      disabled={!selectedSpace}
-      onclick={onOpenPush}
-      title="The pages staged in every chat of this space, to push together"
-    >
-      <Upload size={13} /> Ready to push{pushCount ? ` (${pushCount})` : ''}
-    </button>
+    <nav class="sidebar-nav" aria-label="Space views">
+      <button
+        type="button"
+        class={['sidebar-nav-item', chatOpen && 'active']}
+        aria-current={chatOpen ? 'page' : undefined}
+        disabled={!selectedSpace}
+        onclick={onOpenChat}
+        title="Ask about the whole space, in conversations kept on this machine"
+      >
+        <MessagesSquare size={15} /> Space chat
+      </button>
+      <button
+        type="button"
+        class={['sidebar-nav-item', pushOpen && 'active']}
+        aria-current={pushOpen ? 'page' : undefined}
+        disabled={!selectedSpace}
+        onclick={onOpenPush}
+        title="The pages staged in every chat of this space, to push together"
+      >
+        <Upload size={15} /> Ready to push
+        {#if pushCount}<span class="sidebar-nav-count" aria-label="{pushCount} staged">{pushCount}</span>{/if}
+      </button>
+    </nav>
 
-    <div class="sidebar-view-switch">
+    <div class="sidebar-tree-tools">
       <Segmented
         label="Show"
+        quiet
         value={view}
         onChange={(v) => (view = v)}
         options={[
@@ -373,30 +349,43 @@
           { value: 'tags', label: 'Tags', title: 'Pages grouped by their labels and AI tags' },
         ]}
       />
+      {#if view === 'pages'}
+        <span class="spacer"></span>
+        <button
+          type="button"
+          class="btn-icon btn-icon-sm"
+          onclick={() => (collapsed = new Set())}
+          title="Expand all"
+          aria-label="Expand all"
+        >
+          <ChevronsUpDown size={14} />
+        </button>
+        <button
+          type="button"
+          class="btn-icon btn-icon-sm"
+          onclick={() => (collapsed = withChildren(tree))}
+          title="Collapse all"
+          aria-label="Collapse all"
+        >
+          <ChevronsDownUp size={14} />
+        </button>
+      {/if}
     </div>
 
-    <div class="row" hidden={view !== 'pages'}>
-      <div class="search-field">
-        <Search size={13} />
-        <input
-          id="tree-filter"
-          class="form-input input-sm"
-          placeholder="Filter pages ( / )"
-          aria-label="Filter pages"
-          bind:value={pageFilter}
-        />
-      </div>
-      <button type="button" class="btn btn-secondary btn-sm" onclick={() => (collapsed = new Set())} title="Expand all">
-        <ChevronsDown size={13} />
-      </button>
-      <button
-        type="button"
-        class="btn btn-secondary btn-sm"
-        onclick={() => (collapsed = withChildren(tree))}
-        title="Collapse all"
-      >
-        <ChevronsUp size={13} />
-      </button>
+    <div class="search-field sidebar-filter" hidden={view !== 'pages'}>
+      <ListFilter size={13} />
+      <input
+        id="tree-filter"
+        class="form-input input-sm"
+        placeholder="Filter pages"
+        aria-label="Filter pages"
+        bind:value={pageFilter}
+      />
+      {#if pageFilter}
+        <button type="button" class="icon-btn" onclick={() => (pageFilter = '')} aria-label="Clear the filter"
+          ><X size={13} /></button
+        >
+      {/if}
     </div>
   </div>
 
@@ -426,7 +415,8 @@
       </div>
     {:else if tree.length === 0}
       <div class="muted tree-message">
-        No pages found in <strong>{selectedSpace}</strong>. Check your permissions, or paste a page URL above.
+        No pages found in <strong>{selectedSpace}</strong>. Check your permissions, or paste a page URL in the search
+        above.
       </div>
     {:else}
       {#each rows as r (r.node.id)}
@@ -440,7 +430,7 @@
           aria-expanded={r.hasChildren ? r.expanded : undefined}
           aria-level={r.depth + 1}
           class={['tree-node-item', r.node.id === selectedPageId && 'selected', r.node.id === focusId && 'focused']}
-          style:padding-left="{0.5 + r.depth * 0.9}rem"
+          style:padding-left="{4 + r.depth * 14}px"
           title={r.node.title}
           onclick={() => {
             focusId = r.node.id;

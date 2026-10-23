@@ -27,6 +27,22 @@ describe('rendering Markdown', () => {
     expect(html).toContain('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
   });
 
+  it("shows Confluence's info and warning panels as callouts, and other quotes as quotes", () => {
+    const info = renderMarkdown('> **info: Heads up**\n> Info panels become alerts.');
+    expect(info).toContain('class="callout callout-info"');
+    expect(info).toContain('<strong>Heads up</strong> Info panels become alerts.');
+    expect(info).not.toContain('info:');
+    expect(renderMarkdown('> **warning: Careful**\n> Not on Fridays.')).toContain('callout-warning');
+    expect(renderMarkdown('> **note**\n> No title.')).toMatch(/callout-info[\s\S]*<p>No title\./);
+    expect(renderMarkdown('> Just a quote.')).toContain('<blockquote>');
+  });
+
+  it("keeps markup in a panel's title as text", () => {
+    const html = renderMarkdown('> **info: <img src=x onerror="alert(1)">**\n> Body.');
+    expect(html).toContain('callout-info');
+    expect(html).not.toMatch(/<img/);
+  });
+
   it('shows inline HTML as text too', () => {
     expect(renderMarkdown('a <b onclick="x()">bold</b> word')).not.toContain('<b ');
   });

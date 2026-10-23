@@ -9,11 +9,14 @@
     message?: string;
     chatTitle?: string;
     sessionId?: string;
+    /** Where the page sits in the space, when it is known. */
+    path?: string;
   };
 </script>
 
 <script lang="ts">
   import { PackageMinus, RefreshCw, Upload } from '@lucide/svelte';
+  import type { Snippet } from 'svelte';
   import type { BranchRun } from '../../../src/api/types.js';
   import { branches } from '../support/api.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
@@ -21,7 +24,8 @@
 
   // The push queue (ADR-060): the staged pages, each with how many changes it writes. Check and push
   // checks the chosen pages first, then asks, listing what will be written and any page with a
-  // problem; only the chosen pages are written, each against the version its edit was made from.
+  // problem; only the chosen pages are written, each against the version its edit was made from. In a
+  // chat's review queue it is a list; on Ready to push, a table with a bar beneath it.
   type Props = {
     rows: PushRow[];
     /** The staged pages changed, so the queue is read again. */
@@ -29,9 +33,12 @@
     /** Pages were written, so the tree and the page reload. */
     onPushed: () => void;
     onOpenChat?: (sessionId: string) => void;
+    /** Shown as a table, with its heading above it and the push bar beneath. */
+    table?: boolean;
+    head?: Snippet;
   };
 
-  let { rows, onChanged, onPushed, onOpenChat }: Props = $props();
+  let { rows, onChanged, onPushed, onOpenChat, table = false, head }: Props = $props();
   let unpicked = $state(new Set<string>());
   let busy = $state<'check' | 'push' | null>(null);
   let checked = $state<BranchRun[] | null>(null);
@@ -48,7 +55,14 @@
     ),
   );
   const ok = $derived(chosenItems.filter((i) => i.status === 'checked'));
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const changeCount = $derived(chosen.reduce((n, r) => n + r.accepted, 0));
+  const allPicked = $derived(rows.length > 0 && chosen.length === rows.length);
   const failed = $derived(chosenItems.filter((i) => i.status !== 'checked'));
+
+  const pickAll = (on: boolean): void => {
+    unpicked = on ? new Set() : new Set(rows.map(keyOf));
+  };
 
   function toggle(r: PushRow): void {
     const next = new Set(unpicked);
@@ -109,11 +123,91 @@
   }
 </script>
 
-{#if rows.length === 0}
-  <div class="empty-state">
-    <Upload size={28} />
+{#snippet pushButton(big: boolean)}
+  <button class={['btn btn-primary', big && 'push-go']} disabled={!chosen.length || !!busy} onclick={check}>
+    {#if busy}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if}
+    Check and push {chosen.length}
+  </button>
+{/snippet}
+
+{#snippet fromChat(r: PushRow)}
+  {#if r.sessionId && onOpenChat}
+    <button class="link-btn" onclick={() => onOpenChat(r.sessionId!)}>{r.chatTitle}</button>
+  {:else}{r.chatTitle}{/if}
+{/snippet}
+
+{#if table}
+  <div class="push-body">
+    {@render head?.()}
+    {#if rows.length === 0}
+      <div class="empty-state">
+        <Upload size={28} />
+        <strong>Nothing staged</strong>
+        <p>Decide an edit in a chat's review queue and stage it. Staged pages wait here until you push them.</p>
+      </div>
+    {:else}
+      <div class="push-table" role="table" aria-label="Staged pages">
+        <div class="push-table-row push-table-head" role="row">
+          <span role="columnheader">
+            <input
+              type="checkbox"
+              checked={allPicked}
+              aria-label="Choose every page"
+              onchange={(e) => pickAll(e.currentTarget.checked)}
+            />
+          </span>
+          <span role="columnheader">Page</span>
+          <span role="columnheader">Changes</span>
+          <span role="columnheader">From chat</span>
+          <span role="columnheader"><span class="visually-hidden">Unstage</span></span>
+        </div>
+        {#each rows as r (keyOf(r))}
+          <div class="push-table-row" role="row">
+            <span role="cell">
+              <input
+                type="checkbox"
+                checked={!unpicked.has(keyOf(r))}
+                aria-label="Push {r.title}"
+                onchange={() => toggle(r)}
+              />
+            </span>
+            <span role="cell" class="push-page">
+              <strong>{r.title}</strong>
+              {#if r.path}<span class="push-path">{r.path}</span>{/if}
+              {#if r.message}<span class="branch-error">{r.message}</span>{/if}
+            </span>
+            <span role="cell" class="push-muted">{plural(r.accepted, 'accepted change')}</span>
+            <span role="cell" class="push-chat"
+              >{#if r.chatTitle}{@render fromChat(r)}{/if}</span
+            >
+            <span role="cell">
+              <button class="btn btn-secondary btn-xs" disabled={!!busy} onclick={() => unstage(r)}>
+                <PackageMinus size={12} /> Unstage
+              </button>
+            </span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+  {#if rows.length}
+    <div class="push-bar">
+      <div class="push-bar-inner">
+        <span class="branch-note">
+          {chosen.length} of {plural(rows.length, 'page')} selected · {plural(changeCount, 'change')}. Nothing is
+          written until you confirm.
+        </span>
+        {@render pushButton(true)}
+      </div>
+    </div>
+  {/if}
+{:else if rows.length === 0}
+  <div class="empty-state review-empty">
+    <Upload size={24} />
     <strong>Nothing staged</strong>
-    <p>Open an edit under Changes, decide its changes, and stage it. Staged pages wait here until you push them.</p>
+    <p>
+      Open an edit under Edits to decide, decide its changes, and stage it. Staged pages wait here until you push them.
+    </p>
   </div>
 {:else}
   <ul class="push-list">
@@ -123,15 +217,8 @@
           <input type="checkbox" checked={!unpicked.has(keyOf(r))} onchange={() => toggle(r)} />
           <strong>{r.title}</strong>
         </label>
-        <span class="branch-note">{r.accepted} accepted change{r.accepted === 1 ? '' : 's'}</span>
-        {#if r.chatTitle}
-          <span class="branch-note"
-            >from
-            {#if r.sessionId && onOpenChat}
-              <button class="link-btn" onclick={() => onOpenChat(r.sessionId!)}>{r.chatTitle}</button>
-            {:else}{r.chatTitle}{/if}</span
-          >
-        {/if}
+        <span class="branch-note">{plural(r.accepted, 'accepted change')}</span>
+        {#if r.chatTitle}<span class="branch-note">from {@render fromChat(r)}</span>{/if}
         {#if r.message}<span class="branch-error">{r.message}</span>{/if}
         <span class="queue-spacer"></span>
         <button class="btn btn-secondary btn-xs" disabled={!!busy} onclick={() => unstage(r)}>
@@ -142,10 +229,7 @@
   </ul>
   <div class="review-footer">
     <span class="branch-note">Nothing is written until you confirm.</span>
-    <button class="btn btn-primary" disabled={!chosen.length || !!busy} onclick={check}>
-      {#if busy}<RefreshCw size={14} class="spin" />{:else}<Upload size={14} />{/if}
-      Check and push {chosen.length}
-    </button>
+    {@render pushButton(false)}
   </div>
 {/if}
 

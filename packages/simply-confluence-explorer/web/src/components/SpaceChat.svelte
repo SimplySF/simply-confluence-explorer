@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { Compass, FileText, MessagesSquare, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
+  import { Compass, FileText, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
   import { untrack } from 'svelte';
   import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
   import { jobs } from '../support/jobs.svelte.js';
   import type { SpacePage } from '../support/pages.js';
-  import { sessions, type DraftSummary } from '../support/api.js';
+  import { sessions, type Coverage, type DraftSummary } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
+  import AttachmentsNote from './AttachmentsNote.svelte';
   import ChatContext from './ChatContext.svelte';
   import { type Starter } from './ChatThread.svelte';
   import ChatWorkspace from './ChatWorkspace.svelte';
@@ -35,6 +36,8 @@
   let search = $state('');
   let renaming = $state<string | null>(null);
   let deleting = $state<DraftSummary | null>(null);
+  // What the chat's pages hold, from its scope bar, for the notes on their attachments.
+  let counts = $state<Coverage | null>(null);
   // Counts the chats shown, so what a chat reads is reset when another chat is opened or started, but
   // not when the chat on screen is first saved.
   let shownChat = $state(0);
@@ -167,7 +170,7 @@
   <aside class="space-chat-list">
     <button
       type="button"
-      class="btn btn-primary btn-sm"
+      class="btn btn-secondary btn-sm"
       onclick={() => {
         chat.startNew();
         nextChat();
@@ -217,14 +220,15 @@
           <button class="btn btn-secondary btn-sm">Save</button>
         </form>
       {:else}
-        <h3><MessagesSquare size={16} /> {heading}</h3>
+        <h3>{heading}</h3>
         <button
           type="button"
-          class="btn btn-secondary btn-sm"
+          class="btn-icon btn-icon-sm"
           title="Rename this chat"
+          aria-label="Rename this chat"
           onclick={() => (renaming = chat.session?.title ?? '')}
         >
-          <Pencil size={12} />
+          <Pencil size={13} />
         </button>
       {/if}
     </div>
@@ -238,6 +242,8 @@
       {starters}
       {onPushed}
       {onWriteNewPage}
+      queueWhenEmpty={false}
+      compact
     >
       {#snippet top()}
         <!-- Each chat starts with its own choice of what to read. -->
@@ -249,17 +255,18 @@
             onChange={(choice) => update({ scope: choice })}
             {onSelectPage}
             {chat}
+            bind:counts
           />
         {/key}
       {/snippet}
+      {#snippet notes()}
+        {#if counts?.attachments}
+          <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
+        {/if}
+      {/snippet}
       {#snippet empty()}
-        <MessagesSquare size={32} />
-        <strong>Ask about {spaceKey}</strong>
-        <p>
-          The chat reads the whole space, or the directories, pages and tags you choose under Reading above, however
-          many there are. Each question finds the sections it needs, and every answer names them. Start with one of
-          these, or ask your own question below. Chats are saved on this machine.
-        </p>
+        <strong class="space-chat-ask">Ask about {spaceKey}</strong>
+        <p>Every answer names the pages it used. Chats are saved on this machine.</p>
       {/snippet}
     </ChatWorkspace>
   </section>

@@ -25,7 +25,7 @@ Open **Settings** and expand **AI provider**.
 | ChatGPT (OpenAI API)   | An OpenAI API key, and a model you choose                                                              |
 | Gemini (Google API)    | A Google AI API key                                                                                    |
 
-- **API key**: paste it and click **Save AI settings**. The key is stored on your computer and never
+- **API key**: paste it and click **Save & apply**. The key is stored on your computer and never
   sent back to the browser; the field only says whether a key is set, and where it came from.
 - **Model**: Claude and Gemini start with a sensible default. For ChatGPT you must choose one. After
   saving a key, **Models** lists the models that key can use.
@@ -43,7 +43,7 @@ environment.
 
 ## Chat about a page or a directory
 
-Open a page and choose the **Chat** tab.
+Open a page and click **Review with AI**, or choose its **Chat & review** tab.
 
 ![A chat about a page and the pages under it, with the leak guard note above the answer](../images/ask-ai.webp)
 
@@ -98,22 +98,20 @@ confirm.
 
 ![Space chat answering from the whole space, with the pages it read and why](../images/space-chat.webp)
 
-**Reading** above the conversation says what the chat reads; click it to change it. The line under
-it says how many pages that is, and how each question reads them.
-
-- **Whole space**: every page in the space that the exclusion rules allow.
-- **Chosen pages**: any mix of directories, single pages and tags. Type in **Find a page or
-  directory** to see matching pages with where each one sits. **Add page** adds that page alone, and
-  **Add with N sub-pages** adds it with every page under it, so you can choose two directories and a
-  page from another part of the space. **Or add every page with a tag** adds a tag's pages. Each item
-  under **Chosen** is removed with its ×; a directory goes in one click, with its sub-pages. A
-  directory or tag is read as it is when you ask, so a page added under it later is read too.
+**Reading** above the conversation shows what the chat reads, as a row of chips. With none, it reads
+the **Whole space**: every page that the exclusion rules allow. **Add pages or tags** opens a search:
+under **Pages**, **Page** adds a page alone and **+ N sub-pages** adds it with every page under it, so
+you can choose two directories and a page from another part of the space; under **Tags**, a tag adds
+every page that carries it. Each chip is removed with its ×, a directory with its sub-pages. A
+directory or tag is read as it is when you ask, so a page added under it later is read too. The count
+at the end of the row says how many of the pages are indexed; hover over it to see how each question
+reads them.
 
 ![Space chat with two directories and a page chosen, and the line saying how they are read](../images/space-chat.webp)
 
 There is no limit on how many pages a chat reads from:
 
-- **When they fit in one request**, every question reads all of them, and the line says so.
+- **When they fit in one request**, every question reads all of them, and the count's hint says so.
 - **When there are more**, each question finds the sections it needs. Pages are split at their
   headings, and the app ranks the sections by the words of your question and the one before it,
   and, with a provider that offers embeddings, by meaning as well. The AI then picks the sections
@@ -154,7 +152,7 @@ file that was not read, including those you left out.
 
 Images are sent only if you choose for the space, because the leak guard cannot check them. Until
 you choose, the chat says how many the AI did not see, with **Send images for PLAT** and **Not for
-PLAT**. Change it later under **Space → Exclusions and leak guard…** → **Images on pages**.
+PLAT**. Change it later under **Exclusions** → **Images on pages**.
 
 ## The AI index: summaries, topics and embeddings
 
@@ -166,7 +164,7 @@ and offers **Index the rest**, which runs in the background and shows in the hea
 
 Small pages are indexed several to a request, up to about 60,000 characters, and a few requests run
 at once: 2 for the Gemini CLI and 4 for an API provider, set by **Requests at once** in Settings.
-The Space menu says how many requests a run will take before it starts. A failed request is tried
+The **⋯** menu beside **Exclusions** says how many requests a run will take before it starts. A failed request is tried
 again; a page still left out is listed with its reason under **See why**, and the next run retries it.
 
 Indexing can also make an embedding of each section, which lets a question find a section by meaning
@@ -176,7 +174,7 @@ CLI can answer while a Gemini key makes embeddings. Claude and the Gemini CLI ma
 [What leaves your computer](/guides/data-safety/) says what this sends.
 
 The **Details** tab of a page has **Index this page** for that page alone, and shows its summary,
-topics and the questions it answers. **Space → Build the AI index** indexes every page that is not
+topics and the questions it answers. **Build the AI index**, in the sidebar's **⋯** menu, indexes every page that is not
 indexed yet. A page that changes in Confluence leaves the index at the next sync, and **Update the
 AI index** redoes only those pages.
 

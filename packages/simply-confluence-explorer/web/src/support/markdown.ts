@@ -26,9 +26,29 @@ const escape = (text: string): string =>
 
 const SAFE_HREF = /^(https?:|mailto:|#|\/(?!\/)|\.{0,2}\/|[^:]*$)/i;
 
+// Confluence's info, tip, note, warning and panel macros arrive as a quote that opens with the
+// macro's name in bold ("**info: Heads up**"), and are shown as a tinted callout with an icon.
+const CALLOUT = /^<p><strong>(info|tip|note|warning|panel)(?:: ([^<]*))?<\/strong>\s*/;
+const ICON = (path: string): string =>
+  `<svg class="callout-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+const INFO = ICON('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>');
+const WARNING = ICON(
+  '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+);
+
 const marked = new Marked({
   gfm: true,
-  renderer: { html: ({ text }) => escape(text) },
+  renderer: {
+    html: ({ text }) => escape(text),
+    blockquote({ tokens }) {
+      const inner = this.parser.parse(tokens);
+      const m = CALLOUT.exec(inner);
+      if (!m) return `<blockquote>\n${inner}</blockquote>\n`;
+      const warning = m[1] === 'warning';
+      const title = m[2] ? `<strong>${m[2]}</strong> ` : '';
+      return `<div class="callout callout-${warning ? 'warning' : 'info'}">${warning ? WARNING : INFO}<div class="callout-body"><p>${title}${inner.slice(m[0].length)}</div></div>\n`;
+    },
+  },
   walkTokens: (token: Token) => {
     if ((token.type === 'link' || token.type === 'image') && !SAFE_HREF.test(token.href.trim())) token.href = '';
   },

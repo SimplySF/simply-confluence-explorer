@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, FilePlus2, Layers, Moon, Settings, Sun } from '@lucide/svelte';
+  import { Activity, Layers, Moon, Settings, Sun } from '@lucide/svelte';
   import { onMount, untrack } from 'svelte';
   import type {
     BranchFinding,
@@ -8,6 +8,7 @@
     PageResponse,
     PageTreeNode,
   } from '../../src/api/types.js';
+  import HeaderSearch from './components/HeaderSearch.svelte';
   import JobsBar from './components/JobsBar.svelte';
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
@@ -72,7 +73,10 @@
   let pageLoading = $state(false);
   let pageError = $state<string | null>(null);
 
-  let sidebarWidth = $state(Math.max(260, Math.min(850, Number(remembered('sidebar_width')) || 340)));
+  // A sidebar the person has not resized takes about a quarter of the window, between 256 and 300 pixels.
+  let sidebarWidth = $state(
+    Math.max(256, Math.min(850, Number(remembered('sidebar_width')) || Math.min(300, window.innerWidth * 0.24))),
+  );
   let resizing = $state(false);
   let dialog = $state<'settings' | 'new-page' | null>(null);
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
@@ -98,7 +102,7 @@
 
   onMount(() => {
     applyTheme();
-    // Ctrl+, opens Settings; / jumps to the page filter.
+    // Ctrl+, opens Settings; / jumps to the page search.
     const onKey = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault();
@@ -112,7 +116,7 @@
         !document.querySelector('.modal-overlay')
       ) {
         e.preventDefault();
-        document.getElementById('tree-filter')?.focus();
+        document.getElementById('page-search')?.focus();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -122,7 +126,7 @@
   $effect(() => {
     if (!resizing) return;
     const move = (e: MouseEvent): void => {
-      sidebarWidth = Math.max(260, Math.min(850, e.clientX));
+      sidebarWidth = Math.max(256, Math.min(850, e.clientX));
     };
     const up = (): void => {
       resizing = false;
@@ -299,7 +303,7 @@
     checking
       ? 'Checking connection…'
       : connected
-        ? `Connected (${connUser})`
+        ? connUser || 'Connected'
         : connection && !connection.baseUrl
           ? 'Not configured'
           : 'Not connected',
@@ -309,53 +313,56 @@
 <div class="app-shell">
   <header class="app-header">
     <div class="brand-section">
-      <div class="brand-icon"><Layers size={18} /></div>
+      <div class="brand-icon"><Layers size={16} /></div>
       <div class="brand-title">Confluence Explorer</div>
-      <span class="brand-badge">Server / DC</span>
+    </div>
+    <HeaderSearch
+      spaceKey={activeSpace}
+      pages={allPages}
+      onOpenPage={openPage}
+      onJump={(target) => {
+        chooseSpace(target.spaceKey);
+        if (target.pageId) openPage(target.pageId);
+      }}
+    />
+    <div class="header-actions">
+      <JobsBar onOpen={openJob} />
       <button
         type="button"
         class={['status-pill', connected ? 'connected' : 'disconnected']}
         onclick={() => (dialog = 'settings')}
-        title="Connection settings (Ctrl+,)"
+        title={connected
+          ? `Connected to Confluence as ${connUser}. Connection settings (Ctrl+,)`
+          : 'Connection settings (Ctrl+,)'}
       >
         <span class="status-dot"></span>
         <span>{statusLabel}</span>
       </button>
-      <JobsBar onOpen={openJob} />
-    </div>
-    <div class="header-actions">
+      <span class="header-divider" aria-hidden="true"></span>
       <button
-        class="btn btn-primary btn-sm"
-        onclick={() => (dialog = 'new-page')}
-        disabled={!page}
-        title={page
-          ? `Write a new page under “${page.detail.title}”`
-          : 'Choose the page the new one goes under, in the tree'}
-      >
-        <FilePlus2 size={14} /> New page
-      </button>
-      <button
-        class="btn btn-secondary btn-sm"
+        class="btn-icon"
         onclick={() => (observe.open ? observe.close() : observe.show(newProblems ? 'now' : observe.tab))}
-        title="What the app is doing, what it recorded, and how each action went"
+        title="Observability: what the app is doing, what it recorded, and how each action went"
+        aria-label="Observability"
       >
-        <Activity size={14} /> Observability
+        <Activity size={16} />
         {#if newProblems}<span class="observe-badge" title="Problems since you last looked">{newProblems}</span>{/if}
       </button>
       <button
-        class="btn btn-secondary btn-sm"
+        class="btn-icon"
         onclick={() => (dialog = 'settings')}
-        title="Connection and AI provider (Ctrl+,)"
+        title="Settings: connection and AI provider (Ctrl+,)"
+        aria-label="Settings"
       >
-        <Settings size={14} /> Settings
+        <Settings size={16} />
       </button>
       <button
-        class="btn btn-secondary btn-sm"
+        class="btn-icon"
         onclick={toggleTheme}
         title={theme.current === 'dark' ? 'Light theme' : 'Dark theme'}
         aria-label="Switch theme"
       >
-        {#if theme.current === 'dark'}<Sun size={14} />{:else}<Moon size={14} />{/if}
+        {#if theme.current === 'dark'}<Sun size={16} />{:else}<Moon size={16} />{/if}
       </button>
     </div>
   </header>
@@ -373,10 +380,6 @@
         {tree}
         {selectedPageId}
         onSelectPage={openPage}
-        onJump={(target) => {
-          chooseSpace(target.spaceKey);
-          if (target.pageId) openPage(target.pageId);
-        }}
         chatOpen={view === 'chat'}
         onOpenChat={() => (view = 'chat')}
         {pushCount}
@@ -428,6 +431,7 @@
           page = null;
         }}
         onWriteNewPage={writeNewPage}
+        onNewPage={() => (dialog = 'new-page')}
       />
     </div>
     {#if activeSpace}
@@ -466,6 +470,7 @@
               total: 0,
             })}
           onCount={(n) => (pushCount = n)}
+          pages={allPages}
         />
       </div>
     {/if}

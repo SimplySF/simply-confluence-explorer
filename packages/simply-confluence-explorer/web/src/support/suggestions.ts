@@ -15,7 +15,7 @@
  */
 
 // Whether a suggestion in a chat's review queue can become an edit, and when it cannot, or can only
-// in part, the reason the Review tab shows beside it, so no row is left without a checkbox unexplained.
+// in part, the reason the review queue shows beside it, so no row is left without a checkbox unexplained.
 
 import type { SuggestionView } from '../../../src/api/types.js';
 

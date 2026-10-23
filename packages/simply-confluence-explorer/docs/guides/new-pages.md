@@ -11,7 +11,7 @@ already cover the topic, and asks you what to do about them.
 
 ## Describe the page
 
-Open the page the new one should go under, and click **New page** in the header.
+Open the page the new one should go under, and click **New sub-page** at the top of the page.
 
 ![Describing a new page: its title and what it should cover](../images/new-page-describe.webp)
 
@@ -63,7 +63,7 @@ the app found for each title.
 
 ![A series of three pages, with the API page open and the similar pages found for it](../images/new-page-series.webp)
 
-Unfinished drafts are kept on your computer. **New page** offers to continue a draft you started in the
+Unfinished drafts are kept on your computer. **New sub-page** offers to continue a draft you started in the
 same space.
 
 ## Create it

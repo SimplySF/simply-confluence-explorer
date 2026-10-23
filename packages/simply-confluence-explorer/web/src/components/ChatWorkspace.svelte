@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileText } from '@lucide/svelte';
+  import { FileText, Maximize2, Minimize2, WandSparkles } from '@lucide/svelte';
   import type { Snippet } from 'svelte';
   import type { BranchFinding, BranchItem, BranchRun, ChatQueue } from '../../../src/api/types.js';
   import { branches, sessions, type Focus } from '../support/api.js';
@@ -11,12 +11,15 @@
   import PushQueue, { type PushRow } from './PushQueue.svelte';
   import ReviewQueue from './ReviewQueue.svelte';
   import JobProgress from './ui/JobProgress.svelte';
-  import Segmented from './ui/Segmented.svelte';
 
-  // A chat and its queues (ADR-060): the conversation, the suggestions it made (Review), the edits
-  // made from them (Changes) and the staged pages (Push). The question box stays under every tab, so
-  // the chat can be asked to rework a suggestion or the open edit without leaving the queue.
-  type Tab = 'chat' | 'review' | 'changes' | 'push';
+  // A chat beside its review queue (ADR-060). The conversation is on the left; the queue on the right
+  // shows one of three steps: the suggestions the chat made, the edits made from them to decide, and
+  // the pages staged to push. An edit opens in place of the conversation, with the question box kept
+  // below it, so the chat can be asked to rework the edit while it is open. Deciding an edit side by
+  // side needs the whole width, so opening one takes the chat and its queue to the full window, with
+  // the queue as a narrow column beside the edit; Exit full screen or Escape closes the edit and
+  // brings them back.
+  type Stage = 'open' | 'in-progress' | 'staged';
   type Props = {
     chat: AiChat;
     subject: string;
@@ -28,8 +31,15 @@
     starters?: Starter[];
     /** Shown above the conversation, such as what the chat reads. */
     top?: Snippet;
+    /** Shown at the top of the conversation, scrolled with it, such as notes on the chat's files. */
+    notes?: Snippet;
     onPushed: () => void;
     onWriteNewPage?: (finding: BranchFinding) => void;
+    onOpenCount?: (n: number) => void;
+    /** Show the review queue before the chat has asked or suggested anything. */
+    queueWhenEmpty?: boolean;
+    /** The question box as one row. */
+    compact?: boolean;
   };
 
   let {
@@ -42,10 +52,30 @@
     empty,
     starters,
     top,
+    notes,
     onPushed,
     onWriteNewPage,
+    onOpenCount,
+    queueWhenEmpty = true,
+    compact = false,
   }: Props = $props();
-  let tab = $state<Tab>('chat');
+  let stage = $state<Stage>('open');
+  let fullscreen = $state(false);
+  // An edit is decided only full screen, so leaving it closes the edit; the queue still lists it.
+  function leaveFullscreen(): void {
+    fullscreen = false;
+    open = null;
+    focus = null;
+  }
+  $effect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      // A dialog over the review, such as the push confirmation, takes Escape first.
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal-overlay')) leaveFullscreen();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   let queue = $state<ChatQueue | null>(null);
   let open = $state<{ runId: string; pageId: string } | null>(null);
   let focus = $state<Focus | null>(null);
@@ -67,15 +97,16 @@
     }
   }
 
-  // Another chat starts on its conversation, with no edit open; a new answer in the same chat keeps
-  // the tab the person is on.
+  // Another chat starts on its suggestions, with no edit open; a new answer in the same chat keeps
+  // the step the person is on.
   const sessionId = $derived(chat.session?.id);
   let shownId: string | undefined;
   $effect(() => {
     // Reading the page again after a push reopens the same chat, which keeps its tab.
     if (!sessionId || sessionId === shownId) return;
     shownId = sessionId;
-    tab = 'chat';
+    stage = 'open';
+    fullscreen = false;
     open = null;
     focus = null;
   });
@@ -122,6 +153,7 @@
   const openRun = $derived(open ? queue?.runs.find((r) => r.id === open!.runId) : undefined);
   const openItem = $derived(openRun?.items.find((i) => i.pageId === open!.pageId));
   const openCount = $derived(queue?.suggestions.filter((s) => s.state === 'open').length ?? 0);
+  $effect(() => onOpenCount?.(openCount));
   const turns = $derived(chat.session?.turns ?? []);
   const proposal = $derived.by(() => {
     if (!open) return null;
@@ -180,7 +212,7 @@
       const run = await sessions.recommend(id, ids);
       await load();
       jobs.watchReview(run);
-      tab = 'changes';
+      stage = 'in-progress';
     } catch (e) {
       toast(`No edits were made: ${messageOf(e)}`, 'error');
     } finally {
@@ -209,8 +241,20 @@
 
   function openEdit(run: BranchRun, item: BranchItem): void {
     open = { runId: run.id, pageId: item.pageId };
-    tab = 'changes';
+    stage = item.staged ? 'staged' : 'in-progress';
+    fullscreen = true;
   }
+
+  // Once a conversation has begun, what it found or agreed can become suggestions; a fresh review
+  // belongs in a new chat, where the starters offer it.
+  const batch = $derived(jobs.batch(chat.session?.id));
+  const steps = $derived<Array<{ id: Stage; label: string; n: number }>>([
+    { id: 'open', label: 'Suggestions', n: openCount },
+    { id: 'in-progress', label: 'Edits to decide', n: changes.length },
+    { id: 'staged', label: 'Staged', n: staged.length },
+  ]);
+  const showQueue = $derived(queueWhenEmpty || turns.length > 0 || !!queue?.suggestions.length || !!queue?.runs.length);
+  const canAdd = $derived(!blocked && turns.length > 0 && !chat.sending && !batch);
 
   const STATE: Partial<Record<BranchItem['status'], string>> = {
     pending: 'Waiting',
@@ -245,7 +289,7 @@
   />
 {/snippet}
 
-{#snippet changesTab()}
+{#snippet editView()}
   {#if openRun && openItem}
     <EditView
       run={openRun}
@@ -267,11 +311,15 @@
       onRefine={() => (focus = { runId: openRun.id, pageId: openItem.pageId, title: openItem.title })}
       {lastAnswer}
     />
-  {:else if runs.length === 0}
-    <div class="empty-state">
-      <FileText size={28} />
+  {/if}
+{/snippet}
+
+{#snippet changesTab()}
+  {#if runs.length === 0}
+    <div class="empty-state review-empty">
+      <FileText size={24} />
       <strong>No edits yet</strong>
-      <p>Tick suggestions under Review and choose Recommend changes. Each page they name gets an edit here.</p>
+      <p>Tick suggestions under 1 · Suggestions and choose Write edits. Each page they name gets an edit here.</p>
     </div>
   {:else}
     {#each runs.filter(current) as r (r.id)}{@render runGroup(r)}{/each}
@@ -308,7 +356,11 @@
       {#each r.items.filter((i) => !done.includes(i)) as item (item.pageId)}
         {@const last = item.steps?.at(-1)}
         <li>
-          <button type="button" class="branch-item-button" onclick={() => openEdit(r, item)}>
+          <button
+            type="button"
+            class={['branch-item-button', open?.runId === r.id && open.pageId === item.pageId && 'active']}
+            onclick={() => openEdit(r, item)}
+          >
             <span>{item.title}</span>
             {#if ['pending', 'checking', 'working'].includes(item.status) && r.status === 'running'}
               <span class="branch-note run-step"
@@ -342,34 +394,91 @@
   <PushQueue rows={pushRows} onChanged={() => void load()} {onPushed} />
 {/snippet}
 
-<div class="chat-tabs">
-  <Segmented
-    label="Show"
-    value={tab}
-    onChange={(t) => (tab = t)}
-    options={[
-      { value: 'chat', label: 'Chat' },
-      { value: 'review', label: `Review${openCount ? ` (${openCount})` : ''}`, disabled: !chat.session },
-      { value: 'changes', label: `Changes${changes.length ? ` (${changes.length})` : ''}`, disabled: !chat.session },
-      { value: 'push', label: `Push${staged.length ? ` (${staged.length})` : ''}`, disabled: !chat.session },
-    ]}
-  />
+<div class={['chat-review-frame', fullscreen && 'fullscreen']}>
+  {#if fullscreen}
+    <div class="review-fullbar">
+      <strong>Review</strong>
+      <span class="muted review-fullbar-subject">{subject}</span>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick={leaveFullscreen} title="Back to the chat (Esc)">
+        <Minimize2 size={13} /> Exit full screen
+      </button>
+    </div>
+  {/if}
+  <div class="chat-review">
+    <div class="chat-review-main">
+      {@render top?.()}
+      <ChatThread
+        {chat}
+        {subject}
+        {blocked}
+        {active}
+        {onSelectPage}
+        {placeholder}
+        {empty}
+        {starters}
+        view={openRun && openItem ? editView : undefined}
+        lead={notes}
+        {compact}
+        {focus}
+        onLeaveFocus={() => (focus = null)}
+        onOpenTab={(t) => (stage = t === 'review' ? 'open' : 'in-progress')}
+        currentText={(runId, pageId) =>
+          queue?.runs.find((r) => r.id === runId)?.items.find((i) => i.pageId === pageId)?.proposed}
+        onEditDecided={() => void load()}
+      />
+    </div>
+    {#if showQueue}
+      <aside class="review-panel" aria-label="Review queue">
+        <div class="review-panel-head">
+          <h4>Review queue</h4>
+          <span class="spacer"></span>
+          {#if !fullscreen}
+            <button
+              class="btn-icon btn-icon-sm"
+              onclick={() => (fullscreen = true)}
+              title="Open the review full screen, with room to decide edits side by side"
+              aria-label="Open the review full screen"
+            >
+              <Maximize2 size={14} />
+            </button>
+          {/if}
+          <button
+            class="btn btn-secondary btn-sm"
+            disabled={!canAdd}
+            onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
+            title={turns.length
+              ? 'Add the changes this conversation found or agreed to the review queue'
+              : 'Ask something first; then what the chat found or agreed can be added here'}
+          >
+            <WandSparkles size={13} /> Add from chat
+          </button>
+        </div>
+        <div class="review-steps" role="tablist" aria-label="Review steps">
+          {#each steps as st, i (st.id)}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={stage === st.id}
+              class={['review-step', stage === st.id && 'active']}
+              disabled={!chat.session}
+              onclick={() => (stage = st.id)}
+            >
+              <span class="review-step-label">{i + 1} · {st.label}</span>
+              <span class="review-step-count">{st.n}</span>
+            </button>
+          {/each}
+        </div>
+        <div class="review-panel-body">
+          {#if stage === 'open'}
+            {@render reviewTab()}
+          {:else if stage === 'in-progress'}
+            {@render changesTab()}
+          {:else}
+            {@render pushTab()}
+          {/if}
+        </div>
+      </aside>
+    {/if}
+  </div>
 </div>
-{#if tab === 'chat'}{@render top?.()}{/if}
-<ChatThread
-  {chat}
-  {subject}
-  {blocked}
-  {active}
-  {onSelectPage}
-  {placeholder}
-  {empty}
-  {starters}
-  view={tab === 'review' ? reviewTab : tab === 'changes' ? changesTab : tab === 'push' ? pushTab : undefined}
-  {focus}
-  onLeaveFocus={() => (focus = null)}
-  onOpenTab={(t) => (tab = t)}
-  currentText={(runId, pageId) =>
-    queue?.runs.find((r) => r.id === runId)?.items.find((i) => i.pageId === pageId)?.proposed}
-  onEditDecided={() => void load()}
-/>

@@ -16,7 +16,7 @@ Some pages should never be sent to an AI at all, such as anything under a "Restr
 section, however safe a single question about them might look. Each space can have a list of rules,
 and a page matched by any rule is excluded, together with **everything under it**.
 
-Open **Space → Exclusions and leak guard…** to edit the list.
+Click **Exclusions**, under the space's name in the sidebar, to edit the list.
 
 ![The exclusions and leak guard dialog for a space](../images/space-rules.webp)
 
@@ -80,8 +80,8 @@ Under each answer, a short line says what the guard did, such as "Leak guard: no
 removing."
 
 **Images are not checked.** The guard reads text, so it cannot see a password in a screenshot. A
-page's images are sent only for a space you chose to send them for (**Space → Exclusions and leak
-guard… → Images on pages**), and every answer names the images it sent unchecked. Every other
+page's images are sent only for a space you chose to send them for (**Exclusions → Images on
+pages**), and every answer names the images it sent unchecked. Every other
 attachment, Word and Excel files included, is turned into text on your computer first and checked
 like the page; a chat set to **Pages only** reads none of them.
 

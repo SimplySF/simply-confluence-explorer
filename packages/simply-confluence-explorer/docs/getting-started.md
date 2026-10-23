@@ -54,11 +54,12 @@ explains each check.
 
 ## Connect to Confluence
 
-1. Click **Settings** in the top right corner, or press Ctrl+, (Cmd+, on a Mac).
+1. Click the gear in the top right corner, or press Ctrl+, (Cmd+, on a Mac). Settings opens on
+   **Confluence**.
 2. Enter your Confluence address, such as `https://confluence.example.com`, and paste your personal
    access token.
-3. Click **Test connection**. It should say who you are signed in as.
-4. Click **Save & Apply**.
+3. Click **Test connection**. The banner at the top should say who you are signed in as.
+4. Click **Save & apply**.
 
 The status in the header changes to **Connected**, and the spaces you can see appear in the space
 picker on the left.
@@ -69,9 +70,9 @@ picker on the left.
    to its top-level pages; click the arrow beside a page, or **Expand all**, to open it.
 2. **Open a page.** The **Read** tab shows it rendered, as Markdown, or in Confluence's own storage
    format.
-3. **Sync the space** from the **Space** menu. The app downloads every page you are allowed to see,
-   so the tree, searches and AI questions work from your own disk.
-4. **Set up an AI** under **Settings → AI provider**, then open the **Chat** tab on any page and
+3. **Sync the space** with **Sync**, under the space's name. The app downloads every page you are
+   allowed to see, so the tree, searches and AI questions work from your own disk.
+4. **Set up an AI** under **Settings → AI provider**, then click **Review with AI** on any page and
    click **Summary**.
 
 ## Where to go next

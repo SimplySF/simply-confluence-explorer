@@ -2008,7 +2008,7 @@ their own if one proved not worth its lines.
 
 ## ADR-071 — The code budget rises to 18,800 lines for choosing each attachment and answering past images
 
-**Status:** accepted, 2026-10-22. Amends ADR-070.
+**Status:** accepted, 2026-10-22. Amends ADR-070. Amended by ADR-072.
 
 Leaving out single attachments, asking again about files added after a chat chose (ADR-069), and
 asking the Gemini CLI again without images when it gives no answer with them took the code to 18,514
@@ -2016,3 +2016,22 @@ lines, over the 18,500 set by ADR-070. The limit rises to 18,800, keeping the us
 
 **The argument against:** a budget raised each time it is reached is no limit. This is accepted
 because the increase is sized to the measured change, and the next one needs its own record.
+
+---
+
+## ADR-072 — The code budget rises to 19,300 lines and prose to 2,250 for the clarity rework of the web app
+
+**Status:** accepted, 2026-10-23. Amends ADR-071.
+
+The clarity rework (design doc 0014) changes the layout of every main screen: one search in the
+header, the sidebar's space state and actions, the page view's header and tabs, a chat beside its
+review queue in three steps, the Space chat's scope bar, Ready to push as a table, and Settings in
+sections. Each screen keeps its behaviour and data flows; the lines come from the new markup, a few
+small helpers with their tests, and the callouts for Confluence's panel macros. The rework took the
+code past the 18,800 set by ADR-071, and its design doc takes the prose near its 2,150. The limits
+rise to 19,300 and 2,250, sized to the measured change with the usual small headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit. This is accepted
+because the increase is sized to the measured change, the rework removes as well as adds (the Space
+menu, the chat's four tabs and the sidebar's jump form are gone), and the next rise needs its own
+record.

@@ -15,7 +15,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { directoryLabel, readingLine, searchPages, type SpacePage } from '../../web/src/support/pages.js';
+import {
+  directoryLabel,
+  looksLikeAddress,
+  readingLine,
+  searchPages,
+  type SpacePage,
+} from '../../web/src/support/pages.js';
 
 const page = (title: string, under: string[] = []): SpacePage => ({ id: title, title, path: 'Home', under });
 
@@ -29,6 +35,14 @@ describe('choosing the pages a chat reads', () => {
     ]);
     expect(searchPages(pages, '')).toEqual([]);
     expect(searchPages(pages, 'b', 1)).toHaveLength(1);
+  });
+
+  it('tells a pasted address or page id from a title being searched for', () => {
+    expect(looksLikeAddress(' 1000 ')).toBe(true);
+    expect(looksLikeAddress('https://confluence.example.com/display/PLAT/Home')).toBe(true);
+    expect(looksLikeAddress('/pages/viewpage.action?pageId=1000')).toBe(true);
+    expect(looksLikeAddress('Runbooks')).toBe(false);
+    expect(looksLikeAddress('INC-1001: Gateway latency')).toBe(false);
   });
 
   it('names a directory with how many pages come with it', () => {
