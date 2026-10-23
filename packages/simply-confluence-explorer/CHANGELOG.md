@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.3](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.2...%40simplysf%2Fsimply-confluence-explorer%400.9.3) (2026-10-23)
+
+### Bug Fixes
+
+- each image reaches the AI with its name, and the Gemini CLI reads no page text as files ([#58](https://github.com/SimplySF/simply-confluence-explorer/issues/58)) ([8d173b0](https://github.com/SimplySF/simply-confluence-explorer/commit/8d173b0481c3ef740874d0e540d21f8eb2654ba4))
+
 ## [0.9.2](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.1...%40simplysf%2Fsimply-confluence-explorer%400.9.2) (2026-10-23)
 
 ### Bug Fixes
