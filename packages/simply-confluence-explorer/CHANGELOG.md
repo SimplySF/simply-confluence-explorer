@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.4](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.3...%40simplysf%2Fsimply-confluence-explorer%400.9.4) (2026-10-23)
+
+### Bug Fixes
+
+- a catalog save never stops the app, and a review can be cleared or its chat deleted ([#62](https://github.com/SimplySF/simply-confluence-explorer/issues/62)) ([7c1ad5f](https://github.com/SimplySF/simply-confluence-explorer/commit/7c1ad5ffbf063e6e60b273679d5aa950a9aab2a2))
+- an update downloads attachments a page is missing, and Download gives the local copy ([#60](https://github.com/SimplySF/simply-confluence-explorer/issues/60)) ([79b4553](https://github.com/SimplySF/simply-confluence-explorer/commit/79b45538f58629fdf7738443c4ba4b8ccc154de2))
+
 ## [0.9.3](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.2...%40simplysf%2Fsimply-confluence-explorer%400.9.3) (2026-10-23)
 
 ### Bug Fixes
