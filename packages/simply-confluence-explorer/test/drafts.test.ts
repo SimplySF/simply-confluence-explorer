@@ -198,6 +198,17 @@ describe('a draft', () => {
     });
   });
 
+  it('lists only drafts as drafts to continue, never a page chat with no title', async () => {
+    await withApp(async (app) => {
+      await start(app, 'Replica Lag Alerts');
+      await app.call('POST', '/ai/sessions', {
+        scope: { kind: 'branch', spaceKey: 'PLAT', pageId: parent(), title: 'Database Runbooks' },
+      });
+      const { body } = await app.call<{ sessions: AiSessionView[] }>('GET', '/ai/sessions?kind=draft&spaceKey=PLAT');
+      expect(body.sessions.map((s) => [s.scope.kind, s.draft?.title])).toEqual([['draft', 'Replica Lag Alerts']]);
+    });
+  });
+
   it('cannot be written through the general conversation route', async () => {
     await withApp(async (app) => {
       const { body: d } = await start(app, 'Another Page');
