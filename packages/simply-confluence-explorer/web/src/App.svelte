@@ -470,6 +470,7 @@
               total: 0,
             })}
           onCount={(n) => (pushCount = n)}
+          pages={allPages}
         />
       </div>
     {/if}
