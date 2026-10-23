@@ -276,7 +276,8 @@ const RUNS = '/branches/runs';
 
 /** What the app has recorded about itself, for the Observability page (design doc 0008). */
 export const observability = {
-  now: () => call<ObserveNow>('/observe/now'),
+  /** What is happening now; the charts' points come only when asked for, as only the Now view draws them. */
+  now: (points = true) => call<ObserveNow>(`/observe/now${points ? '' : '?points=0'}`),
   logs: (params: Record<string, string>) => call<LogPage>(`/observe/logs?${new URLSearchParams(params).toString()}`),
   trace: (traceId: string) => call<{ spans: SpanRecord[]; events: ObservedEvent[] }>(`/observe/traces/${key(traceId)}`),
 };

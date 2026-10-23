@@ -17,6 +17,7 @@
   import ObservePage from './components/observe/ObservePage.svelte';
   import { checkConnection } from './support/connection.js';
   import { observe } from './support/observe.svelte.js';
+  import { headerCount } from './support/problems.js';
   import type { SpacePage } from './support/pages.js';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
@@ -232,7 +233,7 @@
   });
 
   // The Observability page follows the address, so it opens from a link or in another tab, and the
-  // header counts the problems raised since it was last looked at.
+  // header counts the problems raised since it was last looked at (headerCount).
   let newProblems = $state(0);
   $effect(() => {
     const follow = (): void => observe.readHash(location.hash);
@@ -243,8 +244,8 @@
   $effect(() => {
     const seen = observe.seenAt;
     const count = (): void => {
-      observability.now().then(
-        (n) => (newProblems = n.problems.filter((p) => p.at > seen).length),
+      observability.now(false).then(
+        (n) => (newProblems = headerCount(n.problems, seen)),
         () => undefined, // The count is a hint; the page itself reports a server that does not answer.
       );
     };

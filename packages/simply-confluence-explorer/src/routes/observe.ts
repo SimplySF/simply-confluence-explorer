@@ -27,7 +27,7 @@ const list = (value: string | null): string[] | undefined => value?.split(',').f
 export function addObserveRoutes(router: Router, services: Services): Router {
   const { telemetry, workers } = services;
   return router
-    .add('GET', '/api/observe/now', () => telemetry.now())
+    .add('GET', '/api/observe/now', ({ query }) => telemetry.now(query.get('points') !== '0'))
     .add('GET', '/api/observe/logs', ({ query }) => {
       const minutes = RANGES[query.get('range') ?? '24h'] ?? RANGES['24h'];
       // Scanning a day of records takes a while, so it runs on a worker thread.
