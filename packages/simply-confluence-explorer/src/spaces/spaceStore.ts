@@ -248,11 +248,10 @@ export class SpaceStore {
    * deleted from pages/, and rebuilds the table of contents.
    */
   public async purgeStale(spaceKey: string): Promise<{ purgedCount: number; remainingPages: number }> {
+    const excluded = this.exclusions.checker(spaceKey);
     const stale = this.cachedIds(spaceKey).filter((id) => {
       const page = this.readPage(spaceKey, id);
-      return (
-        !page || this.exclusions.isPageExcluded(page, spaceKey) || !fs.existsSync(this.markdownFile(spaceKey, page))
-      );
+      return !page || excluded(page) || !fs.existsSync(this.markdownFile(spaceKey, page));
     });
     for (const id of stale) this.removePage(spaceKey, id, false);
     await this.afterRemoval(spaceKey);
@@ -343,9 +342,10 @@ export class SpaceStore {
     const add = (file: string): void => {
       if (fs.existsSync(file)) entries.push({ file, name: path.relative(dir, file).split(path.sep).join('/') });
     };
+    const excluded = this.exclusions.checker(spaceKey);
     for (const id of this.cachedIds(spaceKey)) {
       const page = this.readPage(spaceKey, id);
-      if (!page || this.exclusions.isPageExcluded(page, spaceKey)) continue;
+      if (!page || excluded(page)) continue;
       add(this.markdownFile(spaceKey, page));
       const attachments = this.attachmentsDir(spaceKey, page);
       if (fs.existsSync(attachments)) for (const name of fs.readdirSync(attachments)) add(path.join(attachments, name));
@@ -358,12 +358,15 @@ export class SpaceStore {
   /** Every page in the catalog that the exclusion rules allow: titles, places and tags, without text. */
   public async visibleEntries(spaceKey: string): Promise<CatalogEntry[]> {
     const key = spaceKey.toUpperCase();
-    return [...(await this.catalog.ready(key)).values()].filter((p) => !this.exclusions.isPageExcluded(p, key));
+    const entries = await this.catalog.ready(key);
+    const excluded = this.exclusions.checker(key);
+    return [...entries.values()].filter((p) => !excluded(p));
   }
 
   public async visiblePages(spaceKey: string): Promise<PageDetail[]> {
     const pages = await mapChunked(this.cachedIds(spaceKey), (id) => this.readPage(spaceKey, id));
-    return pages.filter((page): page is PageDetail => !!page && !this.exclusions.isPageExcluded(page, spaceKey));
+    const excluded = this.exclusions.checker(spaceKey);
+    return pages.filter((page): page is PageDetail => !!page && !excluded(page));
   }
 
   public writeMetadata(spaceKey: string, metadata: PageMetadata): void {
@@ -447,8 +450,9 @@ export class SpaceStore {
   private treeOf(key: string, pages: CatalogEntry[]): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
     const onDisk = new Set(pages.map((p) => p.id));
     const byId = new Map<string, PageTreeNode>();
+    const excluded = this.exclusions.checker(key);
     for (const page of pages) {
-      if (this.exclusions.isPageExcluded(page, key)) continue;
+      if (excluded(page)) continue;
       const { id, title, spaceKey: space, parentId, version, author, lastModified, webUrl } = page;
       byId.set(id, {
         id,

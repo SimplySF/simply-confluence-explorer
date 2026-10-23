@@ -63,8 +63,9 @@ export async function corpusPages(
   const inTree = new Set(order);
   const ids = [...order.filter((id) => wanted.has(id)), ...[...wanted].filter((id) => !inTree.has(id))];
   const visible = new Map((await store.visiblePages(key)).map((p) => [p.id, p]));
+  const excluded = exclusions.checker(key);
   return ids.flatMap((id) => {
     const page = visible.get(id);
-    return page && !exclusions.isPageExcluded(page, key) ? [page] : [];
+    return page && !excluded(page) ? [page] : [];
   });
 }

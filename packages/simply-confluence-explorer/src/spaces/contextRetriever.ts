@@ -132,8 +132,9 @@ export function fuse(rankings: string[][], limit: number): string[] {
 /** An outline of the space's top two levels, checked against the current rules, so an answer knows where things are. */
 async function outlineOf(key: string, deps: RetrieverDeps): Promise<string> {
   let outline = '## Outline of the space\n';
+  const excluded = deps.exclusions.checker(key);
   const walk = (nodes: SpaceTocNode[], depth: number, ancestors: Array<{ id: string; title: string }>): void => {
-    const allowed = nodes.filter((n) => !deps.exclusions.isPageExcluded({ id: n.id, title: n.title, ancestors }, key));
+    const allowed = nodes.filter((n) => !excluded({ id: n.id, title: n.title, ancestors }));
     for (const n of allowed.slice(0, 8)) {
       outline += `${'  '.repeat(depth)}- **${n.title}**${n.summary ? `: ${n.summary}` : ''}\n`;
       if (depth < 1) walk(n.children, depth + 1, [...ancestors, { id: n.id, title: n.title }]);

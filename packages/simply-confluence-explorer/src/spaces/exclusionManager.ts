@@ -41,6 +41,8 @@ export class ExclusionManager {
   private readonly spacesDir: string;
   // Rules are read once each time the file changes, not once for every page checked.
   private readonly cache = new Map<string, { mtimeMs: number; patterns: string[] }>();
+  // Each page's answer under one set of rules, so a pass over the whole space asks each page once.
+  private readonly answers = new Map<string, { rules: string[]; byPage: Map<string, boolean> }>();
 
   public constructor(
     dataDir: string,
@@ -94,20 +96,69 @@ export class ExclusionManager {
    * form the rule takes.
    */
   public isPageExcluded(page: RuleTarget, spaceKey: string): boolean {
-    const patterns = this.patterns(spaceKey);
-    if (patterns.length === 0) return false;
-    const title = page.title ?? '';
-    const ids = [page.id, ...(page.ancestors ?? []).map((a) => a.id)].filter((id): id is string => !!id);
-    const ancestors = (page.ancestors ?? []).map((a) => a.title ?? '');
-    const fullPath = [...ancestors, title].join('/');
-    return patterns.some(
-      (pattern) =>
-        ids.some((id) => pattern === id || pattern === `id:${id}`) ||
-        matchesPattern(pattern, title) ||
-        ancestors.some((ancestor) => matchesPattern(pattern, ancestor)) ||
-        matchesPattern(pattern, fullPath),
-    );
+    return this.checker(spaceKey)(page);
   }
+
+  /**
+   * The space's rules read once, as a check for many pages: a pass over the whole space reads the
+   * rules file once rather than once for each page. Each page's answer is kept until the rules
+   * change, and a single page checked on its own through `isPageExcluded` reads the file every time,
+   * so a rule changed or made unreadable applies at once.
+   */
+  public checker(spaceKey: string): (page: RuleTarget) => boolean {
+    const patterns = this.patterns(spaceKey);
+    if (patterns.length === 0) return () => false;
+    const key = spaceKey.trim().toUpperCase();
+    let kept = this.answers.get(key);
+    if (kept?.rules !== patterns) {
+      kept = { rules: patterns, byPage: new Map() };
+      this.answers.set(key, kept);
+    }
+    const { byPage } = kept;
+    return (page) => {
+      const id = [page.id, page.title, ...(page.ancestors ?? []).flatMap((a) => [a.id, a.title])].join('\u0000');
+      let excluded = byPage.get(id);
+      if (excluded === undefined) {
+        excluded = matchesAny(patterns, page);
+        byPage.set(id, excluded);
+      }
+      return excluded;
+    };
+  }
+}
+
+function matchesAny(patterns: string[], page: RuleTarget): boolean {
+  const title = page.title ?? '';
+  const ids = [page.id, ...(page.ancestors ?? []).map((a) => a.id)].filter((id): id is string => !!id);
+  const ancestors = (page.ancestors ?? []).map((a) => a.title ?? '');
+  const fullPath = [...ancestors, title].join('/');
+  return patterns.some(
+    (pattern) =>
+      ids.some((id) => pattern === id || pattern === `id:${id}`) ||
+      matchesPattern(pattern, title) ||
+      ancestors.some((ancestor) => matchesPattern(pattern, ancestor)) ||
+      matchesPattern(pattern, fullPath),
+  );
+}
+
+/** A rule's two expressions, built once: the whole text, then anywhere in it. `null` when it is not one. */
+const compiled = new Map<string, { whole: RegExp; anywhere: RegExp } | null>();
+
+function expressionsOf(rule: string): { whole: RegExp; anywhere: RegExp } | null {
+  let hit = compiled.get(rule);
+  if (hit !== undefined) return hit;
+  const source = rule
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\/$/, '(/.*)?');
+  try {
+    hit = { whole: new RegExp(`^${source}$`, 'i'), anywhere: new RegExp(source, 'i') };
+  } catch {
+    // A rule containing `?` can still form an invalid expression; it then matches as plain text.
+    hit = null;
+  }
+  compiled.set(rule, hit);
+  return hit;
 }
 
 /**
@@ -120,14 +171,8 @@ export function matchesPattern(pattern: string, target: string): boolean {
   const rule = pattern.trim();
   if (!rule || !target) return false;
   if (rule.toLowerCase() === target.toLowerCase()) return true;
-  const source = rule
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\/$/, '(/.*)?');
-  try {
-    return new RegExp(`^${source}$`, 'i').test(target) || new RegExp(source, 'i').test(target);
-  } catch {
-    // A rule containing `?` can still form an invalid expression; it then matches as plain text.
-    return target.toLowerCase().includes(rule.toLowerCase());
-  }
+  const expressions = expressionsOf(rule);
+  return expressions
+    ? expressions.whole.test(target) || expressions.anywhere.test(target)
+    : target.toLowerCase().includes(rule.toLowerCase());
 }
