@@ -285,11 +285,15 @@ describe("a space's images", () => {
     });
   });
 
-  it('are named as not read when the AI answered without them, where they were counted as sent', async () => {
+  it('are named as not read when the AI answered without them, with its reason, where they were counted as sent and the reason was lost', async () => {
     // As the Gemini CLI does when it gives no answer with images and is asked again without them.
     const without = (payload: GuardedPayload): string =>
       (payload.images?.length
-        ? { text: 'An answer from the text.', imagesDropped: payload.images.map((i) => i.name) }
+        ? {
+            text: 'An answer from the text.',
+            imagesDropped: payload.images.map((i) => i.name),
+            whyDropped: 'The model returned an empty response with no text or thoughts.',
+          }
         : reviewer(payload)) as unknown as string;
     const app = await startTestApp(fake, without);
     try {
@@ -305,7 +309,7 @@ describe("a space's images", () => {
         expect.objectContaining({
           page: 'Architecture Overview',
           name: 'architecture-diagram.png',
-          why: expect.stringMatching(/not read/),
+          why: 'not read: the AI gave no answer with the images (it said: The model returned an empty response with no text or thoughts.), so it was asked again without them',
         }),
       );
       expect(turn.sent?.leftOut).toContainEqual(
@@ -313,6 +317,7 @@ describe("a space's images", () => {
           kind: 'image',
           label: 'Architecture Overview / architecture-diagram.png',
           reason: 'not-read',
+          why: expect.stringContaining('it said: The model returned an empty response'),
         }),
       );
     } finally {

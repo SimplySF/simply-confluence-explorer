@@ -399,7 +399,7 @@ export class CorpusReviews {
                   },
                   { spaceKey: job.spaceKey, guard, signal },
                 );
-                if (seen) withoutImages(seen.report, reply.imagesDropped);
+                if (seen) withoutImages(seen.report, reply.imagesDropped, reply.whyDropped);
                 const findings = reply.cutOff ? null : request.parse(reply.text);
                 span.set({ findings: findings?.length ?? 0, parsed: findings !== null, attempts: attempt });
                 if (findings) return findings;
@@ -495,7 +495,7 @@ export class CorpusReviews {
                   },
                   { spaceKey: job.spaceKey, guard, signal },
                 );
-                if (seen) withoutImages(seen.report, got.imagesDropped);
+                if (seen) withoutImages(seen.report, got.imagesDropped, got.whyDropped);
                 const usable = !got.cutOff && got.text.trim().length > 0;
                 span.set({ chars: got.text.length, read: usable, attempts: attempt });
                 if (usable) return got.text.trim();

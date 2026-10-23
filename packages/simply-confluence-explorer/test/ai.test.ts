@@ -418,6 +418,25 @@ process.stdin.on('end', () => {
   );
 });
 
+test('the reason the Gemini CLI gave no answer with images is kept for the retry, where it was thrown away', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  fs.writeFileSync(
+    script,
+    `process.stdin.resume();
+process.stdin.on('end', () => {
+  const p = process.argv[process.argv.indexOf('-p') + 1];
+  if (p.includes('@img-')) process.stderr.write('[ERROR] The model response was blocked due to safety settings.\\n');
+  else process.stdout.write('An answer from the text.');
+});`,
+  );
+  const reply = await runGeminiCli(script, withImage().payload, {});
+  assert.deepEqual(reply, {
+    text: 'An answer from the text.',
+    imagesDropped: ['chart.png'],
+    whyDropped: 'The model response was blocked due to safety settings.',
+  });
+});
+
 test('no key or no model fails before anything is sent', async () => {
   await assert.rejects(complete('anthropic', { ...cfg('', 'm'), apiKey: '' }, guarded('s', 'u')), /no API key/);
   await assert.rejects(complete('openai', cfg('', ''), guarded('s', 'u')), /no model/);

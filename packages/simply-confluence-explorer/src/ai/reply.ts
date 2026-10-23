@@ -23,7 +23,15 @@ export type Reply = {
   cutOff?: 'length' | 'blocked';
   /** Images the provider could not answer with, so the answer was made without them (ADR-069). */
   imagesDropped?: string[];
+  /** What the provider said when it gave no answer with those images, if it said anything. */
+  whyDropped?: string;
 };
+
+/** Why images were not read, with what the provider said about it, so the reason is not lost to the retry. */
+export function droppedNote(whyDropped?: string): string {
+  const said = whyDropped ? ` (it said: ${whyDropped})` : '';
+  return `the AI gave no answer with the images${said}, so it was asked again without them`;
+}
 
 /** What an answer says when the model stopped before finishing it. */
 export function cutOffNote(cutOff?: Reply['cutOff']): string {

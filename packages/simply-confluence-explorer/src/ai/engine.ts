@@ -48,6 +48,8 @@ export type AiAnswer = {
   cutOff?: Reply['cutOff'];
   /** Images the answer was made without, because the provider gave no answer with them. */
   imagesDropped?: string[];
+  /** What the provider said when it gave no answer with them. */
+  whyDropped?: string;
 };
 
 /** The answer a person reads: the reply with its placeholders put back, and what it says about itself. */
@@ -57,6 +59,7 @@ function answerOf(reply: Reply, guard: OutboundGuard, report: GuardReport): AiAn
     guard: report,
     ...(reply.cutOff ? { cutOff: reply.cutOff } : {}),
     ...(reply.imagesDropped?.length ? { imagesDropped: reply.imagesDropped } : {}),
+    ...(reply.imagesDropped?.length && reply.whyDropped ? { whyDropped: reply.whyDropped } : {}),
   };
 }
 

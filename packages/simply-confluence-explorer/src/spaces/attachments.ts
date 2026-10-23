@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AttachmentChoice, AttachmentsReport, ImageChoice, ImagesReport, PageDetail } from '../api/types.js';
 import type { ImageInput } from '../ai/guard.js';
+import { droppedNote } from '../ai/reply.js';
 import { errorMessage } from '../util/errors.js';
 import { runTask, type Extracted } from '../workers/tasks.js';
 import { documentText, formatOf } from './documentText.js';
@@ -397,8 +398,13 @@ export function previewAccount(
  *
  * @param report The account the request was sent with, changed in place.
  * @param dropped The images' names as they were sent, "page / file".
+ * @param whyDropped What the provider said when it gave no answer with them.
  */
-export function withoutImages(report: AttachmentsReport, dropped: string[] | undefined): AttachmentsReport {
+export function withoutImages(
+  report: AttachmentsReport,
+  dropped: string[] | undefined,
+  whyDropped?: string,
+): AttachmentsReport {
   if (!dropped?.length) return report;
   report.images.sent = Math.max(0, report.images.sent - dropped.length);
   for (const name of dropped) {
@@ -406,7 +412,7 @@ export function withoutImages(report: AttachmentsReport, dropped: string[] | und
     report.unread.push({
       page,
       name: file.join(' / ') || name,
-      why: 'not read: the AI gave no answer with the images, so it was asked again without them',
+      why: `not read: ${droppedNote(whyDropped)}`,
     });
   }
   return report;
