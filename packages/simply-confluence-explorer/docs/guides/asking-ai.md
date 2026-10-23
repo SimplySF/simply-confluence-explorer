@@ -105,7 +105,9 @@ you can choose two directories and a page from another part of the space; under 
 every page that carries it. Each chip is removed with its ×, a directory with its sub-pages. A
 directory or tag is read as it is when you ask, so a page added under it later is read too. The count
 at the end of the row says how many of the pages are indexed; hover over it to see how each question
-reads them.
+reads them. A page you add shows at once, marked **Saving…**. While the chat checks its pages and
+their attachments, or the space's search index is built, the row says so with the progress, and
+**Send** waits until it is done, so nothing about the pages arrives in the middle of a conversation.
 
 ![Space chat with two directories and a page chosen as chips, and how many of them are indexed](../images/space-chat.webp)
 

@@ -2077,7 +2077,7 @@ copying is small next to it, and the rule about what may run there is checked ra
 
 ---
 
-## ADR-075 — The code budget rises to 20,400 lines, prose to 2,350 and the bundle to 450 KiB, for a responsive app
+## ADR-075 — The code budget rises to 20,100 lines, prose to 2,350 and the bundle to 430 KiB, for a responsive app
 
 **Status:** accepted, 2026-10-23. Amends ADR-072 and ADR-014.
 
@@ -2085,11 +2085,11 @@ Making the app keep up with the person (design doc 0015) adds code: the caches t
 reading a whole space for each request, the worker threads and the rule that holds them, the
 indicators that show every wait, and the review as its own place with a four-step flow, opened from a
 chat or from the sidebar. The code passes the 19,300 lines set by ADR-072 and the browser bundle the
-400 KiB set by ADR-014, and the design doc takes the prose near its 2,250. The limits rise to 20,400
-lines (`MAX_CODE_LINES`), 2,350 lines (`MAX_DOC_LINES`) and 450 KiB (`MAX_BUNDLE_BYTES`), sized to
-the measured change with the usual small headroom.
+400 KiB set by ADR-014, and the design doc takes the prose to its 2,250. Measured at 19,820 lines of
+code, 2,250 of prose and 411 KiB of bundle, the limits rise to 20,100 lines (`MAX_CODE_LINES`),
+2,350 lines (`MAX_DOC_LINES`) and 430 KiB (`MAX_BUNDLE_BYTES`), each with the usual small headroom.
 
 **The argument against:** a budget raised each time it is reached is no limit, and a larger bundle
-takes longer to load. This is accepted because the app is served from this machine, where 50 KiB more
+takes longer to load. This is accepted because the app is served from this machine, where 30 KiB more
 loads in milliseconds, the rework removes the side panel and the Ready to push page it replaces, and
 the next rise needs its own record.

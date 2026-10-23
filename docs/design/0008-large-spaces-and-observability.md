@@ -48,8 +48,9 @@ only "Thinking…" for up to a minute, and failures were counted but never expla
 - **Telemetry** is kept in `<data dir>/telemetry/` for 14 days, up to 200 MB. It records counts, ids,
   durations, allowed page titles and error messages, never page text, prompts, answers, credentials
   or the title of an excluded page.
-- **Problems are flagged** without setup: the server frozen for over a second, a failed context
-  check, most AI requests failing, or an index run with failures.
+- **Problems are flagged** without setup: a failed context check, most AI requests failing, or an
+  index run with failures. The server kept busy for over two seconds is recorded too, naming what
+  ran, for diagnosis, and is not counted in the header (ADR-063, ADR-073).
 
 ## Alternatives considered
 
