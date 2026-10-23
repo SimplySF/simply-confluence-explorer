@@ -69,7 +69,9 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
         const building = store.catalog.progress(key);
         return building ? { tags: [], building } : { tags: await tagIndex(store, key) };
       })
-      .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', ({ params }) => {
+      .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', async ({ params }) => {
+        // The tree is built in chunks on a first request, rather than all at once while others wait.
+        await store.treeReady(params.spaceKey);
         const descendants = store.descendants(params.spaceKey, params.pageId);
         return {
           pageId: params.pageId,

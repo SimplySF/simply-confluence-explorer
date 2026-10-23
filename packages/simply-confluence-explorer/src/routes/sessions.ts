@@ -259,6 +259,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
     if (!gate.allowed || !gate.page) throw new HttpError(403, gate.reason ?? 'This page cannot be sent to an AI.');
     if (readPdfs) {
       // The PDFs of the page, and of a directory's pages on disk, are read before the request (ADR-069).
+      if (scope.kind === 'branch') await store.treeReady(scope.spaceKey);
       const below = scope.kind === 'branch' ? store.descendants(scope.spaceKey, gate.page.id) : [];
       const pages = [gate.page, ...below.flatMap((n) => store.readPage(scope.spaceKey, n.id) ?? [])];
       await store.attachments.prepare(pages.map((page) => ({ spaceKey: scope.spaceKey, page })));

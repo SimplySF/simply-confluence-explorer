@@ -274,6 +274,7 @@ export class SpaceStore {
   ): Promise<{ purgedCount: number }> {
     const page = this.readPage(spaceKey, pageId);
     if (!page) return { purgedCount: 0 };
+    if (options.includeSubPages) await this.treeReady(spaceKey);
     const ids = [pageId, ...(options.includeSubPages ? this.descendants(spaceKey, pageId).map((d) => d.id) : [])];
     if (options.addToIgnore) {
       const rules = options.includeSubPages ? [`${page.title}/`, `*${page.title}*`] : [page.title, `id:${page.id}`];

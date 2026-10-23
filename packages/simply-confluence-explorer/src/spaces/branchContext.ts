@@ -91,6 +91,7 @@ export async function collectBranch(
   budget = CONTEXT_CHAR_LIMIT,
 ): Promise<BranchContext> {
   const { consider, result } = contextCollector(spaceKey, deps, dataDir, budget);
+  await deps.store.treeReady(spaceKey);
   const synced = deps.store.descendants(spaceKey, pageId);
   if (synced.length > 0) {
     for (const node of synced) {
