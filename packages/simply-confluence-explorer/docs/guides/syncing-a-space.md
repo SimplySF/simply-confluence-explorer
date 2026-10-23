@@ -41,10 +41,11 @@ A synced space behaves the same as a live one, but faster and without asking Con
 page. The tree on the left is read from your disk, and the page view shows the copy. To see a
 page's latest version, sync the space again.
 
-- **Filter pages**: type in the box above the tree, or press `/` to jump to it. A page stays visible
-  if it, or any page under it, matches.
-- **Jump to a page**: paste a Confluence page address or a page id into **Jump to a page URL or id**.
-  The app finds the page and switches to its space.
+- **Find a page**: type part of its title into the search at the top of the window, or press `/` to
+  jump to it, and pick the page from the list. Paste a Confluence page address or a page id there
+  instead, and the app finds the page and switches to its space.
+- **Filter pages**: type in the box above the tree. A page stays visible if it, or any page under it,
+  matches.
 - **Read it three ways**: the **Read** tab shows the page **Rendered**, as **Markdown**, or as
   **Storage XML**, Confluence's own format. **Copy Markdown** copies the text.
 

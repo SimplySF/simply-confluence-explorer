@@ -29,6 +29,12 @@ export function searchPages(pages: SpacePage[], query: string, limit = 8): Space
   return [...starts, ...contains].slice(0, limit);
 }
 
+/** True for what names a page rather than searching for one: a Confluence address, or a page id. */
+export function looksLikeAddress(text: string): boolean {
+  const t = text.trim();
+  return /^\d+$/.test(t) || /^https?:\/\//i.test(t) || /pageId=\d+|\/(?:display|spaces|pages)\//.test(t);
+}
+
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** A chosen directory's name in the list of what a chat reads, such as "Runbooks + 14 sub-pages". */

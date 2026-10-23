@@ -6,6 +6,7 @@
     Copy,
     Download,
     ExternalLink,
+    FilePlus2,
     Info,
     MoreHorizontal,
     Paperclip,
@@ -44,10 +45,21 @@
     onPagesChanged: () => void;
     /** A review found a page that should exist: start writing it under this one. */
     onWriteNewPage: (finding: BranchFinding) => void;
+    /** Start writing a new page under this one. */
+    onNewPage: () => void;
   };
 
-  let { activeSpace, page, loading, error, onSelectPage, onPagePurged, onPagesChanged, onWriteNewPage }: Props =
-    $props();
+  let {
+    activeSpace,
+    page,
+    loading,
+    error,
+    onSelectPage,
+    onPagePurged,
+    onPagesChanged,
+    onWriteNewPage,
+    onNewPage,
+  }: Props = $props();
   let tab = $state<Tab>('read');
   // A page with sub-pages is asked about together with them unless the person chooses the page alone.
   let scope = $state<AiScope>('branch');
@@ -190,6 +202,9 @@
         >
           {#snippet label()}<MoreHorizontal size={14} />{/snippet}
         </Menu>
+        <button class="btn btn-secondary btn-sm" onclick={onNewPage} title="Write a new page under “{detail.title}”">
+          <FilePlus2 size={14} /> New sub-page
+        </button>
       </div>
     </div>
 

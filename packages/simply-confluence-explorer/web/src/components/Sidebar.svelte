@@ -1,7 +1,6 @@
 <script lang="ts">
   import {
     AlertTriangle,
-    ArrowRight,
     Check,
     ChevronDown,
     ChevronRight,
@@ -18,7 +17,6 @@
   } from '@lucide/svelte';
   import type { ConfluenceSpace, PageTreeNode, SyncedSpace, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
-  import { messageOf } from '../support/toast.svelte.js';
   import { ancestorsOf, collapsedFor } from '../support/tree.js';
   import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
@@ -32,7 +30,6 @@
     tree: PageTreeNode[];
     selectedPageId: string | null;
     onSelectPage: (pageId: string) => void;
-    onJump: (target: { spaceKey: string; pageId?: string }) => void;
     loading: boolean;
     /** The list of Confluence's spaces is still on its way. */
     spacesLoading: boolean;
@@ -56,7 +53,6 @@
     tree,
     selectedPageId,
     onSelectPage,
-    onJump,
     loading,
     spacesLoading,
     error,
@@ -99,9 +95,6 @@
     return into;
   };
 
-  let jump = $state('');
-  let resolving = $state(false);
-  let jumpError = $state<string | null>(null);
   let switcherOpen = $state(false);
   let spaceFilter = $state('');
   let pageFilter = $state('');
@@ -168,26 +161,6 @@
     spaceFilter = '';
   }
 
-  async function resolve(e: SubmitEvent): Promise<void> {
-    e.preventDefault();
-    if (!jump.trim()) return;
-    resolving = true;
-    jumpError = null;
-    try {
-      const res = await api.resolve(jump.trim());
-      if (res.spaceKey) {
-        onJump({ spaceKey: res.spaceKey, pageId: res.pageId });
-        jump = '';
-      } else {
-        jumpError = 'No space found for this URL or id.';
-      }
-    } catch (err) {
-      jumpError = messageOf(err);
-    } finally {
-      resolving = false;
-    }
-  }
-
   function toggle(id: string): void {
     const next = new Set(collapsed);
     if (next.has(id)) next.delete(id);
@@ -234,25 +207,6 @@
 
 <div class="sidebar-panel">
   <div class="sidebar-header">
-    <form onsubmit={resolve} class="row">
-      <input
-        class="form-input input-sm"
-        placeholder="Jump to a page URL or id"
-        aria-label="Jump to a page URL or id"
-        bind:value={jump}
-        disabled={resolving}
-      />
-      <button
-        type="submit"
-        class="btn btn-secondary btn-sm"
-        disabled={!jump.trim() || resolving}
-        title="Open that page"
-      >
-        {#if resolving}<RefreshCw size={13} class="spin" />{:else}<ArrowRight size={13} />{/if}
-      </button>
-    </form>
-    {#if jumpError}<div class="field-error">{jumpError}</div>{/if}
-
     <div
       class="space-switcher"
       bind:this={switcher}
@@ -381,7 +335,7 @@
         <input
           id="tree-filter"
           class="form-input input-sm"
-          placeholder="Filter pages ( / )"
+          placeholder="Filter pages"
           aria-label="Filter pages"
           bind:value={pageFilter}
         />
@@ -426,7 +380,8 @@
       </div>
     {:else if tree.length === 0}
       <div class="muted tree-message">
-        No pages found in <strong>{selectedSpace}</strong>. Check your permissions, or paste a page URL above.
+        No pages found in <strong>{selectedSpace}</strong>. Check your permissions, or paste a page URL in the search
+        above.
       </div>
     {:else}
       {#each rows as r (r.node.id)}
