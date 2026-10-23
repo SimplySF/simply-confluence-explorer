@@ -1877,7 +1877,8 @@ because the increase is sized to the measured change, and the next one needs its
 
 ## ADR-066 — Page attachments are read with their page: text through the guard, images only when the space chooses to send them, each named as unchecked
 
-**Status:** accepted, 2026-10-21. Amends ADR-022 and ADR-023.
+**Status:** accepted, 2026-10-21. Amends ADR-022 and ADR-023. Amended by ADR-076, which names each
+image to the model and keeps page text from being read as files by the Gemini CLI.
 
 A sync downloaded each page's attachments, and nothing read them again: a value held only in a JSON
 or CSV file, or a diagram, was invisible to every answer, review, edit and index run.
@@ -2093,3 +2094,30 @@ code, 2,250 of prose and 411 KiB of bundle, the limits rise to 20,100 lines (`MA
 takes longer to load. This is accepted because the app is served from this machine, where 30 KiB more
 loads in milliseconds, the rework removes the side panel and the Ready to push page it replaces, and
 the next rise needs its own record.
+
+---
+
+## ADR-076 — Each image is sent with its name, and the Gemini CLI reads no @ in page text as a file
+
+**Status:** accepted, 2026-10-23. Amends ADR-066.
+
+Images went to every provider as pictures without names. A person asks about an image by its file
+name, and the model, holding several unnamed pictures, could not tell which one that was, so it
+answered that the file was only referenced in the page. The Gemini CLI also reads every `@word` in
+its input as a file to attach, including the page text piped to it: an email address or a mention was
+rewritten, a word matching an image's file name attached that image a second time, and a page naming
+`@GEMINI.md` would have made the CLI read the person's own Gemini memory file into the request,
+outside the outbound guard.
+
+- **Each image goes with a line naming it**, "Image 1: Page / file.png", placed before the picture
+  for Claude, ChatGPT and the Gemini API (`imageLabel` in `src/ai/guard.ts`). The names have already
+  passed the guard's scan of image names.
+- **The Gemini CLI is given the same names as a list** after the document, saying which numbered file
+  is which image. The files are numbered with two digits so that the CLI, which attaches them in name
+  order, attaches them in the order of the list.
+- **Every `@` in the CLI's piped input is escaped** as `\@`, the CLI's own escape, so nothing a page
+  says is read as a file; the escapes the model repeats are taken out of its answer.
+
+**The argument against:** the model reads an escaped `\@` where the page said `@`, which is not
+exactly the page. This is accepted because the meaning is kept, the alternative let a page choose
+files for the CLI to read, and the answer the person reads has the escapes taken out.

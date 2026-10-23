@@ -308,7 +308,7 @@ test('the guard lets an image through as unchecked, names it, and checks its nam
   );
 });
 
-test('Claude, ChatGPT and the Gemini API each receive an image in their own shape, with the text', async () => {
+test('Claude, ChatGPT and the Gemini API each receive an image in their own shape, named, where the model could not tell which file a picture was', async () => {
   const claude = anthropicRequest(
     cfg('', 'claude-opus-5-5'),
     's',
@@ -316,6 +316,7 @@ test('Claude, ChatGPT and the Gemini API each receive an image in their own shap
     withImage().payload.images,
   );
   assert.deepEqual(claude.messages[0].content, [
+    { type: 'text', text: 'Image 1: chart.png' },
     { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG.toString('base64') } },
     { type: 'text', text: 'DOC' },
   ]);
@@ -336,12 +337,16 @@ test('Claude, ChatGPT and the Gemini API each receive an image in their own shap
         role: 'user',
         content: [
           { type: 'input_text', text: 'DOC' },
+          { type: 'input_text', text: 'Image 1: chart.png' },
           { type: 'input_image', image_url: `data:image/png;base64,${PNG.toString('base64')}`, detail: 'auto' },
         ],
       },
     ]);
     await complete('gemini', cfg(gemini.url, 'gemini-pro-latest'), withImage().payload);
-    assert.match(JSON.stringify(gemini.seen[0].body), /"inlineData":\{"mimeType":"image\/png","data":"iVBORw0KGgo="\}/);
+    assert.match(
+      JSON.stringify(gemini.seen[0].body),
+      /\{"text":"Image 1: chart\.png"\},\{"inlineData":\{"mimeType":"image\/png","data":"iVBORw0KGgo="\}/,
+    );
   } finally {
     openai.close();
     gemini.close();
@@ -365,8 +370,8 @@ process.stdin.on('end', () => {
     files: string[];
     p: string;
   };
-  assert.deepEqual(reply.files, ['img-1.png']);
-  assert.match(reply.p, /@img-1\.png$/);
+  assert.deepEqual(reply.files, ['img-01.png']);
+  assert.match(reply.p, /@img-01\.png$/);
   assert.match(path.basename(reply.cwd), /^cexp-gemini-/);
   assert.equal(fs.existsSync(reply.cwd), false, 'the folder is removed once the CLI ends');
 });
@@ -416,6 +421,51 @@ process.stdin.on('end', () => {
     runGeminiCli(silent, guarded('S', 'D'), {}),
     /^Error: the Gemini CLI gave no answer: it printed no error$/,
   );
+});
+
+test('the Gemini CLI gets page text with every @ escaped, where it read @ words as files to attach and rewrote them', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  // A stand-in that answers with what it was piped, as a model repeating its input would.
+  fs.writeFileSync(
+    script,
+    "let s = ''; process.stdin.on('data', (d) => (s += d)); process.stdin.on('end', () => process.stdout.write(s));",
+  );
+  const piped = (await runGeminiCli(script, guarded('S', 'Ask @Bob, or read @GEMINI.md and @/etc/hosts.'), {})).text;
+  assert.match(piped, /Ask @Bob, or read @GEMINI\.md and @\/etc\/hosts\./, 'the answer has the escapes taken out');
+  const raw = path.join(tmp(), 'raw.mjs');
+  fs.writeFileSync(
+    raw,
+    "let s = ''; process.stdin.on('data', (d) => (s += d)); process.stdin.on('end', () => process.stdout.write(Buffer.from(s).toString('base64')));",
+  );
+  const sent = Buffer.from((await runGeminiCli(raw, guarded('S', 'Ask @Bob.'), {})).text, 'base64').toString();
+  assert.match(sent, /Ask \\@Bob\./);
+  assert.doesNotMatch(sent, /(?<!\\)@/);
+});
+
+test('the Gemini CLI is told which file each image is, in the order it attaches them, where ten or more came out of order', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  fs.writeFileSync(
+    script,
+    `import fs from 'node:fs';
+let s = '';
+process.stdin.on('data', (d) => (s += d));
+process.stdin.on('end', () => process.stdout.write(JSON.stringify({ s, files: fs.readdirSync('.').sort() })));`,
+  );
+  const images = Array.from({ length: 11 }, (_, i) => ({
+    name: `Home / f${i + 1}.png`,
+    mediaType: 'image/png',
+    data: PNG,
+  }));
+  const payload = new OutboundGuard().inspect({ system: 'S', prompt: '', document: 'D', images }).payload;
+  const { s, files } = JSON.parse((await runGeminiCli(script, payload, {})).text) as { s: string; files: string[] };
+  const listed = [...s.matchAll(/^(img-\d+\.png) is Image (\d+): Home \/ f(\d+)\.png$/gm)];
+  assert.deepEqual(
+    listed.map((m) => m[1]),
+    files,
+    'the list follows the order the CLI attaches the files in',
+  );
+  assert.ok(listed.every((m) => m[2] === m[3]));
+  assert.equal(files.length, 11);
 });
 
 test('the reason the Gemini CLI gave no answer with images is kept for the retry, where it was thrown away', async () => {

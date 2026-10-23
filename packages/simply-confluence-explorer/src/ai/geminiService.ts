@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import type { GuardedPayload } from './guard.js';
+import { imageLabel, type GuardedPayload } from './guard.js';
 import type { Reply } from './reply.js';
 
 // The Gemini CLI is run as `node <its bundle>`, so no shell is involved on any platform. `gemini` on
@@ -109,6 +109,11 @@ export function cliError(stderr: string): string {
     .slice(0, 1500);
 }
 
+/** Text with every @ escaped as the CLI's `\\@`, so it reads none of them as a file to attach. */
+const escapeAt = (text: string): string => text.replace(/@/g, '\\@');
+/** An answer with the escapes the model repeated from its input taken out again. */
+const unescapeAt = (text: string): string => text.replace(/\\@/g, '@');
+
 /** Lines the CLI prints on every run, on either output, which say nothing about the answer. */
 const NOISE = [/Warning:\s*True color/i, /Ripgrep is not available/i, /YOLO mode is enabled/i];
 
@@ -175,11 +180,16 @@ function runOnce(
   // The CLI can search and read the files in its working folder, so every request runs in an empty
   // folder made for it, readable only by this account and removed when it ends; a shared folder such
   // as the system's temporary one would let it read other programs' files. Images the space chose to
-  // send are written there and named in the fixed instruction with the CLI's @ syntax; page text never
-  // goes in the instruction, so no text on a page can make the CLI read a file (ADR-066).
+  // send are written there and named in the fixed instruction with the CLI's @ syntax. The CLI reads
+  // @ references in its piped input too, so every @ there is escaped: no text on a page can make it
+  // read a file or rewrite the text (ADR-076). It attaches the files in name order, which the
+  // two-digit numbers keep the same as the list naming each one.
   const images = payload.images ?? [];
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-gemini-'));
-  const names = images.map((im, i) => `img-${i + 1}${EXTENSIONS[im.mediaType] ?? '.png'}`);
+  const names = images.map((im, i) => `img-${String(i + 1).padStart(2, '0')}${EXTENSIONS[im.mediaType] ?? '.png'}`);
+  const named = images.length
+    ? `\n\nIMAGES, attached after the document in this order:\n${images.map((im, i) => `${names[i]} is ${imageLabel(i, im)}`).join('\n')}`
+    : '';
   images.forEach((im, i) => fs.writeFileSync(path.join(folder, names[i]), Buffer.from(im.data, 'base64')));
   const instruction = images.length
     ? `${STDIN_INSTRUCTION} Also look at these images from the pages: ${names.map((n) => `@${n}`).join(' ')}`
@@ -209,12 +219,12 @@ function runOnce(
     const stderr: Buffer[] = [];
 
     child.stdin.on('error', (err) => reject(new Error(`Gemini CLI closed its input: ${err.message}`)));
-    child.stdin.end(`INSTRUCTIONS:\n${systemPrompt}\n\nDOCUMENT:\n${documentContext}`);
+    child.stdin.end(escapeAt(`INSTRUCTIONS:\n${systemPrompt}\n\nDOCUMENT:\n${documentContext}${named}`));
     child.stdout.on('data', (chunk: Buffer) => {
       stdout.push(chunk);
       if (!onText) return;
       soFar += decoder.write(chunk);
-      onText(soFar);
+      onText(unescapeAt(soFar));
     });
     child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
     child.on('error', (err) => {
@@ -248,7 +258,8 @@ function runOnce(
         );
       } else {
         // An answer followed by a failure may be the start of one the CLI could not finish.
-        resolve(code === 0 ? { text: cleanOutput } : { text: cleanOutput, cutOff: 'length' });
+        const text = unescapeAt(cleanOutput);
+        resolve(code === 0 ? { text } : { text, cutOff: 'length' });
       }
     });
   });

@@ -21,7 +21,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import type { GuardedImage, GuardedPayload } from './guard.js';
+import { imageLabel, type GuardedImage, type GuardedPayload } from './guard.js';
 import type { Reply } from './reply.js';
 import type { ApiProvider, ResolvedApi } from './settings.js';
 
@@ -67,10 +67,13 @@ export function cutOffOf(provider: ApiProvider, response: unknown): Reply['cutOf
 /* eslint-disable camelcase -- the field names are the Claude API's own */
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the SDK's own parameter type is inferred here
 export function anthropicRequest(cfg: ResolvedApi, system: string, messages: Messages, images: Images = []) {
-  const pictures = images.map((im) => ({
-    type: 'image' as const,
-    source: { type: 'base64' as const, media_type: im.mediaType as ImageType, data: im.data },
-  }));
+  const pictures = images.flatMap((im, i) => [
+    { type: 'text' as const, text: imageLabel(i, im) },
+    {
+      type: 'image' as const,
+      source: { type: 'base64' as const, media_type: im.mediaType as ImageType, data: im.data },
+    },
+  ]);
   return {
     model: cfg.model,
     max_tokens: 64000,
@@ -138,12 +141,15 @@ async function openai(
   signal?: AbortSignal,
 ): Promise<Reply> {
   const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl || undefined });
-  const pictures = images.map((im) => ({
-    type: 'input_image' as const,
-    // eslint-disable-next-line camelcase -- the OpenAI API's own field name
-    image_url: `data:${im.mediaType};base64,${im.data}`,
-    detail: 'auto' as const,
-  }));
+  const pictures = images.flatMap((im, i) => [
+    { type: 'input_text' as const, text: imageLabel(i, im) },
+    {
+      type: 'input_image' as const,
+      // eslint-disable-next-line camelcase -- the OpenAI API's own field name
+      image_url: `data:${im.mediaType};base64,${im.data}`,
+      detail: 'auto' as const,
+    },
+  ]);
   const input =
     messages.length === 1 && pictures.length === 0
       ? messages[0].content
@@ -167,7 +173,10 @@ async function gemini(
   images: Images,
   signal?: AbortSignal,
 ): Promise<Reply> {
-  const pictures = images.map((im) => ({ inlineData: { mimeType: im.mediaType, data: im.data } }));
+  const pictures = images.flatMap((im, i) => [
+    { text: imageLabel(i, im) },
+    { inlineData: { mimeType: im.mediaType, data: im.data } },
+  ]);
   const contents =
     messages.length === 1 && pictures.length === 0
       ? messages[0].content
