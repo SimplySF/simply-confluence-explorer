@@ -208,12 +208,16 @@ export class MetadataPipeline {
     pageIds?: string[],
   ): Promise<{ pages: number; missing: number; requests: number }> {
     const key = spaceKey.toUpperCase();
-    const missing = await this.missing(key, rootPageId, pageIds);
-    return {
-      pages: (await this.allowedPages(key, rootPageId, pageIds)).length,
-      missing: missing.length,
-      requests: packPages(missing).length,
-    };
+    return this.coverageOf(key, await this.allowedPages(key, rootPageId, pageIds));
+  }
+
+  /** The same count for pages already read and allowed, so a caller that has them does not read them again. */
+  public async coverageOf(
+    spaceKey: string,
+    allowed: PageDetail[],
+  ): Promise<{ pages: number; missing: number; requests: number }> {
+    const missing = await this.missingOf(spaceKey.toUpperCase(), allowed);
+    return { pages: allowed.length, missing: missing.length, requests: packPages(missing).length };
   }
 
   /** The synced pages of a space, a section or a list, leaving out excluded pages. */
@@ -243,8 +247,11 @@ export class MetadataPipeline {
    * each page's metadata, so it lets other requests through as it goes.
    */
   private async missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
+    return this.missingOf(spaceKey, await this.pagesOf(spaceKey, rootPageId, pageIds));
+  }
+
+  private async missingOf(spaceKey: string, pages: PageDetail[]): Promise<PageDetail[]> {
     const model = this.embeddingModel();
-    const pages = await this.pagesOf(spaceKey, rootPageId, pageIds);
     const excluded = this.exclusions.checker(spaceKey);
     const wanted = await mapChunked(
       pages,

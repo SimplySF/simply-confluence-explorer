@@ -44,19 +44,17 @@ import { errorMessage } from '../util/errors.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
-/** How long the summary count waits for a space's search index before answering with its progress. */
-const INDEX_WAIT_MS = 1500;
-
 /**
  * The pages a request chooses by directory, tag and page, as a chat's chosen pages are (ADR-051), or
- * `undefined` when it chooses none. Directories and tags are resolved from the synced copy.
+ * `undefined` when it chooses none. Directories and tags are resolved from the synced copy, and the
+ * pages read are returned with the ids, so a caller does not read them again.
  */
-async function chosenIdsOf(
+async function chosenOf(
   body: unknown,
   spaceKey: string,
   store: SpaceStore,
   exclusions: ExclusionManager,
-): Promise<string[] | undefined> {
+): Promise<{ ids: string[]; pages: PageDetail[] } | undefined> {
   const fields = fieldsOf(body);
   if (fields.pageIds === undefined && fields.dirs === undefined && fields.tags === undefined) return undefined;
   const list = (value: unknown): unknown[] =>
@@ -68,9 +66,9 @@ async function chosenIdsOf(
   if (pageIds.length + dirs.length > MAX_CORPUS_IDS || ![...pageIds, ...dirs].every(isValidPageId))
     throw new HttpError(400, `pageIds and dirs are lists of at most ${MAX_CORPUS_IDS} page ids`);
   const scope = { kind: 'pages' as const, spaceKey, pageIds: pageIds as string[], dirs: dirs as string[], tags };
-  const ids = (await corpusPages(store, exclusions, scope)).map((p) => p.id);
-  if (ids.length === 0 && pageIds.length === 0) throw new HttpError(400, 'no synced pages are chosen');
-  return [...new Set([...ids, ...(pageIds as string[])])];
+  const pages = await corpusPages(store, exclusions, scope);
+  if (pages.length === 0 && pageIds.length === 0) throw new HttpError(400, 'no synced pages are chosen');
+  return { ids: [...new Set([...pages.map((p) => p.id), ...(pageIds as string[])])], pages };
 }
 
 /** A settings change from the browser, with every value checked to be the string it must be. */
@@ -137,13 +135,11 @@ export function addAiRoutes(router: Router, services: Services): Router {
    * The attachments of the pages a chat reads, for it to list before its first question, with the
    * chat's choice when it has made one (ADR-069); the images, as the coverage line has shown them.
    */
-  const attachmentsPreview = async (
+  const attachmentsPreview = (
     spaceKey: string,
-    rootPageId: string | undefined,
-    ids: string[] | undefined,
+    pages: PageDetail[],
     sessionId: string | undefined,
-  ): Promise<{ attachments?: AttachmentsReport; images?: { found: number; choice: ImageChoice } }> => {
-    const pages = await metadata.allowedPages(spaceKey, rootPageId, ids);
+  ): { attachments?: AttachmentsReport; images?: { found: number; choice: ImageChoice } } => {
     const session = sessionId && isSessionId(sessionId) ? services.sessions.get(sessionId) : null;
     const report = previewAccount(
       pages.map((page) => ({ pageId: page.id, page: page.title, entries: store.attachmentEntries(spaceKey, page) })),
@@ -307,7 +303,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
           metadata.start(
             params.spaceKey,
             optionalString(body, 'rootPageId'),
-            await chosenIdsOf(body, params.spaceKey, store, exclusions),
+            (await chosenOf(body, params.spaceKey, store, exclusions))?.ids,
           ),
       )
       // How many of a space's, a section's or chosen pages have an AI summary, for a chat to show, and
@@ -315,30 +311,22 @@ export function addAiRoutes(router: Router, services: Services): Router {
       .add('POST', '/api/space-cache/:spaceKey/metadata/coverage', async ({ params, body }) => {
         const key = params.spaceKey.toUpperCase();
         const rootPageId = optionalString(body, 'rootPageId');
-        const ids = await chosenIdsOf(body, key, store, exclusions);
+        // The pages are read once and shared by the attachments, the count and the size.
+        const chosen = await chosenOf(body, key, store, exclusions);
+        const excluded = exclusions.checker(key);
+        const allowed = chosen
+          ? chosen.pages.filter((p) => !excluded(p))
+          : await metadata.allowedPages(key, rootPageId);
         // The chat's pages' attachments are listed at once, from their names, before the index is ready.
-        const attachments = await attachmentsPreview(key, rootPageId, ids, optionalString(body, 'sessionId'));
-        // A space still being indexed answers with how far it has got rather than keep the chat waiting;
-        // the chat asks again until it is done.
-        const built = await Promise.race([
-          index.ready(key).then(() => true),
-          new Promise<false>((resolve) => setTimeout(() => resolve(false), INDEX_WAIT_MS).unref()),
-        ]);
-        if (!built) {
+        const attachments = attachmentsPreview(key, allowed, optionalString(body, 'sessionId'));
+        const counts = await metadata.coverageOf(key, allowed);
+        // A space still being indexed answers at once with how far it has got; the chat shows the
+        // progress and asks again until it is done.
+        if (!index.isReady(key)) {
           const progress = index.building().find((b) => b.spaceKey === key);
-          return {
-            ...(await metadata.coverage(key, rootPageId, ids)),
-            indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 },
-            ...attachments,
-          };
+          return { ...counts, indexing: { done: progress?.done ?? 0, total: progress?.total ?? 0 }, ...attachments };
         }
-        const allowed = await metadata.allowedPages(key, rootPageId, ids);
-        const size = corpusSize(key, allowed, index);
-        return {
-          ...(await metadata.coverage(key, rootPageId, ids)),
-          fits: size <= services.contextChars,
-          ...attachments,
-        };
+        return { ...counts, fits: corpusSize(key, allowed, index) <= services.contextChars, ...attachments };
       })
       .add('GET', '/api/space-cache/metadata/status/:jobId', ({ params }) => {
         const job = metadata.get(params.jobId);

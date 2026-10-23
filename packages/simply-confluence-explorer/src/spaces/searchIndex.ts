@@ -177,6 +177,16 @@ export class SearchIndex {
     return build.promise;
   }
 
+  /**
+   * Whether a space's index is up to date, without waiting for it: a build is started when it is not,
+   * so a caller can answer at once with the build's progress and ask again.
+   */
+  public isReady(spaceKey: string): boolean {
+    const key = spaceKey.toUpperCase();
+    void this.ready(key);
+    return !this.builds.has(key);
+  }
+
   /** About how many characters reading these pages in full would take, from what the index has kept. */
   public sizeOf(spaceKey: string, pages: PageDetail[]): number {
     const key = spaceKey.toUpperCase();

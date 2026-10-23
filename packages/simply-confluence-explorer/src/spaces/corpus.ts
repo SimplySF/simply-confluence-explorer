@@ -15,6 +15,7 @@
  */
 
 import type { PageDetail, PageTreeNode, SessionScope } from '../api/types.js';
+import { mapChunked } from '../util/pause.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SpaceStore } from './spaceStore.js';
 import { tagIndex } from './tags.js';
@@ -58,14 +59,11 @@ export async function corpusPages(
     for (const tagged of await tagIndex(store, key))
       if (tags.has(tagged.tag)) tagged.pages.forEach((p) => wanted.add(p.id));
   }
-  // Pages in the tree come in its order; any chosen page the tree does not hold yet comes last. Pages
-  // are read once, from the store's list of the pages the exclusion rules allow.
+  // Pages in the tree come in its order; any chosen page the tree does not hold yet comes last. Only
+  // the chosen pages are read, in chunks, so choosing one page does not read the whole space.
   const inTree = new Set(order);
   const ids = [...order.filter((id) => wanted.has(id)), ...[...wanted].filter((id) => !inTree.has(id))];
-  const visible = new Map((await store.visiblePages(key)).map((p) => [p.id, p]));
+  const pages = await mapChunked(ids, (id) => store.readPage(key, id));
   const excluded = exclusions.checker(key);
-  return ids.flatMap((id) => {
-    const page = visible.get(id);
-    return page && !excluded(page) ? [page] : [];
-  });
+  return pages.filter((page): page is PageDetail => !!page && !excluded(page));
 }

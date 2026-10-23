@@ -537,8 +537,15 @@ test('an excluded page is left out of a corpus, and an excluded directory refuse
 test('summary coverage says whether chosen pages fit one request, so the chat can say how it reads them', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');
-    const coverage = async (body: unknown): Promise<unknown> =>
-      (await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', body)).body;
+    // The first answer may say the index is still being built; the chat asks again until it is not.
+    const coverage = async (body: unknown): Promise<unknown> => {
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- asks again until the index is built, as the chat does
+        const answer = (await app.call<{ indexing?: unknown }>('POST', '/space-cache/PEOPLE/metadata/coverage', body))
+          .body;
+        if (!answer.indexing) return answer;
+      }
+    };
     expect(await coverage({})).toMatchObject({ fits: false });
     expect(await coverage({ pageIds: [fake.page('PEOPLE', 'Benefits Overview').id] })).toMatchObject({ fits: true });
   }, RETRIEVING);

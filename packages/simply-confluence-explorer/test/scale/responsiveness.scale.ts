@@ -145,12 +145,12 @@ describe('a 3,200-page space', () => {
       );
       const building = Date.now();
       let state: { indexing?: unknown } = { indexing: true };
+      /* eslint-disable no-await-in-loop -- asks again until the index is built, as the chat does */
       while (state.indexing) {
-        // eslint-disable-next-line no-await-in-loop -- asks again until the index is built, as the chat does
-        state = (await (
-          await post('/space-cache/BIG/metadata/coverage', { dirs: [DIRECTORY] })
-        ).json()) as typeof state;
+        const answer = await post('/space-cache/BIG/metadata/coverage', { dirs: [DIRECTORY] });
+        state = (await answer.json()) as typeof state;
       }
+      /* eslint-enable no-await-in-loop */
       times['search index built'] = Date.now() - building;
       await timed('coverage, again', () =>
         post('/space-cache/BIG/metadata/coverage', { dirs: [DIRECTORY], sessionId: longest.id }),
@@ -172,6 +172,7 @@ describe('a 3,200-page space', () => {
     process.stdout.write(`realistic space: ${report}; longest stall ${Math.max(...stalls)} ms\n`);
     expect(times['chat list'], report).toBeLessThan(300);
     expect(times['open a long chat'], report).toBeLessThan(300);
+    expect(times['coverage, first'], report).toBeLessThan(500);
     expect(times['coverage, again'], report).toBeLessThan(500);
     expect(times['coverage, a directory'], report).toBeLessThan(500);
     expect(times['observability logs'], report).toBeLessThan(300);
