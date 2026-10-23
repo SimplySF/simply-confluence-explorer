@@ -1,15 +1,5 @@
 <script lang="ts">
-  import {
-    CheckCircle2,
-    ChevronDown,
-    Download,
-    FolderSync,
-    FolderTree,
-    HardDrive,
-    ShieldCheck,
-    Sparkles,
-    Trash2,
-  } from '@lucide/svelte';
+  import { Download, Ellipsis, FolderSync, FolderTree, ShieldCheck, Sparkles, Trash2 } from '@lucide/svelte';
   import type { SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
@@ -22,7 +12,8 @@
   import JobProgress from './ui/JobProgress.svelte';
   import Menu from './ui/Menu.svelte';
 
-  // Everything done to a space as a whole: sync, the AI index, its table of contents, a ZIP, and its rules.
+  // Everything done to a space as a whole: sync and its exclusions at hand, and in the menu the AI index,
+  // its table of contents, a ZIP, and removing stale pages.
   type Props = {
     spaceKey: string;
     /** The space's synced copy, if there is one. */
@@ -79,24 +70,28 @@
 
 <div class="space-actions">
   <div class="space-actions-row">
-    {#if manifest}
-      <span class="pill pill-ok" title="Synced {new Date(manifest.lastSynced).toLocaleString()}">
-        <CheckCircle2 size={12} />
-        {manifest.pageCount} pages synced{manifest.hasTOC ? ' · TOC' : ''}
-      </span>
-    {:else}
-      <span class="pill pill-warn"><HardDrive size={12} /> Not synced</span>
-    {/if}
+    <button
+      type="button"
+      class="btn btn-secondary btn-sm"
+      onclick={() => jobs.startSync(spaceKey)}
+      disabled={!!sync}
+      title="Download changed pages to this machine"
+    >
+      <FolderSync size={13} />
+      {synced ? 'Update' : 'Sync'}
+    </button>
+    <button
+      type="button"
+      class="btn btn-secondary btn-sm"
+      onclick={() => (dialog = 'rules')}
+      title="Exclusions and leak guard: what is never sent to an AI"
+    >
+      <ShieldCheck size={13} /> Exclusions
+    </button>
     <Menu
-      title="Actions for {spaceKey}"
+      title="More for {spaceKey}"
+      buttonClass="btn btn-secondary btn-sm space-actions-more"
       items={[
-        {
-          label: synced ? 'Update space' : 'Sync space',
-          icon: FolderSync,
-          hint: 'Download changed pages to this machine',
-          onSelect: () => jobs.startSync(spaceKey),
-          disabled: !!sync,
-        },
         {
           label: summaries.label,
           icon: Sparkles,
@@ -120,12 +115,6 @@
         },
         'divider',
         {
-          label: 'Exclusions and leak guard…',
-          icon: ShieldCheck,
-          hint: 'What is never sent to an AI',
-          onSelect: () => (dialog = 'rules'),
-        },
-        {
           label: 'Remove stale cached pages…',
           icon: Trash2,
           danger: true,
@@ -135,7 +124,7 @@
         },
       ]}
     >
-      {#snippet label()}Space <ChevronDown size={12} />{/snippet}
+      {#snippet label()}<Ellipsis size={14} />{/snippet}
     </Menu>
   </div>
 

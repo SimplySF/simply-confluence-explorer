@@ -154,7 +154,7 @@ file that was not read, including those you left out.
 
 Images are sent only if you choose for the space, because the leak guard cannot check them. Until
 you choose, the chat says how many the AI did not see, with **Send images for PLAT** and **Not for
-PLAT**. Change it later under **Space → Exclusions and leak guard…** → **Images on pages**.
+PLAT**. Change it later under **Exclusions** → **Images on pages**.
 
 ## The AI index: summaries, topics and embeddings
 
@@ -166,7 +166,7 @@ and offers **Index the rest**, which runs in the background and shows in the hea
 
 Small pages are indexed several to a request, up to about 60,000 characters, and a few requests run
 at once: 2 for the Gemini CLI and 4 for an API provider, set by **Requests at once** in Settings.
-The Space menu says how many requests a run will take before it starts. A failed request is tried
+The **⋯** menu beside **Exclusions** says how many requests a run will take before it starts. A failed request is tried
 again; a page still left out is listed with its reason under **See why**, and the next run retries it.
 
 Indexing can also make an embedding of each section, which lets a question find a section by meaning
@@ -176,7 +176,7 @@ CLI can answer while a Gemini key makes embeddings. Claude and the Gemini CLI ma
 [What leaves your computer](/guides/data-safety/) says what this sends.
 
 The **Details** tab of a page has **Index this page** for that page alone, and shows its summary,
-topics and the questions it answers. **Space → Build the AI index** indexes every page that is not
+topics and the questions it answers. **Build the AI index**, in the sidebar's **⋯** menu, indexes every page that is not
 indexed yet. A page that changes in Confluence leaves the index at the next sync, and **Update the
 AI index** redoes only those pages.
 

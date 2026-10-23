@@ -69,7 +69,7 @@ picker on the left.
    to its top-level pages; click the arrow beside a page, or **Expand all**, to open it.
 2. **Open a page.** The **Read** tab shows it rendered, as Markdown, or in Confluence's own storage
    format.
-3. **Sync the space** from the **Space** menu. The app downloads every page you are allowed to see,
+3. **Sync the space** with **Sync**, under the space's name. The app downloads every page you are allowed to see,
    so the tree, searches and AI questions work from your own disk.
 4. **Set up an AI** under **Settings → AI provider**, then open the **Chat** tab on any page and
    click **Summary**.

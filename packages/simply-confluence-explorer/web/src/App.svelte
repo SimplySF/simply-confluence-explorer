@@ -73,7 +73,10 @@
   let pageLoading = $state(false);
   let pageError = $state<string | null>(null);
 
-  let sidebarWidth = $state(Math.max(260, Math.min(850, Number(remembered('sidebar_width')) || 340)));
+  // A sidebar the person has not resized takes about a quarter of the window, between 256 and 300 pixels.
+  let sidebarWidth = $state(
+    Math.max(256, Math.min(850, Number(remembered('sidebar_width')) || Math.min(300, window.innerWidth * 0.24))),
+  );
   let resizing = $state(false);
   let dialog = $state<'settings' | 'new-page' | null>(null);
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
@@ -123,7 +126,7 @@
   $effect(() => {
     if (!resizing) return;
     const move = (e: MouseEvent): void => {
-      sidebarWidth = Math.max(260, Math.min(850, e.clientX));
+      sidebarWidth = Math.max(256, Math.min(850, e.clientX));
     };
     const up = (): void => {
       resizing = false;

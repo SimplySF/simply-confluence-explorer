@@ -81,7 +81,7 @@ titles and error messages, never page text, questions, answers, keys, or the tit
 - **"No pages found"**: your account cannot see any pages in that space, or the space is empty. Check
   in Confluence that you can open it.
 - **"Page not found, or excluded by .confluenceignore"**: the page is excluded by the space's rules,
-  or it no longer exists. Check **Space → Exclusions and leak guard…**; remember that a rule matches
+  or it no longer exists. Check **Exclusions**, under the space's name; remember that a rule matches
   anywhere inside a title.
 - **A page you deleted in Confluence is still in the tree**: a sync never deletes. Remove the copy
   with **⋯ → Remove from this machine…**.
