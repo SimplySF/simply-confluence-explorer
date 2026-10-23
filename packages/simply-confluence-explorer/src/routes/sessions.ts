@@ -811,6 +811,19 @@ export function addSessionRoutes(router: Router, services: Services): Router {
         });
         return queueOf(chat(session.id));
       })
+      // Clears a chat's review: its waiting suggestions are dismissed and its edits not pushed are set
+      // aside and unstaged. The conversation and any pushed page stay as they are.
+      .add('POST', '/api/ai/sessions/:sessionId/review/clear', ({ params }) => {
+        const session = chat(params.sessionId);
+        const runs = queueOf(session).runs;
+        if (runs.some((r) => r.status === 'running'))
+          throw new HttpError(409, 'An edit is still being written; stop it first.');
+        sessions.editSuggestions(session.id, (list) => {
+          for (const s of list) s.dismissed ??= 'you';
+        });
+        for (const run of runs) branches.clear(run.id);
+        return queueOf(chat(session.id));
+      })
       // Puts a suggestion back to one of its earlier wordings; the wording it had is kept too.
       .add('POST', '/api/ai/sessions/:sessionId/suggestions/:suggestionId/revert', ({ params, body }) => {
         const session = chat(params.sessionId);

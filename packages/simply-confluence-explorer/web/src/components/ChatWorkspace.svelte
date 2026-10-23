@@ -32,6 +32,8 @@
     compact?: boolean;
     /** Why a question must wait, such as the chat's pages still being checked; none when it need not. */
     waiting?: string;
+    /** The chat was deleted from its review. */
+    onDeleted?: () => void;
   };
 
   let {
@@ -50,6 +52,7 @@
     onOpenCount,
     compact = false,
     waiting,
+    onDeleted,
   }: Props = $props();
   let queue = $state<ChatQueue | null>(null);
   let flow = $state<{ step: Step } | null>(null);
@@ -148,5 +151,6 @@
     }}
     {onPushed}
     {onWriteNewPage}
+    {onDeleted}
   />
 {/if}

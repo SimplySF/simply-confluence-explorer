@@ -250,6 +250,7 @@ export const sessions = {
     },
   ) => call<AiSessionView>(`${SESSIONS}/${key(id)}`, 'PATCH', patch),
   remove: (id: string) => call<{ deleted: boolean }>(`${SESSIONS}/${key(id)}`, 'DELETE'),
+  clearReview: (id: string) => call<ChatQueue>(`${SESSIONS}/${key(id)}/review/clear`, 'POST'),
   /** Asks a question; `thorough` reads many sections over several requests, as a job (design doc 0008). */
   send: (id: string, prompt: string, signal?: AbortSignal, thorough = false, focus?: Focus) =>
     call<AiSessionView & { batch?: BatchProgress }>(

@@ -10,6 +10,7 @@
   import ChatThread from './ChatThread.svelte';
   import EditView from './EditView.svelte';
   import PushQueue, { type PushRow } from './PushQueue.svelte';
+  import ReviewActions from './ReviewActions.svelte';
   import ReviewQueue from './ReviewQueue.svelte';
   import JobProgress from './ui/JobProgress.svelte';
 
@@ -28,9 +29,21 @@
     onSelectPage: (pageId: string) => void;
     onPushed: () => void;
     onWriteNewPage?: (finding: BranchFinding) => void;
+    /** The chat was deleted from its review, so whatever lists chats can read them again. */
+    onDeleted?: () => void;
   };
 
-  let { chat, subject, exitLabel, onExit, start = 'review', onSelectPage, onPushed, onWriteNewPage }: Props = $props();
+  let {
+    chat,
+    subject,
+    exitLabel,
+    onExit,
+    start = 'review',
+    onSelectPage,
+    onPushed,
+    onWriteNewPage,
+    onDeleted,
+  }: Props = $props();
   // Where the flow opens is read once; after that the person moves through it.
   let step = $state<Step>(untrack(() => start));
   let open = $state<{ runId: string; pageId: string } | null>(null);
@@ -436,6 +449,20 @@
         </li>
       {/each}
     </ol>
+    {#if chat.session}
+      <ReviewActions
+        sessionId={chat.session.id}
+        title={chat.session.title}
+        {counts}
+        onDone={(what) => {
+          if (what === 'deleted') {
+            chat.startNew();
+            onDeleted?.();
+          }
+          onExit();
+        }}
+      />
+    {/if}
   </header>
   <div class="review-flow-body">
     <ChatThread

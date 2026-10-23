@@ -21,6 +21,7 @@
 // once when missing, damaged, of an older format, or out of step with the pages on disk.
 
 import fs from 'node:fs';
+import path from 'node:path';
 import type { PageDetail, PageMetadata } from '../api/types.js';
 import { errorMessage } from '../util/errors.js';
 import { mapChunked } from '../util/pause.js';
@@ -167,9 +168,23 @@ export class SpaceCatalog {
     if (!pages) return;
     apply(pages);
     if (this.saves.has(spaceKey)) return;
-    const timer = setTimeout(() => this.save(spaceKey), SAVE_AFTER_MS);
+    const timer = setTimeout(() => this.saveLater(spaceKey), SAVE_AFTER_MS);
     timer.unref();
     this.saves.set(spaceKey, timer);
+  }
+
+  /**
+   * The save at the end of a burst of changes. Nothing waits for it, so a failure is logged here
+   * rather than thrown, where it would stop the app. A space whose folder is gone is forgotten; any
+   * other failure leaves no file, and the catalog is built again from the pages when next read.
+   */
+  private saveLater(spaceKey: string): void {
+    try {
+      this.save(spaceKey);
+    } catch (error) {
+      if (!fs.existsSync(path.dirname(this.source.file(spaceKey)))) this.spaces.delete(spaceKey);
+      this.source.log(`could not save the page catalog of ${spaceKey}: ${errorMessage(error)}`);
+    }
   }
 
   /** The catalog in memory, or read from its file when that is whole, current and complete. */

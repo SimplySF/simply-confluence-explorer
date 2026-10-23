@@ -42,8 +42,10 @@ the sidebar's Review page. The budgets rise for it (ADR-075).
   question box says what its review holds and opens it. The review fills the window in four steps,
   Review, Edit, Stage and Push, with the question box at the bottom; Exit goes back to the chat, or
   to the Review page when opened from there. The Review page lists the chats with work waiting, from
-  `GET /api/space-cache/:key/reviews`, and every staged page to push together. The list of chats in
-  Space chat folds to a strip.
+  `GET /api/space-cache/:key/reviews`, and every staged page to push together. A review's menu, on
+  the Review page or in the review, clears it (`POST /api/ai/sessions/:id/review/clear` dismisses
+  its suggestions and sets aside and unstages its edits not pushed, refused while one is written)
+  or deletes the chat. The list of chats in Space chat folds to a strip.
 
 | action on the realistic 3,200-page space           | before   | after |
 | -------------------------------------------------- | -------- | ----- |
@@ -71,6 +73,8 @@ the sidebar's Review page. The budgets rise for it (ADR-075).
 - `test/workers.test.ts`: a thread reads a workbook, a PDF and the telemetry as the main thread does,
   a thread that stops fails its task with the reason, and a thread loads nothing that sends anything.
 - `test/telemetry.test.ts`: a freeze names the request that held the server and the jobs running.
+- `test/chatQueue.test.ts`: clearing a review leaves nothing waiting and pushed pages as they are,
+  is refused while an edit is written, and a deleted chat takes its review and staged pages with it.
 - `test/web/review.test.ts`, `test/web/pages.test.ts`, `test/web/problems.test.ts`: the steps, what a
   chat waits for, and the header leaving freezes out.
 - `test/scale/responsiveness.scale.ts`: the times above, run with `pnpm run test:scale`.

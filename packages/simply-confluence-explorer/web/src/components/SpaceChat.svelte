@@ -325,6 +325,7 @@
       {onPushed}
       {onWriteNewPage}
       waiting={chatWaiting({ checking, counts })}
+      onDeleted={reload}
       compact
     >
       {#snippet top()}

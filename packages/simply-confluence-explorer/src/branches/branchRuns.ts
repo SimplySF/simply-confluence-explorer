@@ -265,6 +265,23 @@ export class BranchRunner {
   }
 
   /**
+   * Sets aside every edit of a run that was not pushed, as when a person clears a chat's review: each
+   * is skipped and unstaged, so nothing of it waits to be decided, staged or pushed. Pushed pages are
+   * left as they are, and nothing is sent to Confluence. A run still writing must be stopped first.
+   */
+  public clear(id: string): BranchRun {
+    const run = this.get(id);
+    if (run.status === 'running') throw new HttpError(409, 'An edit is still being written; stop it first.');
+    for (const item of run.items.filter((i) => i.status !== 'pushed' && i.status !== 'skipped')) {
+      item.status = 'skipped';
+      item.staged = false;
+      item.message = 'Cleared from the review.';
+    }
+    this.store.save(run);
+    return run;
+  }
+
+  /**
    * Accepts or rejects one change of a page's edit, or with `undo` leaves it undecided again.
    *
    * @param id The run.

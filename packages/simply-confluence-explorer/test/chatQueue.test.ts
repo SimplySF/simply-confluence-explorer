@@ -26,6 +26,7 @@ import type {
   BranchFinding,
   BranchRun,
   ChatQueue,
+  ChatReview,
   QueuedSuggestion,
   StagedPage,
 } from '../src/api/types.js';
@@ -444,6 +445,78 @@ describe('staged pages', () => {
       ]);
       await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: [`id:${guide()}`], purge: false });
       expect((await listed()).map((p) => p.title)).toEqual(['Interviews']);
+    });
+  });
+});
+
+describe("removing a chat's review", () => {
+  const reviews = async (app: TestApp): Promise<ChatReview[]> =>
+    (await app.call<{ chats: ChatReview[] }>('GET', '/space-cache/PEOPLE/reviews')).body.chats;
+  const staged = async (app: TestApp): Promise<StagedPage[]> =>
+    (await app.call<{ staged: StagedPage[] }>('GET', '/space-cache/PEOPLE/staged')).body.staged;
+
+  it('clears its suggestions, sets aside its unpushed edits and unstages its pages, where a review could not be removed', async () => {
+    await withApp(async (app) => {
+      const chat = await reviewedChat(app);
+      const run = await recommended(app, chat, [0]);
+      for (const id of [guide(), interviews()]) {
+        // eslint-disable-next-line no-await-in-loop -- one page at a time
+        await acceptAll(app, run, id);
+        // eslint-disable-next-line no-await-in-loop -- as above
+        await stage(app, run, id);
+      }
+      await app.call('POST', `/branches/runs/${run.id}/push`, { pageIds: [guide()] });
+      const writes = fake.writes.length;
+      const cleared = await app.call<ChatQueue>('POST', `/ai/sessions/${chat.id}/review/clear`);
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.suggestions.every((s) => s.state === 'dismissed')).toBe(true);
+      const after = cleared.body.runs.find((r) => r.id === run.id)!;
+      expect(itemOf(after, guide()).status).toBe('pushed');
+      expect(itemOf(after, interviews())).toMatchObject({ status: 'skipped', staged: false });
+      expect(await staged(app)).toEqual([]);
+      expect((await reviews(app)).find((r) => r.sessionId === chat.id)?.counts).toEqual({
+        review: 0,
+        edit: 0,
+        stage: 0,
+        push: 0,
+      });
+      expect(fake.writes.length, 'clearing writes nothing to Confluence').toBe(writes);
+      expect((await app.call<AiSessionView>('GET', `/ai/sessions/${chat.id}`)).body.turns.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('is refused while an edit is still being written', async () => {
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    // The edit waits on its answer, so the run is still writing when the clear is asked for.
+    const app = await startTestApp(fake, (payload) =>
+      textOf(payload).includes('<<<PROPOSED_MARKDOWN>>>') ? held.then(() => answer(payload)) : answer(payload),
+    );
+    try {
+      const chat = await reviewedChat(app);
+      const ids = [chat.suggestions![0].id];
+      const run = (await app.call<BranchRun>('POST', `/ai/sessions/${chat.id}/suggestions/recommend`, { ids })).body;
+      const refused = await app.call('POST', `/ai/sessions/${chat.id}/review/clear`);
+      expect(refused.status).toBe(409);
+      expect((await queueOf(app, chat.id)).suggestions.some((s) => s.state !== 'dismissed')).toBe(true);
+      release();
+      await settled(app, run.id);
+    } finally {
+      release();
+      await app.close();
+    }
+  });
+
+  it('goes with its chat when the chat is deleted, staged pages and all', async () => {
+    await withApp(async (app) => {
+      const chat = await reviewedChat(app);
+      const run = await recommended(app, chat, [0]);
+      await acceptAll(app, run, guide());
+      await stage(app, run, guide());
+      expect((await reviews(app)).map((r) => r.sessionId)).toContain(chat.id);
+      expect((await app.call('DELETE', `/ai/sessions/${chat.id}`)).status).toBe(200);
+      expect((await reviews(app)).map((r) => r.sessionId)).not.toContain(chat.id);
+      expect(await staged(app)).toEqual([]);
     });
   });
 });

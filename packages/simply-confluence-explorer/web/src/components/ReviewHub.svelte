@@ -6,6 +6,7 @@
   import { countsLine } from '../support/review.js';
   import { messageOf } from '../support/toast.svelte.js';
   import PushQueue from './PushQueue.svelte';
+  import ReviewActions from './ReviewActions.svelte';
 
   // The Review page (design doc 0015): every chat in the space whose review holds work, each opening
   // its review, and the pages staged in every chat, to push together. An excluded page is never listed
@@ -70,6 +71,7 @@
     </div>
     <span class="hub-chat-when">{new Date(c.updatedAt).toLocaleDateString()}</span>
     <button class="btn btn-primary btn-sm" onclick={() => onOpen(c)}>Open the review</button>
+    <ReviewActions sessionId={c.sessionId} title={c.title} counts={c.counts} onDone={load} />
   </li>
 {/snippet}
 
