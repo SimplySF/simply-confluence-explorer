@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.0...%40simplysf%2Fsimply-confluence-explorer%400.9.1) (2026-10-23)
+
+### Performance Improvements
+
+- the app keeps up on a large space, shows every wait, and gives review its own place ([#54](https://github.com/SimplySF/simply-confluence-explorer/issues/54)) ([2a67683](https://github.com/SimplySF/simply-confluence-explorer/commit/2a6768334c6292b2efbc4f7a1a5926688c1fc382))
+
 # [0.9.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.8.1...%40simplysf%2Fsimply-confluence-explorer%400.9.0) (2026-10-23)
 
 ### Features
