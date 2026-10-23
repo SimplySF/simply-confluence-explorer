@@ -198,7 +198,13 @@ export class SessionStore {
   /** Renames a conversation, or changes what it reads, or whether it reads its pages' attachments. */
   public update(
     id: string,
-    patch: { title?: string; scope?: SessionScope; attachments?: AttachmentChoice },
+    patch: {
+      title?: string;
+      scope?: SessionScope;
+      attachments?: AttachmentChoice;
+      leftOutFiles?: string[];
+      attachmentsSeen?: string[];
+    },
   ): AiSessionView {
     const s = this.load(id);
     if (!s) throw new Error('no such session');
@@ -208,6 +214,8 @@ export class SessionStore {
     }
     if (patch.scope) s.scope = patch.scope;
     if (patch.attachments) s.attachments = patch.attachments;
+    if (patch.leftOutFiles) s.leftOutFiles = patch.leftOutFiles;
+    if (patch.attachmentsSeen) s.attachmentsSeen = patch.attachmentsSeen;
     this.save(s);
     return viewOf(s);
   }
@@ -295,7 +303,8 @@ export class SessionStore {
 }
 
 function viewOf(s: Stored): AiSessionView {
-  const { id, scope, title, createdAt, updatedAt, turns, files, draft, suggestions, runIds, attachments } = s;
+  const { id, scope, title, createdAt, updatedAt, turns, files, draft, suggestions, runIds } = s;
+  const { attachments, leftOutFiles, attachmentsSeen } = s;
   return {
     id,
     scope,
@@ -308,5 +317,7 @@ function viewOf(s: Stored): AiSessionView {
     ...(suggestions ? { suggestions } : {}),
     ...(runIds ? { runIds } : {}),
     ...(attachments ? { attachments } : {}),
+    ...(leftOutFiles?.length ? { leftOutFiles } : {}),
+    ...(attachmentsSeen?.length ? { attachmentsSeen } : {}),
   };
 }

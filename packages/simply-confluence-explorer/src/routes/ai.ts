@@ -144,10 +144,16 @@ export function addAiRoutes(router: Router, services: Services): Router {
     sessionId: string | undefined,
   ): Promise<{ attachments?: AttachmentsReport; images?: { found: number; choice: ImageChoice } }> => {
     const pages = await metadata.allowedPages(spaceKey, rootPageId, ids);
-    const chat = sessionId && isSessionId(sessionId) ? services.sessions.get(sessionId)?.attachments : undefined;
+    const session = sessionId && isSessionId(sessionId) ? services.sessions.get(sessionId) : null;
     const report = previewAccount(
-      pages.map((page) => ({ page: page.title, entries: store.attachmentEntries(spaceKey, page) })),
-      { chat, images: loadSpaceSettings(dataDir, spaceKey).images },
+      pages.map((page) => ({ pageId: page.id, page: page.title, entries: store.attachmentEntries(spaceKey, page) })),
+      {
+        chat: session?.attachments,
+        images: loadSpaceSettings(dataDir, spaceKey).images,
+        leftOut: new Set(session?.leftOutFiles ?? []),
+        // Files are new only once the chat has been asked, so the first question covers them all.
+        ...(session?.attachments ? { seen: new Set(session.attachmentsSeen ?? []) } : {}),
+      },
       store.isSynced(spaceKey),
     );
     if (!report.files) return {};

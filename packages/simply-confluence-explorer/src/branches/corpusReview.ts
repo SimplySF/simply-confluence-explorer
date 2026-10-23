@@ -31,7 +31,7 @@ import { toSuggestions } from '../ai/chatQueue.js';
 import { historyToSend, type SessionStore } from '../ai/sessions.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
-import { mergeAccounts } from '../spaces/attachments.js';
+import { mergeAccounts, withoutImages } from '../spaces/attachments.js';
 import { contextCollector, leftOutNote, pagesAsContext } from '../spaces/branchContext.js';
 import type { ReadPage, RetrievedContext } from '../spaces/contextRetriever.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
@@ -399,6 +399,7 @@ export class CorpusReviews {
                   },
                   { spaceKey: job.spaceKey, guard, signal },
                 );
+                if (seen) withoutImages(seen.report, reply.imagesDropped);
                 const findings = reply.cutOff ? null : request.parse(reply.text);
                 span.set({ findings: findings?.length ?? 0, parsed: findings !== null, attempts: attempt });
                 if (findings) return findings;
@@ -494,6 +495,7 @@ export class CorpusReviews {
                   },
                   { spaceKey: job.spaceKey, guard, signal },
                 );
+                if (seen) withoutImages(seen.report, got.imagesDropped);
                 const usable = !got.cutOff && got.text.trim().length > 0;
                 span.set({ chars: got.text.length, read: usable, attempts: attempt });
                 if (usable) return got.text.trim();

@@ -18,7 +18,12 @@
  * An answer from a model, and whether the model stopped before finishing it, at its output limit or
  * because the answer was blocked, so an unfinished answer is never shown as complete (ADR-054).
  */
-export type Reply = { text: string; cutOff?: 'length' | 'blocked' };
+export type Reply = {
+  text: string;
+  cutOff?: 'length' | 'blocked';
+  /** Images the provider could not answer with, so the answer was made without them (ADR-069). */
+  imagesDropped?: string[];
+};
 
 /** What an answer says when the model stopped before finishing it. */
 export function cutOffNote(cutOff?: Reply['cutOff']): string {

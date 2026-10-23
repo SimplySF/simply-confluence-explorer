@@ -44,13 +44,16 @@ export function attachmentLines(
   report: AttachmentsReport,
   before = false,
 ): { line: string; read: string[]; unread: string[] } {
+  const left = report.unread.filter((u) => u.left).length;
+  const waiting = report.unread.filter((u) => u.image).length;
+  const notRead = report.unread.length - left - waiting;
   const parts = [
     report.read.length ? `${report.read.length} ${before ? 'to read' : 'read'} (${readKinds(report)})` : '',
     report.images.sent ? `${plural(report.images.sent, 'image')} sent without leak-guard checks` : '',
-    report.unread.length ? `${report.unread.length} not ${before ? 'to be ' : ''}read` : '',
+    left ? `${left} left out by you` : '',
+    notRead ? `${notRead} not ${before ? 'to be ' : ''}read` : '',
   ].filter(Boolean);
-  const imagesWaiting =
-    before && report.images.found && report.choice !== 'pages' ? plural(report.images.found, 'image') : '';
+  const imagesWaiting = waiting ? `${plural(waiting, 'image')} not sent` : '';
   return {
     line: `${plural(report.files, 'attachment')}${parts.length || imagesWaiting ? ': ' : ''}${[...parts, imagesWaiting].filter(Boolean).join(' · ')}`,
     read: report.read.map(
@@ -59,4 +62,42 @@ export function attachmentLines(
     ),
     unread: report.unread.map((u) => `${u.page} / ${u.name}: ${u.why}`),
   };
+}
+
+/** One file on the list a chat shows before its first question, and whether its box can be ticked. */
+export type ListedFile = {
+  key: string;
+  name: string;
+  detail: string;
+  /** Ticked: it goes with the chat; unticked: the person left it out; fixed: it cannot be read. */
+  state: 'on' | 'off' | 'fixed';
+  new?: true;
+};
+
+/** How a chat names a file it leaves out or has asked about, as the server does. */
+export const keyOf = (e: { pageId?: string; page: string; name: string }): string => `${e.pageId ?? e.page}/${e.name}`;
+
+/** Every file on the list, by its key, as the chat records the files it has been asked about. */
+export const everyKey = (report: AttachmentsReport): string[] => [...report.read, ...report.unread].map(keyOf);
+
+/**
+ * The list grouped by page, each file ticked when it goes with the chat, unticked when the person left
+ * it out or it is an image waiting on the space's choice, and fixed when it cannot be read at all.
+ */
+export function filesByPage(report: AttachmentsReport): Array<{ page: string; files: ListedFile[] }> {
+  const pages = new Map<string, ListedFile[]>();
+  const add = (page: string, file: ListedFile): void => {
+    pages.set(page, [...(pages.get(page) ?? []), file]);
+  };
+  for (const r of report.read)
+    add(r.page, { key: keyOf(r), name: r.name, detail: r.as, state: 'on', ...(r.new ? { new: true } : {}) });
+  for (const u of report.unread)
+    add(u.page, {
+      key: keyOf(u),
+      name: u.name,
+      detail: u.why,
+      state: u.left ? 'off' : u.image ? 'on' : 'fixed',
+      ...(u.new ? { new: true } : {}),
+    });
+  return [...pages].map(([page, files]) => ({ page, files }));
 }

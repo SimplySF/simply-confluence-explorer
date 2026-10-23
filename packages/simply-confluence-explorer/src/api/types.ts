@@ -425,6 +425,10 @@ export type AiSessionView = {
   runIds?: string[];
   /** Whether the chat reads its pages' attachments; unanswered, it does, and asks (ADR-069). */
   attachments?: AttachmentChoice;
+  /** The attachments the person left out of the chat, each "page id/file name" (ADR-069). */
+  leftOutFiles?: string[];
+  /** The attachments the chat has asked about, the same way, so a new one is asked about again. */
+  attachmentsSeen?: string[];
 };
 
 /** An existing page that may already say what a new page is meant to. */
@@ -636,12 +640,19 @@ export type AttachmentChoice = 'include' | 'pages';
 export type AttachmentsReport = {
   /** How many attachments the pages hold. */
   files: number;
-  read: Array<{ page: string; name: string; as: string; cut?: number }>;
-  unread: Array<{ page: string; name: string; why: string }>;
+  read: Array<AttachmentEntry & { as: string; cut?: number }>;
+  /**
+   * Each file not read, with why. `left` marks one the person left out, and `image` an image waiting
+   * on the space's choice, so the person can tick either; any other cannot be read.
+   */
+  unread: Array<AttachmentEntry & { why: string; left?: true; image?: true }>;
   images: ImagesReport;
   /** The chat's choice, once made. */
   choice?: AttachmentChoice;
 };
+
+/** One attachment: its page, and on a list before a question, whether it is new since the chat chose. */
+export type AttachmentEntry = { pageId?: string; page: string; name: string; new?: true };
 /** What a request did with the images on the pages it read. */
 export type ImagesReport = { found: number; sent: number; choice: ImageChoice; left?: string[] };
 

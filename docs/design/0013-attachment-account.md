@@ -33,6 +33,13 @@ include them; many more formats are read, with no new library (ADR-069).
   `PATCH /api/ai/sessions/:id`. Until it is set, attachments are read and the chat asks. With
   `pages`, the store a chat reads through (`withoutAttachments`) gives pages without attachments, an
   attachment's search section is skipped, and no image is sent.
+- **Each file can be left out.** The list shows every file under its page with a box; unticking one
+  adds it to the chat's `leftOutFiles` ("page id/file name"), so its text is not read
+  (`AttachmentReader.of` skips it, and so does retrieval) and its image is not sent; the account
+  names it as left out by you. A file that cannot be read shows its reason instead of a box.
+- **New files are asked about.** Choosing records the files the chat was asked about
+  (`attachmentsSeen`); a file added to its pages since, such as a page added to a Space chat, is
+  marked new, and the chat asks again whether to include it. Until answered, it is read.
 - **Before the first question** the coverage route returns `attachments`, judged from each file's
   name and type (`previewAccount`), so the list shows at once, before the index is built.
 - **PDFs** are read before a request is built (`AttachmentReader.prepare`, up to 30 s), in chats,
@@ -43,7 +50,7 @@ include them; many more formats are read, with no new library (ADR-069).
 
 | route                                              | what it adds                                       |
 | -------------------------------------------------- | -------------------------------------------------- |
-| `PATCH /api/ai/sessions/:id`                       | `{ attachments: 'include' \| 'pages' }`            |
+| `PATCH /api/ai/sessions/:id`                       | `{ attachments, leftOutFiles, attachmentsSeen }`   |
 | `POST /api/space-cache/:key/metadata/coverage`     | `attachments`: the preview, with the chat's choice |
 | `POST /api/ai/analyze`, `/space-cache/:key/ai/ask` | `attachments`, and images under the space's choice |
 

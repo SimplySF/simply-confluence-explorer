@@ -147,9 +147,10 @@ the leak guard like the page, found by search, and used by the AI index and by e
 
 When a chat's pages have attachments, the chat lists them before your first question: how many,
 what each will be read as, the images, and each file that cannot be read, with why, such as an older
-`.doc` file. It asks once whether to include them: **Include all** or **Pages only**. Until you
-choose, they are read. Every answer says the same for what it read, and What was sent names each
-file that was not read.
+`.doc` file. It asks whether to include them: **Include all** or **Pages only**, or untick any
+file to leave it out. Until you choose, they are read. When pages added later bring new files, it
+asks again about those. Every answer says the same for what it read, and What was sent names each
+file that was not read, including those you left out.
 
 Images are sent only if you choose for the space, because the leak guard cannot check them. Until
 you choose, the chat says how many the AI did not see, with **Send images for PLAT** and **Not for

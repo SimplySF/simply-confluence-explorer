@@ -392,6 +392,32 @@ process.stdin.on('end', () => {
   assert.equal(fs.existsSync(reply.cwd), false, 'the folder is removed once the CLI ends');
 });
 
+test('the Gemini CLI is asked again without images when it gives no answer with them, which was a lost answer', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  // A stand-in that, like the CLI on some requests with images, ends as a success with nothing written.
+  fs.writeFileSync(
+    script,
+    `process.stdin.resume();
+process.stdin.on('end', () => {
+  const p = process.argv[process.argv.indexOf('-p') + 1];
+  process.stderr.write('Warning: True color (24-bit) support not detected.\\nRipgrep is not available. Falling back to GrepTool.\\n');
+  if (!p.includes('@img-')) process.stdout.write('An answer from the text.');
+});`,
+  );
+  const reply = await runGeminiCli(script, withImage().payload, {});
+  assert.deepEqual(reply, { text: 'An answer from the text.', imagesDropped: ['chart.png'] });
+  // Without images nothing is retried, and the CLI's start-up warnings are not given as its reason.
+  const silent = path.join(tmp(), 'silent.mjs');
+  fs.writeFileSync(
+    silent,
+    "process.stdin.resume(); process.stdin.on('end', () => process.stderr.write('Ripgrep is not available. Falling back to GrepTool.\\n'));",
+  );
+  await assert.rejects(
+    runGeminiCli(silent, guarded('S', 'D'), {}),
+    /^Error: the Gemini CLI gave no answer: it printed no error$/,
+  );
+});
+
 test('no key or no model fails before anything is sent', async () => {
   await assert.rejects(complete('anthropic', { ...cfg('', 'm'), apiKey: '' }, guarded('s', 'u')), /no API key/);
   await assert.rejects(complete('openai', cfg('', ''), guarded('s', 'u')), /no model/);

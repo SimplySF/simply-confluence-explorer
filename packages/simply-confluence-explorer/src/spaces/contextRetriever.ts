@@ -19,6 +19,7 @@ import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
 import { ManifestBuilder } from '../ai/manifest.js';
 import { pause } from '../util/pause.js';
+import { fileKey } from './attachments.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SearchIndex } from './searchIndex.js';
@@ -75,6 +76,8 @@ export type RetrieverDeps = {
   onStep?: (step: string) => void;
   /** False when the chat reads pages only, so no attachment's section is sent (ADR-069). */
   attachments?: boolean;
+  /** The attachments the person left out, by `fileKey`, whose sections are not sent either. */
+  leftOut?: ReadonlySet<string>;
 };
 
 /** How many candidate sections the search offers the AI to choose from. */
@@ -392,6 +395,13 @@ export function readBatch(
   return readSections(spaceKey.toUpperCase(), byId, ids, new Map(), deps, budget, manifest);
 }
 
+/** Whether a section is an attachment the chat reads pages only without, or one the person left out. */
+function leftOutSection(deps: RetrieverDeps, pageId: string, section: Section): boolean {
+  const attachment = section.path.find((h) => h.startsWith('Attachment: '));
+  if (!attachment) return false;
+  return deps.attachments === false || !!deps.leftOut?.has(fileKey(pageId, attachment.slice('Attachment: '.length)));
+}
+
 /** Sends the sections in order, leaving out a page holding a secret, until the size limit. */
 function readSections(
   key: string,
@@ -412,7 +422,7 @@ function readSections(
     const page = byId.get(pageId);
     const section = page && sectionAt(key, deps, pageId, Number(index));
     if (!page || !section) continue;
-    if (deps.attachments === false && section.path.some((h) => h.startsWith('Attachment: '))) continue;
+    if (leftOutSection(deps, pageId, section)) continue;
     const name = sectionName(page.title, section);
     if (screen.secretsIn(section.text).length > 0) withheld.add(page.title);
     else if (used + section.text.length + name.length > budget) overflow.push(name);

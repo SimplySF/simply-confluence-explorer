@@ -274,13 +274,50 @@ describe("a space's images", () => {
       fs.rmSync(attachment(app, 'architecture-diagram.png'));
       const turn = (await ask(app)).turns.at(-1)!;
       expect(turn.role).toBe('assistant');
-      expect(turn.attachments?.unread).toContainEqual({
-        page: 'Architecture Overview',
-        name: 'architecture-diagram.png',
-        why: 'not on this machine: sync the space again to download it',
-      });
+      expect(turn.attachments?.unread).toContainEqual(
+        expect.objectContaining({
+          page: 'Architecture Overview',
+          name: 'architecture-diagram.png',
+          why: 'not on this machine: sync the space again to download it',
+        }),
+      );
       expect(app.sent.at(-1)?.images).toBeUndefined();
     });
+  });
+
+  it('are named as not read when the AI answered without them, where they were counted as sent', async () => {
+    // As the Gemini CLI does when it gives no answer with images and is asked again without them.
+    const without = (payload: GuardedPayload): string =>
+      (payload.images?.length
+        ? { text: 'An answer from the text.', imagesDropped: payload.images.map((i) => i.name) }
+        : reviewer(payload)) as unknown as string;
+    const app = await startTestApp(fake, without);
+    try {
+      const { body } = await app.call<{ jobId: string }>('POST', '/space-cache/sync', { spaceKey: 'PLAT' });
+      for (let s = 'running'; s === 'running' || s === 'pending';)
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the sync
+        s = (await app.call<SyncProgress>('GET', `/space-cache/sync/status/${body.jobId}`)).body.status;
+      await choose(app, 'send');
+      const turn = (await ask(app)).turns.at(-1)!;
+      expect(turn.text).toBe('An answer from the text.');
+      expect(turn.images).toMatchObject({ found: 1, sent: 0 });
+      expect(turn.attachments?.unread).toContainEqual(
+        expect.objectContaining({
+          page: 'Architecture Overview',
+          name: 'architecture-diagram.png',
+          why: expect.stringMatching(/not read/),
+        }),
+      );
+      expect(turn.sent?.leftOut).toContainEqual(
+        expect.objectContaining({
+          kind: 'image',
+          label: 'Architecture Overview / architecture-diagram.png',
+          reason: 'not-read',
+        }),
+      );
+    } finally {
+      await app.close();
+    }
   });
 
   it('leave out one too large to send, and name it', async () => {
@@ -383,7 +420,11 @@ describe("the account of a chat's attachments", () => {
         ]),
       );
       expect(turn.attachments?.unread).toEqual([
-        { page: 'Gateway Service', name: 'legacy-notes.doc', why: expect.stringMatching(/older binary format/) },
+        expect.objectContaining({
+          page: 'Gateway Service',
+          name: 'legacy-notes.doc',
+          why: expect.stringMatching(/older binary format/),
+        }),
       ]);
       // What was sent counts what went and names what did not, rather than saying everything arrived.
       expect(turn.sent?.attachments).toBe(2);
@@ -429,11 +470,99 @@ describe("the account of a chat's attachments", () => {
         ),
       );
       const turn = await question(app, (await gatewayChat(app)).id);
-      expect(turn.attachments?.unread).toContainEqual({
-        page: 'Gateway Service',
-        name: 'limits.xlsx',
-        why: 'not on this machine: sync the space again to download it',
+      expect(turn.attachments?.unread).toContainEqual(
+        expect.objectContaining({
+          page: 'Gateway Service',
+          name: 'limits.xlsx',
+          why: 'not on this machine: sync the space again to download it',
+        }),
+      );
+    });
+  });
+
+  it('leaves out a file the person unticked, its text unsent and named, while the others still go', async () => {
+    await withFiles(async (app) => {
+      const chat = await gatewayChat(app);
+      const id = fake.page('PLAT', 'Gateway Service').id;
+      const patched = await app.call<AiSessionView>('PATCH', `/ai/sessions/${chat.id}`, {
+        attachments: 'include',
+        leftOutFiles: [`${id}/limits.xlsx`],
       });
+      expect(patched.body.leftOutFiles).toEqual([`${id}/limits.xlsx`]);
+      const turn = await question(app, chat.id);
+      expect(app.sentText()).not.toContain('4200 per tenant');
+      expect(app.sentText()).toContain('The SLA is 99.95 percent');
+      expect(turn.attachments?.unread).toContainEqual(
+        expect.objectContaining({ name: 'limits.xlsx', why: 'left out by you', left: true }),
+      );
+      expect(turn.sent?.leftOut).toContainEqual(
+        expect.objectContaining({ label: 'Gateway Service / limits.xlsx', why: 'left out by you' }),
+      );
+      const refused = await Promise.all(
+        ['limits.xlsx', [`${id}`], [`../x/limits.xlsx`], 'x'.repeat(10)].map(
+          async (bad) => (await app.call('PATCH', `/ai/sessions/${chat.id}`, { leftOutFiles: bad })).status,
+        ),
+      );
+      expect(refused).toEqual([400, 400, 400, 400]);
+    });
+  });
+
+  it('leaves out an unticked file when the chat searches its pages, where its section could still be sent', async () => {
+    const page = fake.page('PLAT', 'Gateway Service');
+    page.attachments.push({
+      title: 'limits.xlsx',
+      type: 'application/vnd.ms-excel',
+      content: await workbook([['Tenant limit', 'quokka 4200 per tenant']]),
+    });
+    // Small enough that a chat on all of PLAT searches its sections rather than reading every page.
+    const app = await startTestApp(fake, reviewer, {}, { contextChars: 3000 });
+    try {
+      const { body: job } = await app.call<{ jobId: string }>('POST', '/space-cache/sync', { spaceKey: 'PLAT' });
+      for (let s = 'running'; s === 'running' || s === 'pending';)
+        // eslint-disable-next-line no-await-in-loop -- polling waits for the sync
+        s = (await app.call<SyncProgress>('GET', `/space-cache/sync/status/${job.jobId}`)).body.status;
+      const ask = async (leftOut: string[]): Promise<string> => {
+        const chat = (
+          await app.call<AiSessionView>('POST', '/ai/sessions', { scope: { kind: 'space', spaceKey: 'PLAT' } })
+        ).body;
+        await app.call('PATCH', `/ai/sessions/${chat.id}`, { attachments: 'include', leftOutFiles: leftOut });
+        const before = app.sent.length;
+        const asked = await app.call<AiSessionView>('POST', `/ai/sessions/${chat.id}/messages`, {
+          prompt: 'What is the quokka tenant limit?',
+        });
+        expect(asked.body.turns.at(-1)?.corpus?.mode).toBe('retrieved');
+        return app.sent
+          .slice(before)
+          .map((p) => [p.system, ...p.messages.map((m) => m.content)].join('\n'))
+          .join('\n');
+      };
+      expect(await ask([])).toContain('quokka 4200 per tenant');
+      expect(await ask([`${page.id}/limits.xlsx`])).not.toContain('quokka 4200 per tenant');
+    } finally {
+      await app.close();
+      page.attachments.pop();
+    }
+  });
+
+  it('marks a file new once the chat has chosen without it, so it is asked about again', async () => {
+    await withFiles(async (app) => {
+      const chat = await gatewayChat(app);
+      const id = fake.page('PLAT', 'Gateway Service').id;
+      const preview = async (): Promise<AttachmentsReport> =>
+        (
+          await app.call<{ attachments: AttachmentsReport }>('POST', '/space-cache/PLAT/metadata/coverage', {
+            pageIds: [id],
+            sessionId: chat.id,
+          })
+        ).body.attachments;
+      const before = await preview();
+      expect([...before.read, ...before.unread].some((e) => e.new)).toBe(false);
+      await app.call('PATCH', `/ai/sessions/${chat.id}`, {
+        attachments: 'include',
+        attachmentsSeen: [`${id}/limits.xlsx`, `${id}/legacy-notes.doc`],
+      });
+      const after = await preview();
+      expect([...after.read, ...after.unread].filter((e) => e.new).map((e) => e.name)).toEqual(['sla.pdf']);
     });
   });
 

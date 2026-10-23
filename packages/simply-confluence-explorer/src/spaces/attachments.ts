@@ -57,8 +57,12 @@ export type PageAttachments = {
   /** Each file read as text, what it was read as, and how many characters were kept when it was cut. */
   read: Array<{ name: string; as: string; cut?: number }>;
   images: PageImage[];
-  unread: Array<{ name: string; why: string }>;
+  unread: Array<{ name: string; why: string; left?: true }>;
 };
+
+/** How a chat names one attachment it leaves out or has asked about: its page's id and its name. */
+export const fileKey = (pageId: string, name: string): string => `${pageId}/${name}`;
+const LEFT_OUT = 'left out by you';
 
 const extensionOf = (a: AttachmentFile): string => path.extname(a.title).toLowerCase();
 
@@ -74,11 +78,15 @@ export class AttachmentReader {
     private readonly synced: (spaceKey: string) => boolean = () => true,
   ) {}
 
-  /** A page's attachments as the AI reads them. */
-  public of(spaceKey: string, page: PageDetail): PageAttachments {
+  /** A page's attachments as the AI reads them, but for those the chat leaves out (`skip`, by `fileKey`). */
+  public of(spaceKey: string, page: PageDetail, skip?: ReadonlySet<string>): PageAttachments {
     const result: PageAttachments = { text: '', read: [], images: [], unread: [] };
     let used = 0;
     for (const a of this.files(spaceKey, page)) {
+      if (skip?.has(fileKey(page.id, a.title))) {
+        result.unread.push({ name: a.title, why: LEFT_OUT, left: true });
+        continue;
+      }
       if (a.missing) {
         result.unread.push({
           name: a.title,
@@ -205,7 +213,7 @@ export function attachmentsFor(
     for (const { page } of pages)
       for (const a of page.attachments) {
         report.files++;
-        report.unread.push({ page: page.title, name: a.title, why: 'this chat reads pages only' });
+        report.unread.push({ pageId: page.id, page: page.title, name: a.title, why: 'this chat reads pages only' });
       }
     return { images: [], report };
   }
@@ -219,14 +227,16 @@ export function attachmentsFor(
   for (const { spaceKey, page } of pages) {
     const read = of(spaceKey, page);
     report.files += read.read.length + read.images.length + read.unread.length;
-    report.read.push(...read.read.map((r) => ({ page: page.title, ...r })));
-    report.unread.push(...read.unread.map((u) => ({ page: page.title, ...u })));
+    report.read.push(...read.read.map((r) => ({ pageId: page.id, page: page.title, ...r })));
+    report.unread.push(...read.unread.map((u) => ({ pageId: page.id, page: page.title, ...u })));
     for (const image of read.images)
       if (!went.has(`${page.title} / ${image.name}`))
         report.unread.push({
+          pageId: page.id,
           page: page.title,
           name: image.name,
           why: choices.images === 'send' ? 'an image left out to keep the request within its limits' : imageWhy,
+          ...(choices.images === 'send' ? {} : { image: true as const }),
         });
   }
   return { images: sent.images, report };
@@ -290,15 +300,16 @@ export function mergeAccounts(reports: AttachmentsReport[], images: ImageChoice)
 
 /**
  * What a chat will read of its pages' attachments, judged from their names and types without reading
- * them, so the list shows at once before the first question, however many pages are chosen (ADR-069).
+ * them, so the list shows at once before the first question, however many pages are chosen; each
+ * file the chat has not been asked about yet is marked new (ADR-069).
  *
  * @param files Each page's attachments, as the store lists them, missing ones marked.
- * @param choices The chat's choice about attachments, and the space's about images.
+ * @param choices The chat's choices about attachments, and the space's about images.
  * @param synced Whether the space is synced, for why a missing file is missing.
  */
 export function previewAccount(
-  files: Array<{ page: string; entries: AttachmentFile[] }>,
-  choices: { chat?: AttachmentChoice; images: ImageChoice },
+  files: Array<{ pageId: string; page: string; entries: AttachmentFile[] }>,
+  choices: { chat?: AttachmentChoice; images: ImageChoice; leftOut?: ReadonlySet<string>; seen?: ReadonlySet<string> },
   synced: boolean,
 ): AttachmentsReport {
   const report: AttachmentsReport = {
@@ -308,25 +319,64 @@ export function previewAccount(
     images: { found: 0, sent: 0, choice: choices.images },
   };
   if (choices.chat) report.choice = choices.chat;
-  for (const { page, entries } of files)
+  for (const { pageId, page, entries } of files)
     for (const a of entries) {
       report.files++;
-      const name = a.title;
-      if (choices.chat === 'pages') report.unread.push({ page, name, why: 'this chat reads pages only' });
+      const key = fileKey(pageId, a.title);
+      const entry = {
+        pageId,
+        page,
+        name: a.title,
+        ...(choices.seen && !choices.seen.has(key) ? { new: true as const } : {}),
+      };
+      const image = !!IMAGE_TYPES[path.extname(a.title).toLowerCase()];
+      if (image && !a.missing && choices.chat !== 'pages' && !choices.leftOut?.has(key)) report.images.found++;
+      if (choices.chat === 'pages') report.unread.push({ ...entry, why: 'this chat reads pages only' });
+      else if (choices.leftOut?.has(key)) report.unread.push({ ...entry, why: LEFT_OUT, left: true });
       else if (a.missing)
         report.unread.push({
-          page,
-          name,
+          ...entry,
           why: synced
             ? 'not on this machine: sync the space again to download it'
             : 'this space is not synced, so its attachments are not downloaded',
         });
-      else if (IMAGE_TYPES[path.extname(name).toLowerCase()]) report.images.found++;
+      else if (image)
+        if (choices.images === 'send') report.read.push({ ...entry, as: 'image, sent without leak-guard checks' });
+        else
+          report.unread.push({
+            ...entry,
+            why:
+              choices.images === 'skip'
+                ? 'an image: images are off for this space'
+                : 'an image: sent only once you choose to send images for this space',
+            image: true,
+          });
       else {
-        const format = formatOf(name, a.mediaType);
-        if ('as' in format) report.read.push({ page, name, as: format.as });
-        else report.unread.push({ page, name, why: format.why });
+        const format = formatOf(a.title, a.mediaType);
+        if ('as' in format) report.read.push({ ...entry, as: format.as });
+        else report.unread.push({ ...entry, why: format.why });
       }
     }
+  return report;
+}
+
+/**
+ * The account once a provider gave no answer with some of the images sent and was asked again
+ * without them: those images are named as not read rather than counted as sent (ADR-069).
+ *
+ * @param report The account the request was sent with, changed in place.
+ * @param dropped The images' names as they were sent, "page / file".
+ */
+export function withoutImages(report: AttachmentsReport, dropped: string[] | undefined): AttachmentsReport {
+  if (!dropped?.length) return report;
+  report.images.sent = Math.max(0, report.images.sent - dropped.length);
+  for (const name of dropped) {
+    const [page, ...file] = name.split(' / ');
+    report.unread.push({
+      page,
+      name: file.join(' / ') || name,
+      why: 'not read: the AI gave no answer with the images, so it was asked again without them',
+    });
+  }
   return report;
 }
