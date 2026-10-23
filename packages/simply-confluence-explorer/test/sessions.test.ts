@@ -18,6 +18,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import type { AiSessionView, BatchProgress } from '../src/api/types.js';
@@ -537,8 +538,15 @@ test('an excluded page is left out of a corpus, and an excluded directory refuse
 test('summary coverage says whether chosen pages fit one request, so the chat can say how it reads them', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');
-    const coverage = async (body: unknown): Promise<unknown> =>
-      (await app.call('POST', '/space-cache/PEOPLE/metadata/coverage', body)).body;
+    // The first answer may say the index is still being built; the chat asks again until it is not.
+    const coverage = async (body: unknown): Promise<unknown> => {
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- asks again until the index is built, as the chat does
+        const answer = (await app.call<{ indexing?: unknown }>('POST', '/space-cache/PEOPLE/metadata/coverage', body))
+          .body;
+        if (!answer.indexing) return answer;
+      }
+    };
     expect(await coverage({})).toMatchObject({ fits: false });
     expect(await coverage({ pageIds: [fake.page('PEOPLE', 'Benefits Overview').id] })).toMatchObject({ fits: true });
   }, RETRIEVING);
@@ -746,4 +754,25 @@ test('a question being answered reports the step it is on, and none once answere
   } finally {
     await app.close();
   }
+});
+
+test('a conversation changed on disk is read again, though the store keeps the ones it has read', () => {
+  const dataDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'cexp-sessions-'));
+  const store = new SessionStore(dataDir);
+  const chat = store.create({ kind: 'space', spaceKey: 'PLAT' });
+  const saved = store.addTurns(chat.id, [{ role: 'user', text: 'first', at: '2026-01-01T00:00:00Z' }], []);
+  saved.turns.push({ role: 'user', text: 'not saved either', at: '2026-01-01T00:00:00Z' });
+  expect(store.list({ spaceKey: 'PLAT' }).map((s) => s.title)).toEqual(['first']);
+  // Changing what the store hands out does not change what it keeps.
+  store.get(chat.id)!.turns.push({ role: 'user', text: 'not saved', at: '2026-01-01T00:00:00Z' });
+  expect(store.get(chat.id)!.turns).toHaveLength(1);
+  // Written by another copy of the app, with a later file time.
+  const file = path.join(dataDir, 'data', 'sessions', `${chat.id}.json`);
+  const stored = JSON.parse(fs.readFileSync(file, 'utf8')) as { title: string };
+  fs.writeFileSync(file, JSON.stringify({ ...stored, title: 'renamed elsewhere' }));
+  fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+  expect(store.get(chat.id)!.title).toBe('renamed elsewhere');
+  expect(store.list({ spaceKey: 'PLAT' }).map((s) => s.title)).toEqual(['renamed elsewhere']);
+  store.delete(chat.id);
+  expect(store.list({ spaceKey: 'PLAT' })).toEqual([]);
 });

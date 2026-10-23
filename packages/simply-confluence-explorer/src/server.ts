@@ -36,6 +36,7 @@ import { corpusSize } from './spaces/contextRetriever.js';
 import { SearchIndex } from './spaces/searchIndex.js';
 import { tagsOf } from './spaces/tags.js';
 import { Telemetry } from './telemetry/telemetry.js';
+import { WorkerPool } from './workers/pool.js';
 import { VectorIndex } from './spaces/vectors.js';
 import { GitLabStore } from './gitlab/client.js';
 import type { ImageChoice } from './api/types.js';
@@ -129,7 +130,11 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const connection = new ConnectionStore(dataDir, env);
   const client = (): ConfluenceClient => new ConfluenceClient(connection.resolve());
   const exclusions = new ExclusionManager(dataDir, log);
-  const store = new SpaceStore(dataDir, exclusions, telemetry.sink('sync'));
+  // Reading PDFs and Office files, and scanning telemetry, run on worker threads (ADR-074).
+  const workers = new WorkerPool(telemetry.sink('server'));
+  const store = new SpaceStore(dataDir, exclusions, telemetry.sink('sync'), (file, title, mediaType) =>
+    workers.run({ kind: 'extract', file, title, mediaType }),
+  );
   const gitlab = new GitLabStore(dataDir);
   const ai = new ConfiguredAi(new AiSettingsStore(dataDir, env), {
     dataDir,
@@ -208,6 +213,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     reviews,
     gitlab,
     telemetry,
+    workers,
   });
   const isLocal = localOnly(env);
 
@@ -225,7 +231,10 @@ export function createServer(options: ServerOptions = {}): http.Server {
       }
     });
   });
-  server.on('close', () => telemetry.close());
+  server.on('close', () => {
+    telemetry.close();
+    void workers.close();
+  });
   return server;
 }
 

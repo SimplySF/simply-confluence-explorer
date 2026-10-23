@@ -24,17 +24,133 @@ import type http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import type { AiSessionView } from '../../src/api/types.js';
+import type { AiSessionView, SessionTurn } from '../../src/api/types.js';
+import { SessionStore } from '../../src/ai/sessions.js';
 import { createServer } from '../../src/server.js';
 import { ExclusionManager } from '../../src/spaces/exclusionManager.js';
 import { SpaceStore } from '../../src/spaces/spaceStore.js';
+import { pdfSaying } from './pdf.js';
 import { metadataReply } from './testApp.js';
+import { workbook } from './zipFiles.js';
 
 export const PAGES = 3200;
 const WORDS =
   'deploy rollback database failover gateway billing auth kafka postgres runbook incident pager vpn access'.split(' ');
 
-function generatedSpace(): string {
+/** How many saved chats the realistic space has, and how many pages a chosen directory holds. */
+export const CHATS = 40;
+export const DIRECTORY = '7';
+
+/**
+ * The space as a real one is: most pages labelled, every fourth page with an image, a workbook, a PDF
+ * and a file listed but not downloaded, twenty exclusion rules, and saved chats, some of them long.
+ */
+async function realistic(dataDir: string, store: SpaceStore): Promise<void> {
+  const sheet = await workbook(Array.from({ length: 200 }, (_, r) => [`row ${r}`, 'deploy', 'rollback', String(r)]));
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex');
+  const pdf = pdfSaying('Restore the database from the nightly backup, then fail over.');
+  for (let i = 1; i <= PAGES; i++) {
+    const page = store.readPage('BIG', String(i))!;
+    const labels = [...(i % 10 ? ['ops'] : []), ...(i % 3 === 0 ? ['runbook'] : [])];
+    if (i % 4) {
+      store.writePage('BIG', { ...page, labels }, '', []);
+      continue;
+    }
+    const files = [
+      { name: `diagram-${i}.png`, data: png, type: 'image/png' },
+      {
+        name: `limits-${i}.xlsx`,
+        data: sheet,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+      { name: `restore-${i}.pdf`, data: pdf, type: 'application/pdf' },
+    ];
+    const listed = [...files, { name: `missing-${i}.docx`, data: Buffer.alloc(0), type: 'application/msword' }];
+    store.writePage(
+      'BIG',
+      {
+        ...page,
+        labels,
+        attachments: listed.map((f, n) => ({
+          id: `${i}-${n}`,
+          title: f.name,
+          mediaType: f.type,
+          fileSize: f.data.length,
+          downloadUrl: `/download/${f.name}`,
+        })),
+      },
+      '',
+      files.map((f) => ({ name: f.name, data: f.data })),
+    );
+  }
+  fs.writeFileSync(
+    path.join(dataDir, 'spaces', 'BIG', '.confluenceignore'),
+    Array.from({ length: 20 }, (_, r) => (r % 2 ? `*Secret ${r}*` : `id:${90000 + r}`)).join('\n'),
+  );
+  // A busy day of telemetry: requests with their spans and logs, as Observability reads them.
+  const telemetry = path.join(dataDir, 'telemetry');
+  fs.mkdirSync(telemetry, { recursive: true });
+  const now = Date.now();
+  const lines = Array.from({ length: 100_000 }, (_, n) => {
+    const at = new Date(now - (100_000 - n) * 500).toISOString();
+    return JSON.stringify(
+      n % 2
+        ? {
+            type: 'log',
+            at,
+            level: 'info',
+            kind: 'http',
+            message: `GET /api/pages/${n % 3200} answered`,
+            traceId: `t${n}`,
+          }
+        : {
+            type: 'span',
+            at,
+            traceId: `t${n}`,
+            spanId: `s${n}`,
+            kind: 'http',
+            name: 'GET /api/pages/:id',
+            durationMs: 12,
+            outcome: 'ok',
+            attrs: {},
+          },
+    );
+  });
+  fs.writeFileSync(path.join(telemetry, `${new Date(now).toISOString().slice(0, 10)}.jsonl`), `${lines.join('\n')}\n`);
+  const sessions = new SessionStore(dataDir);
+  const report = {
+    files: 800,
+    read: Array.from({ length: 400 }, (_, n) => ({ page: `Page ${n}`, name: `limits-${n}.xlsx`, as: 'Excel' })),
+    unread: Array.from({ length: 400 }, (_, n) => ({
+      pageId: String(n),
+      page: `Page ${n}`,
+      name: `missing-${n}.docx`,
+      why: 'not downloaded',
+    })),
+    images: { found: 200, sent: 0, choice: 'ask' as const },
+  };
+  for (let c = 0; c < CHATS; c++) {
+    const chat = sessions.create(
+      c % 2
+        ? { kind: 'space', spaceKey: 'BIG' }
+        : { kind: 'branch', spaceKey: 'BIG', pageId: String(c + 1), title: `Page ${c + 1}` },
+    );
+    // A few chats are long, with an account of hundreds of attachments on every answer.
+    const rounds = c % 10 === 0 ? 30 : 3;
+    const turns: SessionTurn[] = Array.from({ length: rounds }, (_, t) => [
+      { role: 'user' as const, text: `question ${t}`, at: '2026-01-01T00:00:00Z' },
+      {
+        role: 'assistant' as const,
+        text: 'an answer '.repeat(200),
+        at: '2026-01-01T00:00:00Z',
+        ...(c % 10 === 0 ? { attachments: report } : {}),
+      },
+    ]).flat();
+    sessions.addTurns(chat.id, turns, []);
+  }
+}
+
+async function generatedSpace(options: { realistic?: boolean }): Promise<string> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-big-'));
   const store = new SpaceStore(dataDir, new ExclusionManager(dataDir, () => undefined), () => undefined);
   const para = (seed: number): string =>
@@ -61,6 +177,7 @@ function generatedSpace(): string {
       [],
     );
   }
+  if (options.realistic) await realistic(dataDir, store);
   store.writeManifest('BIG', { spaceKey: 'BIG', name: 'Big', lastSynced: '2026-01-01', pageCount: PAGES });
   return dataDir;
 }
@@ -72,8 +189,10 @@ export type LargeSpace = {
   close: () => Promise<void>;
 };
 
-export async function startLargeSpace(options: { startupIndexMs?: number } = {}): Promise<LargeSpace> {
-  const dataDir = generatedSpace();
+export async function startLargeSpace(
+  options: { startupIndexMs?: number; realistic?: boolean } = {},
+): Promise<LargeSpace> {
+  const dataDir = await generatedSpace(options);
   let indexRequests = 0;
   const server: http.Server = createServer({
     webRoot: dataDir,

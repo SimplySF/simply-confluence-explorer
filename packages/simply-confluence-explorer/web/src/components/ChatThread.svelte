@@ -73,6 +73,10 @@
     onEditDecided?: () => void;
     /** The question box as one row, for a chat with less room. */
     compact?: boolean;
+    /** Shown just above the question box, such as what the chat's review holds. */
+    aboveInput?: Snippet;
+    /** Why a question must wait, such as the chat's pages still being checked; none when it need not. */
+    waiting?: string;
   };
 
   let {
@@ -92,6 +96,8 @@
     currentText,
     onEditDecided,
     compact = false,
+    aboveInput,
+    waiting,
   }: Props = $props();
   let deciding = $state<number | null>(null);
 
@@ -166,7 +172,7 @@
 
   function ask(prompt: string): void {
     const clean = prompt.trim();
-    if (!clean || chat.sending || blocked) return;
+    if (!clean || chat.sending || blocked || waiting) return;
     input = '';
     void chat.send(clean, thorough && canBeThorough && !focus, focus ?? undefined);
   }
@@ -211,7 +217,11 @@
 {/if}
 <div class="chat-stream" hidden={!!view}>
   {@render lead?.()}
-  {#if turns.length === 0 && !chat.pending && !batch}
+  {#if chat.opening}
+    <div class="empty-state" role="status">
+      <span class="spinner" aria-hidden="true"></span> Opening the conversation…
+    </div>
+  {:else if turns.length === 0 && !chat.pending && !batch}
     <div class="empty-state">{@render empty?.()}</div>
     {#if starters.length && !blocked}
       <div class="chat-starters">
@@ -219,7 +229,7 @@
           <button
             type="button"
             class="chat-starter"
-            disabled={chat.sending}
+            disabled={chat.sending || !!waiting}
             onclick={() => (s.review ? void chat.suggest('review', s.label) : s.prompt && ask(s.prompt))}
           >
             <span class="chat-starter-label"><s.icon size={14} /> {s.label}</span>
@@ -421,6 +431,15 @@
   </div>
 {/if}
 
+{@render aboveInput?.()}
+
+{#if waiting}
+  <div class="chat-waiting" role="status">
+    <span class="spinner" aria-hidden="true"></span>
+    {waiting}
+  </div>
+{/if}
+
 {#if focus}
   <div class="chat-focus">
     <PenLine size={13} /> Working on: <strong>{focus.title}</strong>
@@ -491,7 +510,7 @@
     >
       <Paperclip size={16} />
     </button>
-    {#if canBeThorough && !chat.sending}
+    {#if canBeThorough && !chat.sending && !view}
       <label class="chat-thorough">
         <input type="checkbox" bind:checked={thorough} disabled={blocked || !!batch} aria-describedby="thorough-hint" />
         Thorough
@@ -515,7 +534,12 @@
         <Square size={13} /> Stop
       </button>
     {:else}
-      <button type="submit" class="btn btn-primary btn-sm" disabled={!input.trim() || blocked || (thorough && !!batch)}>
+      <button
+        type="submit"
+        class="btn btn-primary btn-sm"
+        disabled={!input.trim() || blocked || !!waiting || (thorough && !!batch)}
+        title={waiting ? `Waiting: ${waiting}` : undefined}
+      >
         <Send size={14} /> Send
       </button>
     {/if}

@@ -44,7 +44,11 @@ export async function tagIndex(store: SpaceStore, spaceKey: string): Promise<Tag
       path: page.ancestors.map((a) => a.title).join(' › '),
       summary: page.summary,
     };
-    for (const tag of tagsOf(page, page)) byTag.set(tag, [...(byTag.get(tag) ?? []), entry]);
+    for (const tag of tagsOf(page, page)) {
+      const list = byTag.get(tag);
+      if (list) list.push(entry);
+      else byTag.set(tag, [entry]);
+    }
   }
   return [...byTag]
     .map(([tag, pages]) => ({ tag, pages: pages.sort((a, b) => a.title.localeCompare(b.title)) }))

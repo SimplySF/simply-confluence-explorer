@@ -82,6 +82,11 @@
   >
 </div>
 {#if error}<div class="alert alert-error">The server did not answer: {error}</div>{/if}
+{#if !page && !error}
+  <p class="muted observe-loading" role="status">
+    <span class="spinner" aria-hidden="true"></span> Reading the recorded events…
+  </p>
+{/if}
 {#if page}
   <div class="observe-logs">
     <aside class="observe-facets">

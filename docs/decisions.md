@@ -242,7 +242,7 @@ behaviour stays as it is.
 
 ## ADR-014 — The budgets are set at today's size with modest headroom, not at a target the code has not reached
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-075.
 
 A budget is a limit on the size or shape of the project, checked by a command, so that growth is a
 deliberate decision rather than something that happens unnoticed. These budgets were introduced
@@ -1808,7 +1808,7 @@ record.
 
 ## ADR-063 — A freeze is reported only when the server was blocked for over two seconds, once per freeze, not whenever a timer ran late
 
-**Status:** accepted, 2026-10-21. Amends ADR-054.
+**Status:** accepted, 2026-10-21. Amends ADR-054. Amended by ADR-073.
 
 The Observability page raised "The server could not answer anything for 1.x s" many times a day.
 The check behind it raised a problem whenever a 5-second check ran more than a second late, for any
@@ -2021,7 +2021,7 @@ because the increase is sized to the measured change, and the next one needs its
 
 ## ADR-072 — The code budget rises to 19,300 lines and prose to 2,250 for the clarity rework of the web app
 
-**Status:** accepted, 2026-10-23. Amends ADR-071.
+**Status:** accepted, 2026-10-23. Amends ADR-071. Amended by ADR-075.
 
 The clarity rework (design doc 0014) changes the layout of every main screen: one search in the
 header, the sidebar's space state and actions, the page view's header and tabs, a chat beside its
@@ -2035,3 +2035,61 @@ rise to 19,300 and 2,250, sized to the measured change with the usual small head
 because the increase is sized to the measured change, the rework removes as well as adds (the Space
 menu, the chat's four tabs and the sidebar's jump form are gone), and the next rise needs its own
 record.
+
+---
+
+## ADR-073 — A frozen server is recorded for diagnosis, naming what ran, and not raised to the person
+
+**Status:** accepted, 2026-10-23. Amends ADR-063.
+
+The server notes when it could not answer for more than two seconds (ADR-063). Shown in the header's
+problem count as "The server could not answer anything for 2.4 s", it told the person nothing they
+could act on: not what the server is, why it matters, or what held it. The record now says that the
+app was busy and could not respond, for how long, and what was running then, which requests were in
+flight and which jobs were working. It stays on the Observability page, where it leads someone to the
+slow code, and the header counts only problems that failed something the person asked for.
+
+**The argument against:** a person no longer learns at once that the app froze. This is accepted
+because they already know, having waited, and a count they cannot act on teaches them to ignore the
+badge; a freeze is a defect to fix, and the record now says where to look.
+
+---
+
+## ADR-074 — Work that cannot be cut into small pieces runs on worker threads, and nothing there reaches out
+
+**Status:** accepted, 2026-10-23.
+
+The server answers every request on one thread. Reading a large space is already cut into small
+pieces that let other requests through, but reading a PDF, a workbook or a document, and scanning a
+day of telemetry, is one long stretch each, and while it ran every click waited. Such work now runs on
+a few worker threads, `node:worker_threads`, which Node provides, so no dependency is added. Only
+`src/workers/pool.ts` starts threads, and a budget, `MAX_THREAD_MODULES`, holds it to that one
+module.
+
+A worker only reads files under the data directory and computes a result. It never calls an AI
+provider, the outbound guard or Confluence, and never writes; those stay on the main thread with the
+rules that govern them (ADR-017, ADR-018, ADR-022). A test fails if a worker's modules import any of
+them. A thread that fails gives its task the reason, and the next task starts a new thread.
+
+**The argument against:** threads add a second place for code to run, and a result crosses between
+threads by copying. This is accepted because the work moved is the work that froze the server, the
+copying is small next to it, and the rule about what may run there is checked rather than trusted.
+
+---
+
+## ADR-075 — The code budget rises to 20,100 lines, prose to 2,350 and the bundle to 430 KiB, for a responsive app
+
+**Status:** accepted, 2026-10-23. Amends ADR-072 and ADR-014.
+
+Making the app keep up with the person (design doc 0015) adds code: the caches that stop the server
+reading a whole space for each request, the worker threads and the rule that holds them, the
+indicators that show every wait, and the review as its own place with a four-step flow, opened from a
+chat or from the sidebar. The code passes the 19,300 lines set by ADR-072 and the browser bundle the
+400 KiB set by ADR-014, and the design doc takes the prose to its 2,250. Measured at 19,820 lines of
+code, 2,250 of prose and 411 KiB of bundle, the limits rise to 20,100 lines (`MAX_CODE_LINES`),
+2,350 lines (`MAX_DOC_LINES`) and 430 KiB (`MAX_BUNDLE_BYTES`), each with the usual small headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit, and a larger bundle
+takes longer to load. This is accepted because the app is served from this machine, where 30 KiB more
+loads in milliseconds, the rework removes the side panel and the Ready to push page it replaces, and
+the next rise needs its own record.

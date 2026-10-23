@@ -36,9 +36,11 @@
     /** Shown as a table, with its heading above it and the push bar beneath. */
     table?: boolean;
     head?: Snippet;
+    /** Says nothing when no page is staged, where the page around it says what to do instead. */
+    quietWhenEmpty?: boolean;
   };
 
-  let { rows, onChanged, onPushed, onOpenChat, table = false, head }: Props = $props();
+  let { rows, onChanged, onPushed, onOpenChat, table = false, head, quietWhenEmpty = false }: Props = $props();
   let unpicked = $state(new Set<string>());
   let busy = $state<'check' | 'push' | null>(null);
   let checked = $state<BranchRun[] | null>(null);
@@ -139,7 +141,9 @@
 {#if table}
   <div class="push-body">
     {@render head?.()}
-    {#if rows.length === 0}
+    {#if rows.length === 0 && quietWhenEmpty}
+      <!-- The page around the queue says what to do. -->
+    {:else if rows.length === 0}
       <div class="empty-state">
         <Upload size={28} />
         <strong>Nothing staged</strong>

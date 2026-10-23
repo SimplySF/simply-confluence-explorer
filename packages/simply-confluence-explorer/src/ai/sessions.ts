@@ -90,6 +90,9 @@ export function historyToSend(turns: SessionTurn[], budget = HISTORY_CHAR_LIMIT)
 
 export class SessionStore {
   private readonly dir: string;
+  // Each conversation as last read, by its file's time and size, so listing chats and opening one do
+  // not read and parse every file each time; a file changed on disk is read again.
+  private readonly parsed = new Map<string, { mtimeMs: number; size: number; session: Stored }>();
 
   public constructor(dataDir: string) {
     this.dir = path.join(dataDir, 'data', 'sessions');
@@ -117,13 +120,17 @@ export class SessionStore {
     return s ? viewOf(s) : null;
   }
 
-  /** Newest first. A scope given narrows it to conversations about that page or space, of any of `kinds`. */
+  /**
+   * Newest first. A scope given narrows it to conversations about that page or space, of any of
+   * `kinds`. The conversations are the ones kept in memory, to read and not to change.
+   */
   public list(scope?: Partial<SessionScope>, kinds?: Array<SessionScope['kind']>): AiSessionView[] {
     if (!fs.existsSync(this.dir)) return [];
     return fs
       .readdirSync(this.dir)
       .filter((f) => f.endsWith('.json') && isSessionId(f.slice(0, -5)))
-      .map((f) => this.load(f.slice(0, -5))!)
+      .map((f) => this.read(f.slice(0, -5)))
+      .filter((s): s is Stored => !!s)
       .filter(
         (s) =>
           !scope ||
@@ -141,6 +148,7 @@ export class SessionStore {
     if (!fs.existsSync(f)) return false;
     fs.rmSync(f);
     fs.rmSync(this.filesDir(id), { recursive: true, force: true });
+    this.parsed.delete(id);
     return true;
   }
 
@@ -288,17 +296,37 @@ export class SessionStore {
     return within(this.dir, id);
   }
 
+  /** A conversation to change and save: a copy, so a save that fails leaves the kept one as on disk. */
   private load(id: string): Stored | null {
+    const s = this.read(id);
+    return s ? structuredClone(s) : null;
+  }
+
+  /** A conversation as kept, to read only; it is read from disk again when its file has changed. */
+  private read(id: string): Stored | null {
     const f = this.file(id);
-    if (!fs.existsSync(f)) return null;
+    const stat = fs.statSync(f, { throwIfNoEntry: false });
+    if (!stat) {
+      this.parsed.delete(id);
+      return null;
+    }
+    const kept = this.parsed.get(id);
+    if (kept?.mtimeMs === stat.mtimeMs && kept.size === stat.size) return kept.session;
     const s = readJsonOrEmpty<Stored>(f);
     if (migrateQueue(s)) writePrivateJson(f, s);
+    this.keep(id, s);
     return s;
+  }
+
+  private keep(id: string, session: Stored): void {
+    const stat = fs.statSync(this.file(id), { throwIfNoEntry: false });
+    if (stat) this.parsed.set(id, { mtimeMs: stat.mtimeMs, size: stat.size, session });
   }
 
   private save(s: Stored): void {
     s.updatedAt = new Date().toISOString();
     writePrivateJson(this.file(s.id), s);
+    this.keep(s.id, structuredClone(s));
   }
 }
 

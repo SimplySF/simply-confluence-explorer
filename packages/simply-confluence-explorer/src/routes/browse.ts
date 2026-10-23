@@ -53,8 +53,9 @@ function visibleTree(
   exclusions: ExclusionManager,
   ancestors: Array<{ id: string; title: string }> = [],
 ): PageTreeNode[] {
+  const excluded = exclusions.checker(spaceKey);
   return nodes
-    .filter((n) => !exclusions.isPageExcluded({ id: n.id, title: n.title, ancestors }, spaceKey))
+    .filter((n) => !excluded({ id: n.id, title: n.title, ancestors }))
     .map((n) => ({
       ...n,
       children: visibleTree(n.children, spaceKey, exclusions, [...ancestors, { id: n.id, title: n.title }]),

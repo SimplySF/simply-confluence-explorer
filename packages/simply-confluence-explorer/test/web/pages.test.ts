@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  chatWaiting,
   directoryLabel,
   looksLikeAddress,
   readingLine,
@@ -59,5 +60,15 @@ describe('choosing the pages a chat reads', () => {
     expect(readingLine({ pages: 3200, indexing: { done: 1600, total: 3200 } })).toBe(
       'Building the search index: 50% of 3200 pages.',
     );
+  });
+});
+
+describe('what a chat waits for before a question', () => {
+  it('waits while its pages are checked and while the search index is built, and says so', () => {
+    expect(chatWaiting({ checking: true, counts: null })).toBe('Checking the pages and their attachments…');
+    expect(chatWaiting({ checking: false, counts: { indexing: { done: 800, total: 3200 } } })).toBe(
+      'Building the search index, 25% of 3200 pages. You can ask once it is done.',
+    );
+    expect(chatWaiting({ checking: false, counts: {} })).toBeUndefined();
   });
 });

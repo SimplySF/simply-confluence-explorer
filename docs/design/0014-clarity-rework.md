@@ -27,25 +27,24 @@ The code and prose budgets rise for it (ADR-072).
   Observability, Settings and the theme are icon buttons. New page moves to the page as New sub-page.
 - **Sidebar** (`Sidebar.svelte`, `SpaceActions.svelte`): the space switcher says how many pages are
   synced and when (`syncLine` in `support/spaceStatus.ts`). Update (or Sync), Exclusions and a menu
-  for the rest sit in one row; Space chat and Ready to push are navigation items, the second with a
-  count; Pages or Tags, Expand all and Collapse all share a row above the filter.
+  for the rest sit in one row; Space chat and Review are navigation items, the second with a count
+  of the chats with work waiting (design doc 0015); Pages or Tags, Expand all and Collapse all share
+  a row above the filter.
 - **Page view** (`PageView.svelte`, `ReadPanel.svelte`): breadcrumbs above the title, the page's
   facts as one line, and Review with AI as the primary action, which opens the Chat & review tab;
   that tab counts the suggestions waiting. Rendered, Markdown and Storage XML sit in the tab bar,
   and Confluence's info, tip, note, warning and panel macros render as callouts.
-- **Chat & review** (`ChatWorkspace.svelte`, `ReviewQueue.svelte`, `ChatThread.svelte`): the
-  conversation on the left and the review queue on the right, in three steps: suggestions as cards
-  grouped by page, edits to decide, and staged pages. Its footer writes the edits for the ticked
-  suggestions, and Add from chat turns the conversation into suggestions. Opening an edit takes the
-  chat to the full window, since a side-by-side decision does not fit a side panel: the queue becomes
-  a column on the left and the edit fills the rest, with the question box below it. Exit full screen
-  or Escape closes the edit; the queue's expand button opens the full window by hand. With too little
-  room the queue goes under the conversation, decided by the chat's own width.
+- **Chat & review** (`ChatWorkspace.svelte`, `ReviewFlow.svelte`, `ChatThread.svelte`): the
+  conversation has the room, with a bar above its question box that says what its review holds, Add
+  from chat, and Open the review. The review is its own place over the whole window, in four steps,
+  Review, Edit, Stage and Push, as design doc 0015 describes; a side lane beside the chat proved too
+  busy, and a side-by-side decision did not fit one.
 - **Space chat** (`SpaceChat.svelte`, `ChatContext.svelte`): what the chat reads is a row of chips,
   with Whole space when there are none, and Add pages or tags opens a search of pages and tags. The
-  review queue appears once the chat has asked or suggested something.
-- **Ready to push** (`SpacePush.svelte`, `PushQueue.svelte`): a table of the staged pages with where
-  each sits, and a bar beneath with Check and push; the check and its confirmation are unchanged.
+  list of chats folds to a strip.
+- **Review** (`ReviewHub.svelte`, `PushQueue.svelte`), in place of Ready to push: the chats with
+  work waiting, each opening its review, and a table of every staged page with where it sits and a
+  bar beneath with Check and push; the check and its confirmation are unchanged.
 - **Settings** (`SettingsDialog.svelte`, `AiSettings.svelte`, `GitLabSettings.svelte`): one section
   at a time, chosen from a list with a dot for each that is set up. A saved Confluence connection is
   tested when the dialog opens. Save & apply saves the section on screen.
@@ -55,7 +54,8 @@ The code and prose budgets rise for it (ADR-072).
 - **Deciding an edit in the side panel.** Two versions of a page side by side need the width of
   the window, so an open edit always takes it.
 - **Keeping the four chat tabs and restyling them.** The tabs hid the queue while the conversation
-  was open, which is when the chat adds to it; two columns show both.
+  was open, which is when the chat adds to it. A queue beside the chat followed, and gave way to the
+  review as its own place (design doc 0015).
 - **A chosen-pages switch in Space chat.** An empty choice already means the whole space, so the
   switch only added a step.
 - **Showing a whole space's sources under an answer.** An answer that read every page names the

@@ -54,6 +54,11 @@
 </script>
 
 {#if error}<div class="alert alert-error">The server did not answer: {error}</div>{/if}
+{#if !now && !error}
+  <p class="muted observe-loading" role="status">
+    <span class="spinner" aria-hidden="true"></span> Reading what the app is doing…
+  </p>
+{/if}
 {#if now}
   <div class="observe-now">
     <section class={['observe-card', 'observe-health', lagState(now.lagMs.max)]}>

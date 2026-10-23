@@ -208,18 +208,24 @@ export class MetadataPipeline {
     pageIds?: string[],
   ): Promise<{ pages: number; missing: number; requests: number }> {
     const key = spaceKey.toUpperCase();
-    const missing = await this.missing(key, rootPageId, pageIds);
-    return {
-      pages: (await this.allowedPages(key, rootPageId, pageIds)).length,
-      missing: missing.length,
-      requests: packPages(missing).length,
-    };
+    return this.coverageOf(key, await this.allowedPages(key, rootPageId, pageIds));
+  }
+
+  /** The same count for pages already read and allowed, so a caller that has them does not read them again. */
+  public async coverageOf(
+    spaceKey: string,
+    allowed: PageDetail[],
+  ): Promise<{ pages: number; missing: number; requests: number }> {
+    const missing = await this.missingOf(spaceKey.toUpperCase(), allowed);
+    return { pages: allowed.length, missing: missing.length, requests: packPages(missing).length };
   }
 
   /** The synced pages of a space, a section or a list, leaving out excluded pages. */
   public async allowedPages(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
     const key = spaceKey.toUpperCase();
-    return (await this.pagesOf(key, rootPageId, pageIds)).filter((p) => !this.exclusions.isPageExcluded(p, key));
+    const pages = await this.pagesOf(key, rootPageId, pageIds);
+    const excluded = this.exclusions.checker(key);
+    return pages.filter((p) => !excluded(p));
   }
 
   /** The pages asked for, read in chunks, as a section or a list can hold most of a large space. */
@@ -241,12 +247,16 @@ export class MetadataPipeline {
    * each page's metadata, so it lets other requests through as it goes.
    */
   private async missing(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<PageDetail[]> {
+    return this.missingOf(spaceKey, await this.pagesOf(spaceKey, rootPageId, pageIds));
+  }
+
+  private async missingOf(spaceKey: string, pages: PageDetail[]): Promise<PageDetail[]> {
     const model = this.embeddingModel();
-    const pages = await this.pagesOf(spaceKey, rootPageId, pageIds);
+    const excluded = this.exclusions.checker(spaceKey);
     const wanted = await mapChunked(
       pages,
       (p) =>
-        !this.exclusions.isPageExcluded(p, spaceKey) &&
+        !excluded(p) &&
         (!isCurrentMetadata(this.store.readMetadata(spaceKey, p.id)) || (!!model && !this.vectors?.has(p, model))),
     );
     return pages.filter((_, i) => wanted[i]);

@@ -1,25 +1,28 @@
 ---
 title: Changing pages from a chat
-description: Collect a chat's suggestions in its review queue, rework them with the chat, decide each change side by side, stage the pages, and push them to Confluence without overwriting anyone else's edit.
+description: Collect a chat's suggestions, rework them with the chat, and take them through its review, deciding each change side by side, staging the pages and pushing them to Confluence without overwriting anyone else's edit.
 sidebar:
   order: 6
 ---
 
 Every change Confluence Explorer makes to a page starts in a chat (see
 [Asking an AI](/guides/asking-ai/)): one page, a directory, any mix of directories, pages and tags,
-or the whole space. The conversation is on the left and the chat's **Review queue** on the right, in
-three steps: **Suggestions**, **Edits to decide** and **Staged**. The question box stays under an open
-edit, so you can ask the chat to rework it. Nothing changes in Confluence until you confirm a push.
+or the whole space. A bar above the chat's question box says what its review holds, such as "4
+suggestions · 1 edit to decide", and **Open the review** opens it over the whole window, in four
+steps: **Review**, **Edit**, **Stage** and **Push**. **Review** in the sidebar lists every chat with a
+review waiting, and opens each the same way. The question box stays at the bottom of the review, so
+you can ask the chat to rework a suggestion or an edit, and **Exit to chat** or **Back to Review**,
+or Esc, goes back. Nothing changes in Confluence until you confirm a push.
 
 ## Get suggestions
 
 - **Start a chat with a review.** A new chat on a directory or on chosen pages offers **Review for
   problems**: pages that contradict or repeat each other, content that is out of date, and pages that
   are missing or in the wrong place. A new chat on one page offers **Suggest improvements**.
-- **Turn a conversation into changes.** Once a chat has begun, **Add from chat**, at the top of the
-  review queue, lists the changes the conversation found or agreed.
+- **Turn a conversation into changes.** Once a chat has begun, **Add from chat**, in the bar above
+  the question box, lists the changes the conversation found or agreed.
 
-The suggestions go to the queue's **Suggestions** step, and the answer says how many, with a link. When a
+The suggestions go to the review's **Review** step, and the answer says how many, with a link. When a
 chat's pages are too many for one request, the review reads them in batches, related pages together,
 and the header shows its progress; **Stop** ends it with nothing kept.
 
@@ -35,7 +38,7 @@ sent, with why) and **Closed and dismissed** (pushed, already done, no longer re
 with an edit under way is not ticked again; **Recommend again** offers it once its edit failed, or
 the chat reworded it.
 
-![The review queue beside the chat, its suggestions grouped by page, one of them ticked](../images/review-queue.webp)
+![A chat's review open at its Review step, the suggestions grouped by page, one of them ticked](../images/review-queue.webp)
 
 Every suggestion that cannot be ticked says why:
 
@@ -60,15 +63,15 @@ done, or no longer makes sense, is not applied and goes back to the suggestions 
 
 ## Decide each change, side by side
 
-The **Edits to decide** step lists the edits, grouped by each time you asked for them. A page being
+The **Edit** step lists the edits on the left, grouped by each time you asked for them. A page being
 written shows its current step and how long it has taken; open it to follow every step and the
-answer so far, where the AI streams it, until it turns into the edit. Open one and the review fills
-the window, the queue on the left, to show the page as it is now and the edit side by side; **Exit
-full screen** or Esc goes back to the chat, and the expand button in the queue opens it by hand. Each change sits between them with **Accept** and **Reject**, and **Undo** to change
+answer so far, where the AI streams it, until it turns into the edit. Open one to see the page as it
+is now and the edit side by side, with the room of the whole window. Each change sits between them
+with **Accept** and **Reject**, and **Undo** to change
 your mind; **Accept all** and **Reject all** decide the page at once. Beside it is the AI's
 recommendation: the suggestions applied, what it says it changed, and anything it did not apply.
 
-![An edit side by side in the full-window review, with the queue on the left and the AI's recommendation](../images/edit-side-by-side.webp)
+![The Edit step: the list of edits, and one side by side with the AI's recommendation](../images/edit-side-by-side.webp)
 
 **Work on this edit in the chat** makes your next question about that edit, shown as "Working on"
 above the question box. Ask for a change, such as "shorter", and the chat proposes a revised edit;
@@ -84,9 +87,10 @@ details, such as its id, version and author, are never written into it.
 
 ## Stage and push
 
-Once every change of a page is decided, with at least one accepted, **Stage** moves it to the
-**Staged** step. Changing the edit after that unstages it, so what you push is what you looked at.
-**Ready to push** in the sidebar lists the staged pages of every chat in the space.
+Once every change of a page is decided, with at least one accepted, it waits at the **Stage** step,
+where **Stage** moves it on to **Push**. Changing the edit after that unstages it, so what you push is
+what you looked at. The **Push** step lists the pages staged from this chat; the **Review** page in
+the sidebar lists the pages staged in every chat of the space, under **Push all staged**.
 
 Tick the pages to push and click **Check and push**. Each page is checked without writing anything,
 then the confirmation lists what will be written and any page with a problem, with why.

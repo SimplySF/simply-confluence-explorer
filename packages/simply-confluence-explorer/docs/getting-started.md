@@ -84,7 +84,7 @@ picker on the left.
 - [Asking an AI](/guides/asking-ai/): choosing a provider, asking about a page or a whole space, and
   adding files.
 - [What leaves your computer](/guides/data-safety/): excluded pages and the leak guard.
-- [Changing pages from a chat](/guides/changing-pages/): a chat's review queue, edits side by side, and pushing
+- [Changing pages from a chat](/guides/changing-pages/): a chat's review, edits side by side, and pushing
   to Confluence.
 - [Writing a new page](/guides/new-pages/): checking for existing pages first, then writing with an
   AI.

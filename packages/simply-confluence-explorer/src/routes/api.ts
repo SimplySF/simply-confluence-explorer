@@ -30,6 +30,7 @@ import type { MetadataPipeline } from '../spaces/metadata.js';
 import type { SearchIndex } from '../spaces/searchIndex.js';
 import type { VectorIndex } from '../spaces/vectors.js';
 import type { Telemetry } from '../telemetry/telemetry.js';
+import type { WorkerPool } from '../workers/pool.js';
 import { GitLabClient, type GitLabStore } from '../gitlab/client.js';
 import type { SpaceSync } from '../spaces/sync.js';
 import { errorMessage } from '../util/errors.js';
@@ -64,6 +65,8 @@ export type Services = {
   reviews: CorpusReviews;
   /** Traces, logs and health numbers, kept on this machine (ADR-054). */
   telemetry: Telemetry;
+  /** Worker threads for work that cannot be cut into small pieces (ADR-074). */
+  workers: WorkerPool;
   /** The GitLab connection the server holds (ADR-050). */
   gitlab: GitLabStore;
   /** A Confluence client on the saved connection. A request never chooses its own (ADR-019). */

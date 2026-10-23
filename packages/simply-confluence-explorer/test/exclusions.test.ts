@@ -104,6 +104,37 @@ describe('a space', () => {
     },
   );
 
+  it('applies a changed rule at once, though a pass over the space has asked about every page before', () => {
+    const { exclusions } = manager();
+    exclusions.savePatterns('HR', ['Salary Bands']);
+    const page = { id: '7', title: 'Interview Guide', ancestors: [{ id: '1', title: 'Hiring' }] };
+    const first = exclusions.checker('HR');
+    expect(first(page)).toBe(false);
+    expect(first(page)).toBe(false);
+    exclusions.savePatterns('HR', ['Salary Bands', 'Hiring/']);
+    expect(exclusions.checker('HR')(page)).toBe(true);
+    expect(exclusions.isPageExcluded(page, 'HR')).toBe(true);
+    // A rule written to the file by hand, not through the app, applies too.
+    fs.writeFileSync(exclusions.ignoreFilePath('HR'), 'Salary Bands\n');
+    fs.utimesSync(exclusions.ignoreFilePath('HR'), new Date(), new Date(Date.now() + 5000));
+    expect(exclusions.checker('HR')(page)).toBe(false);
+  });
+
+  it('gives a pass over the space the same answer for every page as checking each page alone', () => {
+    const { exclusions } = manager();
+    exclusions.savePatterns('HR', ['id:3', '*Secret*', 'Payroll/']);
+    const pages = [
+      { id: '1', title: 'Welcome' },
+      { id: '3', title: 'Plain' },
+      { id: '4', title: 'Top Secret Plans' },
+      { id: '5', title: 'Run', ancestors: [{ id: '9', title: 'Payroll' }] },
+      { id: '6', title: 'Child', ancestors: [{ id: '3', title: 'Plain' }] },
+    ];
+    const pass = exclusions.checker('HR');
+    expect(pages.map((p) => pass(p))).toEqual(pages.map((p) => exclusions.isPageExcluded(p, 'HR')));
+    expect(pages.map((p) => pass(p))).toEqual([false, true, true, true, true]);
+  });
+
   it('keeps a space key of ".." inside the data directory', () => {
     const { exclusions, dataDir } = manager();
     expect(exclusions.ignoreFilePath('..')).toBe(path.join(dataDir, 'spaces', '_', '.confluenceignore'));

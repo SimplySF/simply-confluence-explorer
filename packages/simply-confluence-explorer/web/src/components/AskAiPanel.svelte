@@ -16,6 +16,7 @@
   } from '@lucide/svelte';
   import type { BranchFinding, PageDetail } from '../../../src/api/types.js';
   import { api, type Coverage } from '../support/api.js';
+  import { chatWaiting } from '../support/pages.js';
   import { AiChat } from '../support/chat.svelte.js';
   import { type Starter } from './ChatThread.svelte';
   import ChatWorkspace from './ChatWorkspace.svelte';
@@ -97,6 +98,7 @@
   let engine = $state<{ available: boolean; engine: string } | null>(null);
   // What the chat's pages hold, shared by the scope bar's count and the attachments note under it.
   let counts = $state<Coverage | null>(null);
+  let checking = $state(false);
   const chat = new AiChat();
 
   const effective = $derived<AiScope>(scope === 'branch' && descendantCount === 0 ? 'page' : scope);
@@ -147,6 +149,7 @@
     {onPushed}
     {onWriteNewPage}
     {onOpenCount}
+    waiting={blocked ? undefined : chatWaiting({ checking, counts })}
     starters={[review, ...QUICK]}
   >
     {#snippet top()}
@@ -176,6 +179,7 @@
             chosen={effective === 'page' ? { pageIds: [detail.id] } : undefined}
             {chat}
             bind:counts
+            bind:checking
           />
         {/if}
         <span class="pill pill-plain" title="Choose the AI provider in Settings">
@@ -203,7 +207,11 @@
           Ask about the whole space in Space chat instead, or change the space's rules.
         </div>
       {/if}
-      {#if !blocked && counts?.attachments}
+      {#if !blocked && checking && !counts?.attachments}
+        <div class="attachments-note muted" role="status">
+          <span class="spinner" aria-hidden="true"></span> Checking these pages' attachments…
+        </div>
+      {:else if !blocked && counts?.attachments}
         <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
       {/if}
     {/snippet}

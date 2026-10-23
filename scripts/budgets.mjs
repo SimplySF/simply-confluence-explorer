@@ -13,17 +13,18 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const MAX_CODE_LINES = 19300; // ADR-021, ADR-062, ADR-065, ADR-067, ADR-070, ADR-071, ADR-072: package src/ and web/src/, tests excluded
+const MAX_CODE_LINES = 20100; // ADR-021, ADR-062, ADR-065, ADR-067, ADR-070, ADR-071, ADR-072, ADR-075: package src/ and web/src/, tests excluded
 const MAX_COMMENT_RATIO = 25; // ADR-014: a hard ceiling; when it is exceeded, a comment is removed and the limit stays
-const MAX_DOC_LINES = 2250; // ADR-034, ADR-055, ADR-062, ADR-067, ADR-070, ADR-072: every tracked .md except the decision log, history, review and the code of conduct
+const MAX_DOC_LINES = 2350; // ADR-034, ADR-055, ADR-062, ADR-067, ADR-070, ADR-072, ADR-075: every tracked .md except the decision log, history, review and the code of conduct
 const MAX_GUIDE_LINES = 1150; // ADR-042, ADR-067: the user guides in packages/*/docs/, which ship in the package
 const MAX_RUNTIME_DEPS = 7; // ADR-031: direct dependencies across every package.json
 const MAX_DEV_DEPS = 29; // ADR-031: direct devDependencies across every package.json
 const MAX_SITE_DEPS = 4; // ADR-043: the documentation site's dependencies, which never ship in the package
-const MAX_BUNDLE_BYTES = 409600; // ADR-014: dist/web/assets, 400 KiB
+const MAX_BUNDLE_BYTES = 440320; // ADR-014, ADR-075: dist/web/assets, 430 KiB
 const MIN_TEST_RATIO = 5; // ADR-021: at least one line of tests for every five lines of code
 const MAX_CONFLUENCE_HTTP_MODULES = 1; // ADR-031: confluence/client.ts, and nothing else
 const MAX_EXEC_MODULES = 1; // ADR-031: ai/geminiService.ts, and nothing else
+const MAX_THREAD_MODULES = 1; // ADR-074: workers/pool.ts, and nothing else
 const MAX_AI_SDK_MODULES = 1; // ADR-017: ai/providers.ts, and nothing else
 const MAX_AI_SENDER_IMPORTERS = 1; // ADR-022: ai/engine.ts, where the outbound guard runs
 
@@ -147,6 +148,10 @@ const httpModules = matching(
     ) || /[^\w.]fetch\(/.test(text),
 );
 const execModules = matching(serverSources, (text) => /from '(node:)?child_process'/.test(text));
+const threadModules = matching(
+  serverSources,
+  (text) => /from '(node:)?worker_threads'/.test(text) && /\bnew Worker\(/.test(text),
+);
 const aiSdkModules = matching(serverSources, (text) => /from '(@anthropic-ai\/sdk|openai|@google\/genai)/.test(text));
 // Only the engine may import the code that sends to an AI, because the engine is where the outbound
 // guard runs. The GuardedPayload type enforces the rest at compile time.
@@ -227,6 +232,13 @@ const rows = [
     value: execModules.length,
     limit: MAX_EXEC_MODULES,
     files: execModules,
+  },
+  {
+    name: 'MAX_THREAD_MODULES',
+    label: 'thread modules',
+    value: threadModules.length,
+    limit: MAX_THREAD_MODULES,
+    files: threadModules,
   },
   {
     name: 'MAX_AI_SDK_MODULES',

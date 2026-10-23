@@ -56,13 +56,16 @@ export class Telemetry implements Tracer {
   private readonly problems: ProblemRecord[] = [];
   private readonly inflight = new Map<string, { method: string; path: string; start: number; traceId: string }>();
   private readonly jobSources = new Set<() => LiveJob[]>();
+  // Requests that finished lately, so a freeze can name the one that held the server: by the time the
+  // check notices, that request has usually just ended.
+  private readonly finished: Array<{ method: string; path: string; start: number; end: number }> = [];
   private readonly lag = monitorEventLoopDelay({ resolution: 20 });
   private lagNow = { p50: 0, max: 0 };
   private lagMinuteMax = 0;
   private lastSample = performance.now();
   private loopUse = performance.eventLoopUtilization();
   // A freeze still going on: its problem is shown at once and written when it ends.
-  private freeze: { record: ProblemRecord; times: number; worst: number } | null = null;
+  private freeze: { record: ProblemRecord; times: number; worst: number; running?: string[] } | null = null;
   private readonly timers: NodeJS.Timeout[] = [];
   private readonly print: (line: string) => void;
 
@@ -157,16 +160,21 @@ export class Telemetry implements Tracer {
   /** Tracks a request while it is being answered, so the page can show what is in flight. */
   public begin(method: string, requestPath: string, traceId: string): () => void {
     const id = newId(4);
-    this.inflight.set(id, { method, path: requestPath, start: Date.now(), traceId });
-    return () => this.inflight.delete(id);
+    const start = Date.now();
+    this.inflight.set(id, { method, path: requestPath, start, traceId });
+    return () => {
+      this.inflight.delete(id);
+      this.finished.push({ method, path: requestPath, start, end: Date.now() });
+      this.finished.splice(0, Math.max(0, this.finished.length - 50));
+    };
   }
 
   public addJobSource(source: () => LiveJob[]): void {
     this.jobSources.add(source);
   }
 
-  /** What is happening now, and the last day's health numbers. */
-  public now(): {
+  /** What is happening now, and with `points` the last day's health numbers, which only the charts need. */
+  public now(points = true): {
     jobs: LiveJob[];
     inflight: Array<{ method: string; path: string; ms: number; traceId: string }>;
     lagMs: { p50: number; max: number };
@@ -179,7 +187,7 @@ export class Telemetry implements Tracer {
       // Only requests that have waited a while: the page's own quick checks are not worth listing.
       inflight: [...this.inflight.values()].map((r) => ({ ...r, ms: now - r.start })).filter((r) => r.ms >= 1000),
       lagMs: this.lagNow,
-      points: this.points.filter((p) => now - Date.parse(p.at) <= DAY),
+      points: points ? this.points.filter((p) => now - Date.parse(p.at) <= DAY) : [],
       problems: this.problems.slice(-20),
     };
   }
@@ -191,17 +199,13 @@ export class Telemetry implements Tracer {
    */
   public *records(sinceIso?: string): Generator<TelemetryRecord> {
     this.flush();
-    const days = this.files().reverse();
-    for (const file of days) {
-      if (sinceIso && path.basename(file, '.jsonl') < dayOf(sinceIso)) break;
-      for (const line of linesBackwards(path.join(this.dir, file))) {
-        try {
-          yield JSON.parse(line) as TelemetryRecord;
-        } catch {
-          // A line cut short by a crash is skipped; the records around it are still read.
-        }
-      }
-    }
+    yield* recordsIn(this.dir, sinceIso);
+  }
+
+  /** The folder the records are written to, with what is buffered written first, for a worker to read. */
+  public recordsFolder(): string {
+    this.flush();
+    return this.dir;
   }
 
   /** Writes what is buffered, and stops sampling. */
@@ -217,8 +221,11 @@ export class Telemetry implements Tracer {
     if (this.buffer.length === 0) return;
     const byDay = new Map<string, string[]>();
     for (const line of this.buffer) {
-      const day = dayOf((JSON.parse(line) as { at: string }).at);
-      byDay.set(day, [...(byDay.get(day) ?? []), line]);
+      // Every record starts with its type and time, so its day is read without parsing the line.
+      const day = /"at":"(\d{4}-\d{2}-\d{2})/.exec(line)?.[1] ?? dayOf(new Date().toISOString());
+      const lines = byDay.get(day);
+      if (lines) lines.push(line);
+      else byDay.set(day, [line]);
     }
     this.buffer = [];
     try {
@@ -286,10 +293,29 @@ export class Telemetry implements Tracer {
     f.worst = Math.max(f.worst, ms);
     const worst = `${(f.worst / 1000).toFixed(1)} s`;
     const clock = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const running = this.runningDuring(ms);
+    if (running.length) f.running = [...new Set([...(f.running ?? []), ...running])].slice(0, 6);
+    const what = f.running?.length ? ` Running then: ${f.running.join('; ')}.` : '';
     f.record.message =
       f.times === 1
-        ? `The server could not answer anything for ${worst}.`
-        : `The server could not answer for up to ${worst}, ${f.times} times between ${clock(f.record.at)} and ${clock(new Date().toISOString())}.`;
+        ? `The app was busy for ${worst} and could not respond to anything.${what}`
+        : `The app was busy for up to ${worst} at a time, ${f.times} times between ${clock(f.record.at)} and ${clock(new Date().toISOString())}, and could not respond meanwhile.${what}`;
+  }
+
+  /** The requests whose answering overlapped the last `ms`, and the jobs running now, in words. */
+  private runningDuring(ms: number): string[] {
+    const now = Date.now();
+    const from = now - ms;
+    const requests = [
+      ...[...this.inflight.values()].map((r) => ({ ...r, end: now })),
+      ...this.finished.filter((r) => r.end >= from),
+    ]
+      .filter((r) => r.start <= now && r.end - r.start >= Math.min(ms, 500))
+      .map((r) => `${r.method} ${r.path} (${((r.end - r.start) / 1000).toFixed(1)} s)`);
+    const jobs = [...this.jobSources]
+      .flatMap((source) => source())
+      .map((j) => (j.total ? `${j.label}, ${j.processed} of ${j.total}` : j.label));
+    return [...requests, ...jobs];
   }
 
   /** Ends a freeze: it is written once, as a whole, when the server answers again. */
@@ -385,6 +411,29 @@ const BACKWARDS_CHUNK = 1 << 20;
  * A file's lines from the last to the first, read a piece at a time from its end. Lines are split on
  * the newline byte, which never occurs inside a multi-byte character, so each line decodes whole.
  */
+/**
+ * The records in a telemetry folder, newest first, back to the day of `sinceIso`. Each day's file is
+ * read backwards, so a query that wants recent records stops early.
+ */
+export function* recordsIn(dir: string, sinceIso?: string): Generator<TelemetryRecord> {
+  if (!fs.existsSync(dir)) return;
+  const days = fs
+    .readdirSync(dir)
+    .filter((f) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
+    .sort()
+    .reverse();
+  for (const file of days) {
+    if (sinceIso && path.basename(file, '.jsonl') < dayOf(sinceIso)) break;
+    for (const line of linesBackwards(path.join(dir, file))) {
+      try {
+        yield JSON.parse(line) as TelemetryRecord;
+      } catch {
+        // A line cut short by a crash is skipped; the records around it are still read.
+      }
+    }
+  }
+}
+
 export function* linesBackwards(file: string, chunk = BACKWARDS_CHUNK): Generator<string> {
   const fd = fs.openSync(file, 'r');
   try {

@@ -21,7 +21,7 @@ import { parsePage } from '../parser/convert.js';
 import { mapChunked } from '../util/pause.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
-import { AttachmentReader, type AttachmentFile } from './attachments.js';
+import { AttachmentReader, type AttachmentFile, type Extract } from './attachments.js';
 import { SpaceCatalog, type CatalogEntry } from './catalog.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { tagsOf } from './tags.js';
@@ -76,11 +76,18 @@ export class SpaceStore {
   private readonly revisions = new Map<string, number>();
   // Metadata already read, by file, with the file time it was read at (readMetadata).
   private readonly metadataRead = new Map<string, { mtimeMs: number; metadata: PageMetadata }>();
+  // The ids of a space's synced pages, listed again only when the folder changes: a folder's time
+  // changes whenever a file is added to it or removed, so one look at it replaces listing thousands of
+  // files, and a change made outside the app is still seen.
+  private readonly idsListed = new Map<string, { mtimeMs: number; revision: number; ids: string[] }>();
+  // Each page's attachments as last listed, until its folder or the store changes (attachmentEntries).
+  private readonly attachmentsListed = new Map<string, { stamp: string; entries: AttachmentFile[] }>();
 
   public constructor(
     dataDir: string,
     private readonly exclusions: ExclusionManager,
     log: (message: string) => void,
+    extract?: Extract,
   ) {
     this.spacesDir = path.join(dataDir, 'spaces');
     this.catalog = new SpaceCatalog({
@@ -94,6 +101,7 @@ export class SpaceStore {
       (key, page) => this.attachmentEntries(key, page),
       log,
       (key) => this.isSynced(key),
+      extract,
     );
   }
 
@@ -183,19 +191,18 @@ export class SpaceStore {
 
   /** Every attachment a page lists, each marked missing when its file is not on this machine. */
   public attachmentEntries(spaceKey: string, page: PageDetail): AttachmentFile[] {
+    if (page.attachments.length === 0) return [];
     const dir = this.attachmentsDir(spaceKey, page);
-    const names = attachmentFileNames(page.attachments.map((a) => a.title));
-    return page.attachments.map((a, i) => {
-      const file = within(dir, names[i]);
-      const stat = fs.statSync(file, { throwIfNoEntry: false });
-      return {
-        title: a.title,
-        mediaType: a.mediaType,
-        file,
-        bytes: stat?.size ?? 0,
-        ...(stat ? {} : { missing: true }),
-      };
-    });
+    // Kept until the page's folder or the store changes, so a page asked about again costs one look
+    // at its folder rather than one for each of its files.
+    const folder = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+    const stamp = `${this.revision(spaceKey)}|${folder}|${page.version}`;
+    const id = `${spaceKey.toUpperCase()}/${page.id}`;
+    const kept = this.attachmentsListed.get(id);
+    if (kept?.stamp === stamp) return kept.entries;
+    const entries = listAttachments(dir, page);
+    this.attachmentsListed.set(id, { stamp, entries });
+    return entries;
   }
 
   /** The version of a page on disk, or 0 when it is not synced. */
@@ -248,11 +255,10 @@ export class SpaceStore {
    * deleted from pages/, and rebuilds the table of contents.
    */
   public async purgeStale(spaceKey: string): Promise<{ purgedCount: number; remainingPages: number }> {
+    const excluded = this.exclusions.checker(spaceKey);
     const stale = this.cachedIds(spaceKey).filter((id) => {
       const page = this.readPage(spaceKey, id);
-      return (
-        !page || this.exclusions.isPageExcluded(page, spaceKey) || !fs.existsSync(this.markdownFile(spaceKey, page))
-      );
+      return !page || excluded(page) || !fs.existsSync(this.markdownFile(spaceKey, page));
     });
     for (const id of stale) this.removePage(spaceKey, id, false);
     await this.afterRemoval(spaceKey);
@@ -270,6 +276,7 @@ export class SpaceStore {
   ): Promise<{ purgedCount: number }> {
     const page = this.readPage(spaceKey, pageId);
     if (!page) return { purgedCount: 0 };
+    if (options.includeSubPages) await this.treeReady(spaceKey);
     const ids = [pageId, ...(options.includeSubPages ? this.descendants(spaceKey, pageId).map((d) => d.id) : [])];
     if (options.addToIgnore) {
       const rules = options.includeSubPages ? [`${page.title}/`, `*${page.title}*`] : [page.title, `id:${page.id}`];
@@ -343,9 +350,10 @@ export class SpaceStore {
     const add = (file: string): void => {
       if (fs.existsSync(file)) entries.push({ file, name: path.relative(dir, file).split(path.sep).join('/') });
     };
+    const excluded = this.exclusions.checker(spaceKey);
     for (const id of this.cachedIds(spaceKey)) {
       const page = this.readPage(spaceKey, id);
-      if (!page || this.exclusions.isPageExcluded(page, spaceKey)) continue;
+      if (!page || excluded(page)) continue;
       add(this.markdownFile(spaceKey, page));
       const attachments = this.attachmentsDir(spaceKey, page);
       if (fs.existsSync(attachments)) for (const name of fs.readdirSync(attachments)) add(path.join(attachments, name));
@@ -358,12 +366,15 @@ export class SpaceStore {
   /** Every page in the catalog that the exclusion rules allow: titles, places and tags, without text. */
   public async visibleEntries(spaceKey: string): Promise<CatalogEntry[]> {
     const key = spaceKey.toUpperCase();
-    return [...(await this.catalog.ready(key)).values()].filter((p) => !this.exclusions.isPageExcluded(p, key));
+    const entries = await this.catalog.ready(key);
+    const excluded = this.exclusions.checker(key);
+    return [...entries.values()].filter((p) => !excluded(p));
   }
 
   public async visiblePages(spaceKey: string): Promise<PageDetail[]> {
     const pages = await mapChunked(this.cachedIds(spaceKey), (id) => this.readPage(spaceKey, id));
-    return pages.filter((page): page is PageDetail => !!page && !this.exclusions.isPageExcluded(page, spaceKey));
+    const excluded = this.exclusions.checker(spaceKey);
+    return pages.filter((page): page is PageDetail => !!page && !excluded(page));
   }
 
   public writeMetadata(spaceKey: string, metadata: PageMetadata): void {
@@ -447,8 +458,9 @@ export class SpaceStore {
   private treeOf(key: string, pages: CatalogEntry[]): { roots: PageTreeNode[]; byId: Map<string, PageTreeNode> } {
     const onDisk = new Set(pages.map((p) => p.id));
     const byId = new Map<string, PageTreeNode>();
+    const excluded = this.exclusions.checker(key);
     for (const page of pages) {
-      if (this.exclusions.isPageExcluded(page, key)) continue;
+      if (excluded(page)) continue;
       const { id, title, spaceKey: space, parentId, version, author, lastModified, webUrl } = page;
       byId.set(id, {
         id,
@@ -507,11 +519,23 @@ export class SpaceStore {
 
   private cachedIds(spaceKey: string): string[] {
     const dir = path.join(this.spaceDir(spaceKey), 'pages_cache');
-    if (!fs.existsSync(dir)) return [];
-    return fs
+    let mtimeMs: number;
+    try {
+      mtimeMs = fs.statSync(dir).mtimeMs;
+    } catch {
+      // No folder yet: the space has no synced pages.
+      return [];
+    }
+    const key = spaceKey.toUpperCase();
+    const revision = this.revision(key);
+    const listed = this.idsListed.get(key);
+    if (listed?.mtimeMs === mtimeMs && listed.revision === revision) return listed.ids;
+    const ids = fs
       .readdirSync(dir)
       .filter((f) => /^\d+\.json$/.test(f))
       .map((f) => f.slice(0, -5));
+    this.idsListed.set(key, { mtimeMs, revision, ids });
+    return ids;
   }
 
   private pagesDir(spaceKey: string): string {
@@ -539,6 +563,22 @@ export class SpaceStore {
  * The file name each attachment is kept under: its title made safe for the disk, with a number added
  * when two titles become the same name, so neither file overwrites the other.
  */
+/** A page's attachments as its folder holds them, each with its size, or marked missing. */
+function listAttachments(dir: string, page: PageDetail): AttachmentFile[] {
+  const names = attachmentFileNames(page.attachments.map((a) => a.title));
+  return page.attachments.map((a, i) => {
+    const file = within(dir, names[i]);
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    return {
+      title: a.title,
+      mediaType: a.mediaType,
+      file,
+      bytes: stat?.size ?? 0,
+      ...(stat ? {} : { missing: true }),
+    };
+  });
+}
+
 export function attachmentFileNames(titles: string[]): string[] {
   const used = new Set<string>();
   return titles.map((title) => {

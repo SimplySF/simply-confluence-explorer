@@ -21,7 +21,7 @@
 
 import { PerformanceObserver } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
-import { startLargeSpace, walk } from '../support/largeSpace.js';
+import { DIRECTORY, startLargeSpace, walk } from '../support/largeSpace.js';
 
 describe('a 3,200-page space', () => {
   it('never keeps a health check waiting 250 ms while it is indexed and asked about', async () => {
@@ -103,4 +103,80 @@ describe('a 3,200-page space', () => {
       await space.close();
     }
   }, 120_000);
+
+  it('answers what a person does in a chat within limits on a realistic space, and the server never stalls', async () => {
+    const space = await startLargeSpace({ realistic: true });
+    const get = (route: string): Promise<Response> => fetch(`${space.base}${route}`);
+    const post = (route: string, body: unknown): Promise<Response> =>
+      fetch(`${space.base}${route}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    await get('/health');
+    const stalls: number[] = [];
+    let working = true;
+    const heartbeat = (async (): Promise<void> => {
+      while (working) {
+        const at = Date.now();
+        // eslint-disable-next-line no-await-in-loop -- each check waits for its answer, which is what is measured
+        await get('/health');
+        stalls.push(Date.now() - at);
+        // eslint-disable-next-line no-await-in-loop -- as above
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    })();
+    const times: Record<string, number> = {};
+    const timed = async (name: string, call: () => Promise<Response>): Promise<unknown> => {
+      const at = Date.now();
+      const body: unknown = await (await call()).json();
+      times[name] = Date.now() - at;
+      return body;
+    };
+    try {
+      const list = (await timed('chat list', () => get('/ai/sessions?spaceKey=BIG&kind=space,pages'))) as {
+        sessions: Array<{ id: string; turnCount: number }>;
+      };
+      const longest = [...list.sessions].sort((a, b) => b.turnCount - a.turnCount)[0];
+      await timed('open a long chat', () => get(`/ai/sessions/${longest.id}`));
+      await timed('page chats list', () => get('/ai/sessions?spaceKey=BIG&kind=page,branch'));
+      await timed('coverage, first', () =>
+        post('/space-cache/BIG/metadata/coverage', { dirs: [DIRECTORY], sessionId: longest.id }),
+      );
+      const building = Date.now();
+      let state: { indexing?: unknown } = { indexing: true };
+      /* eslint-disable no-await-in-loop -- asks again until the index is built, as the chat does */
+      while (state.indexing) {
+        const answer = await post('/space-cache/BIG/metadata/coverage', { dirs: [DIRECTORY] });
+        state = (await answer.json()) as typeof state;
+      }
+      /* eslint-enable no-await-in-loop */
+      times['search index built'] = Date.now() - building;
+      await timed('coverage, again', () =>
+        post('/space-cache/BIG/metadata/coverage', { dirs: [DIRECTORY], sessionId: longest.id }),
+      );
+      await timed('coverage, a directory', () => post('/space-cache/BIG/metadata/coverage', { rootPageId: DIRECTORY }));
+      await timed('tags', () => get('/space-cache/BIG/tags'));
+      await timed('observability logs', () => get('/observe/logs?range=24h'));
+      await timed('observability missing trace', () => get('/observe/traces/none'));
+      await timed('observability now', () => get('/observe/now'));
+    } finally {
+      working = false;
+      await heartbeat;
+      await space.close();
+    }
+    const report = Object.entries(times)
+      .map(([k, v]) => `${k}: ${v} ms`)
+      .join(', ');
+    // The times are printed for the record of a change, as well as checked.
+    process.stdout.write(`realistic space: ${report}; longest stall ${Math.max(...stalls)} ms\n`);
+    expect(times['chat list'], report).toBeLessThan(300);
+    expect(times['open a long chat'], report).toBeLessThan(300);
+    expect(times['coverage, first'], report).toBeLessThan(500);
+    expect(times['coverage, again'], report).toBeLessThan(500);
+    expect(times['coverage, a directory'], report).toBeLessThan(500);
+    expect(times['observability logs'], report).toBeLessThan(300);
+    expect(times['observability missing trace'], report).toBeLessThan(300);
+    expect(Math.max(...stalls), report).toBeLessThan(250);
+  }, 600_000);
 });

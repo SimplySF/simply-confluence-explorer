@@ -215,6 +215,23 @@ describe('a frozen server', () => {
     }
   });
 
+  it('names the request that held the server and the jobs running, rather than only how long', async () => {
+    const t = new Telemetry({ dataDir: tmp(), sampleMs: 100 });
+    try {
+      t.addJobSource(() => [{ jobId: 'j', kind: 'index', label: 'Indexing PLAT', processed: 12, total: 40 }]);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const done = t.begin('POST', '/api/space-cache/PLAT/metadata/coverage', 'trace');
+      hold(2500);
+      done();
+      await settle(t, () => frozen(t).length > 0);
+      expect(frozen(t)[0].message).toMatch(/^The app was busy for 2\.\d s and could not respond to anything\./);
+      expect(frozen(t)[0].message).toContain('POST /api/space-cache/PLAT/metadata/coverage (2.');
+      expect(frozen(t)[0].message).toContain('Indexing PLAT, 12 of 40');
+    } finally {
+      t.close();
+    }
+  }, 10_000);
+
   it('is not seen in a check that ran late while the server sat idle, as macOS delays timers', () => {
     expect(isFreeze(3000, 100)).toBe(false);
     expect(isFreeze(3000, 2900)).toBe(true);
@@ -235,7 +252,7 @@ describe('a frozen server', () => {
       await settle(t, () => (frozen(t)[0]?.message ?? '').includes('2 times'));
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(frozen(t)).toHaveLength(1);
-      expect(frozen(t)[0].message).toMatch(/^The server could not answer for up to 2\.\d s, 2 times between /);
+      expect(frozen(t)[0].message).toMatch(/^The app was busy for up to 2\.\d s at a time, 2 times between /);
       t.flush();
       expect(readAll(dataDir).filter((r) => r.type === 'problem')).toHaveLength(1);
     } finally {
