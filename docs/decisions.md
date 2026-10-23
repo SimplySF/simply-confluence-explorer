@@ -1992,7 +1992,7 @@ page's attachments are never read, and a chat can choose to read its pages only.
 
 ## ADR-070 — The code budget rises to 18,500 lines and prose to 2,150 to account for every attachment
 
-**Status:** accepted, 2026-10-22. Amends ADR-067.
+**Status:** accepted, 2026-10-22. Amends ADR-067. Amended by ADR-071.
 
 Accounting for every attachment and reading many more formats (ADR-069) took the code to 18,201
 lines, over the 17,500 set by ADR-067: the readers for Office, OpenDocument, Visio, diagram and
@@ -2003,3 +2003,16 @@ limits rise to 18,500 and 2,150, each keeping the usual small headroom; the guid
 **The argument against:** a budget raised each time it is reached is no limit. This is accepted
 because the increase is sized to the measured change, and the formats read could each be removed on
 their own if one proved not worth its lines.
+
+---
+
+## ADR-071 — The code budget rises to 18,800 lines for choosing each attachment and answering past images
+
+**Status:** accepted, 2026-10-22. Amends ADR-070.
+
+Leaving out single attachments, asking again about files added after a chat chose (ADR-069), and
+asking the Gemini CLI again without images when it gives no answer with them took the code to 18,514
+lines, over the 18,500 set by ADR-070. The limit rises to 18,800, keeping the usual small headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit. This is accepted
+because the increase is sized to the measured change, and the next one needs its own record.
