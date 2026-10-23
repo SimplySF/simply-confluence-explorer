@@ -64,7 +64,7 @@ import { pause } from '../util/pause.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
 
-const KINDS = new Set(['page', 'branch', 'pages', 'space']);
+const KINDS = new Set(['page', 'branch', 'pages', 'space', 'draft']);
 
 const CHANGES_PROMPT = `Turn what this conversation has found or agreed into concrete changes to the pages provided.
 Reply with JSON only, in this shape:

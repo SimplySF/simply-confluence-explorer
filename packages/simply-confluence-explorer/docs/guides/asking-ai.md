@@ -96,7 +96,7 @@ copy, so sync the space first. Its conversations are listed on the left, newest 
 your computer. **New chat** starts another; the pencil renames one, and the bin deletes it after you
 confirm.
 
-![Space chat answering from the whole space, with the pages it read and why](../images/space-chat.webp)
+![Space chat answering from the pages it reads, with the sections it read](../images/space-chat.webp)
 
 **Reading** above the conversation shows what the chat reads, as a row of chips. With none, it reads
 the **Whole space**: every page that the exclusion rules allow. **Add pages or tags** opens a search:
@@ -107,7 +107,7 @@ directory or tag is read as it is when you ask, so a page added under it later i
 at the end of the row says how many of the pages are indexed; hover over it to see how each question
 reads them.
 
-![Space chat with two directories and a page chosen, and the line saying how they are read](../images/space-chat.webp)
+![Space chat with two directories and a page chosen as chips, and how many of them are indexed](../images/space-chat.webp)
 
 There is no limit on how many pages a chat reads from:
 
