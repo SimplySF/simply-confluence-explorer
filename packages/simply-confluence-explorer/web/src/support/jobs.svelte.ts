@@ -226,7 +226,7 @@ class Jobs {
           onFinished: (q) => {
             toast(
               q.status === 'completed'
-                ? `${q.spaceKey} synced: ${q.downloadedCount} page${q.downloadedCount === 1 ? '' : 's'} downloaded, ${q.skippedCount} already current or excluded.`
+                ? `${q.spaceKey} synced: ${q.downloadedCount} page${q.downloadedCount === 1 ? '' : 's'} and ${q.attachmentsDownloaded} attachment${q.attachmentsDownloaded === 1 ? '' : 's'} downloaded, ${q.skippedCount} already current or excluded.${q.note ? ` ${q.note}` : ''}`
                 : `Sync ${q.status}${q.errors.length ? `: ${q.errors[0].error}` : ''}.`,
               q.status === 'completed' ? 'success' : 'error',
             );

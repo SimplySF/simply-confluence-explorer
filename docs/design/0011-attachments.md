@@ -29,12 +29,19 @@ Text attachments are read with their page; images are sent only when the space c
   `ask`, answers, edits and the coverage line say how many images the AI did not see, with **Send
   images for KEY** and **Not for KEY**.
 - **Syncing** reads every attachment of a page, removes ones deleted in Confluence, and keeps two
-  whose names clash.
+  whose names clash. Adding or replacing an attachment leaves its page's version unchanged, so an
+  update also fetches a page at the same version when a file it lists is not on disk, or when one
+  search (`type = attachment AND lastmodified >= <last sync>`) finds an attachment of it changed;
+  if that search fails, the sync says what it could not check.
+- **Download** in a page's details gives the copy on this machine, and says when the file is not
+  there; **Open in Confluence** keeps Confluence's own address. A file that is not an image is
+  served only as a download, so the browser never runs it as part of the app.
 
-| route                                             | what it does                                  |
-| ------------------------------------------------- | --------------------------------------------- |
-| `GET`/`POST /api/space-cache/:key/space-settings` | the space's choice about images: `{ images }` |
-| `POST /api/space-cache/:key/metadata/coverage`    | also `images: { found, choice }` when any     |
+| route                                                | what it does                                                         |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| `GET`/`POST /api/space-cache/:key/space-settings`    | the space's choice about images: `{ images }`                        |
+| `POST /api/space-cache/:key/metadata/coverage`       | also `images: { found, choice }` when any                            |
+| `GET /api/space-cache/:key/pages/:id/attachments/:n` | one synced attachment: an image inline, any other file as a download |
 
 ## Alternatives considered
 
@@ -48,3 +55,5 @@ Text attachments are read with their page; images are sent only when the space c
   an oversized one is left out.
 - `test/ai.test.ts`: the guard's report, each provider's image shape, and the CLI's private folder.
 - `test/spaceCatalog.test.ts`, `test/confluence.test.ts`: the sync fixes.
+- `test/localCopy.test.ts`: an update fetches an attachment added at the same page version, and the
+  files of a page missing them, and finishes with a note when the search fails.

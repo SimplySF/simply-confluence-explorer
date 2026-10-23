@@ -29,8 +29,8 @@ export type Reply = {
 
 /** Why images were not read, with what the provider said about it, so the reason is not lost to the retry. */
 export function droppedNote(whyDropped?: string): string {
-  const said = whyDropped ? ` (it said: ${whyDropped})` : '';
-  return `the AI gave no answer with the images${said}, so it was asked again without them`;
+  const said = whyDropped ? `it said: ${whyDropped}` : 'it gave no reason';
+  return `the AI gave no answer with the images (${said}), so it was asked again without them`;
 }
 
 /** What an answer says when the model stopped before finishing it. */

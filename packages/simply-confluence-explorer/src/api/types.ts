@@ -134,7 +134,13 @@ export type ParsedPage = {
 export type SpacesResponse = { spaces: ConfluenceSpace[] };
 /** `isLocal` says whether the answer came from the synced copy on disk rather than from Confluence. */
 export type PageTreeResponse = { tree: PageTreeNode[]; isLocal: boolean };
-export type PageResponse = { detail: PageDetail; parsed: ParsedPage; isLocal: boolean };
+export type PageResponse = {
+  detail: PageDetail;
+  parsed: ParsedPage;
+  isLocal: boolean;
+  /** For a synced page, whether each of its attachments is on this machine, in the order listed. */
+  onDisk?: boolean[];
+};
 
 /** What `POST /api/spaces/resolve-url` found in a pasted URL or page id. */
 export type ResolveResponse = { spaceKey?: string; pageId?: string };
@@ -164,8 +170,12 @@ export type SyncProgress = {
   /** Pages already on disk at the version Confluence has, and pages left out by the exclusion rules. */
   skippedCount: number;
   downloadedCount: number;
+  /** Attachment files written, including those of pages fetched again only for their attachments. */
+  attachmentsDownloaded: number;
   errorCount: number;
   errors: Array<{ pageId: string; title: string; error: string }>;
+  /** What the sync could not check, such as attachments changed in Confluence when the search failed. */
+  note?: string;
   currentPageTitle?: string;
   startedAt?: string;
   completedAt?: string;

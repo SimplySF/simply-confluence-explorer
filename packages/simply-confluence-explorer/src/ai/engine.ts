@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage } from '../util/errors.js';
 import { noTracer, type Attrs, type Tracer } from '../telemetry/tracer.js';
-import { resolveGeminiCli, runGeminiCli, systemCliLookup } from './geminiService.js';
+import { geminiCliVersion, resolveGeminiCli, runGeminiCli, systemCliLookup } from './geminiService.js';
 import {
   loadGuardRules,
   OutboundGuard,
@@ -29,7 +29,7 @@ import {
 } from './guard.js';
 import { checkImages, checkPayload, ContextCheckError, summarise, type ContextManifest } from './manifest.js';
 import { complete, embed, EMBEDDING_MODELS, listModels } from './providers.js';
-import type { Reply } from './reply.js';
+import { droppedNote, type Reply } from './reply.js';
 import type { AiSettingsStore, ApiProvider } from './settings.js';
 
 // The engine is the only code that sends anything to an AI (ADR-022). Every request passes the
@@ -178,7 +178,11 @@ export class ConfiguredAi implements AiEngine {
 
   public getEngine(): string {
     const s = this.settings.resolve();
-    if (s.provider === 'gemini-cli') return this.cliPath() ? 'Gemini CLI' : 'none';
+    if (s.provider === 'gemini-cli') {
+      const cli = this.cliPath();
+      const version = cli && geminiCliVersion(cli);
+      return cli ? `Gemini CLI${version ? ` ${version}` : ''}` : 'none';
+    }
     const api = s.api[s.provider];
     return api.apiKey && api.model ? `${LABEL[s.provider]} (${api.model})` : 'none';
   }
@@ -352,13 +356,25 @@ export class ConfiguredAi implements AiEngine {
       throw new AiStopped();
     }
     this.audit({ ...entry, outcome: 'sent', ...(reply.cutOff ? { cutOff: reply.cutOff } : {}) });
+    this.logShortfall(reply);
+    return answerOf(reply, guard, report);
+  }
+
+  /** Logs an answer that is not all it was asked to be: cut short, blocked, or made without its images. */
+  private logShortfall(reply: Reply): void {
+    const tracer = this.options.tracer ?? noTracer;
     if (reply.cutOff)
-      (this.options.tracer ?? noTracer).log(
+      tracer.log(
         'warn',
         'ai',
         `An answer was ${reply.cutOff === 'blocked' ? 'blocked' : 'cut short at the output limit'}.`,
       );
-    return answerOf(reply, guard, report);
+    if (reply.imagesDropped?.length)
+      tracer.log(
+        'warn',
+        'ai',
+        `${this.getEngine()}: ${reply.imagesDropped.length} image(s) not read, ${droppedNote(reply.whyDropped)}.`,
+      );
   }
 
   /** Sends as a span of the current trace, counted for the health numbers; a stopped request is not a failure. */

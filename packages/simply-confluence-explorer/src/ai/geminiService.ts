@@ -70,6 +70,22 @@ export function resolveGeminiCli(l: CliLookup): string | null {
   return null;
 }
 
+/**
+ * The CLI's version, from the package its bundle came in, or undefined when it cannot be read. Its
+ * handling of images has changed between versions, so a report of what it did names the version.
+ */
+export function geminiCliVersion(bundle: string): string | undefined {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(bundle), '..', 'package.json'), 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === 'string' ? pkg.version : undefined;
+  } catch {
+    // A bundle named directly, outside its package, has no version to read; the CLI still runs.
+    return undefined;
+  }
+}
+
 export function systemCliLookup(configured: string, env: NodeJS.ProcessEnv): CliLookup {
   return {
     configured,
