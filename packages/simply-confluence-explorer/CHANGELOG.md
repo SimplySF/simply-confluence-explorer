@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.9.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.8.1...%40simplysf%2Fsimply-confluence-explorer%400.9.0) (2026-10-23)
+
+### Features
+
+- a clearer layout for every main screen of the web app ([#51](https://github.com/SimplySF/simply-confluence-explorer/issues/51)) ([34a089b](https://github.com/SimplySF/simply-confluence-explorer/commit/34a089b19eb52d5a731be144f2ca5abb5621b20a))
+
 ## [0.8.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.8.0...%40simplysf%2Fsimply-confluence-explorer%400.8.1) (2026-10-23)
 
 ### Bug Fixes
