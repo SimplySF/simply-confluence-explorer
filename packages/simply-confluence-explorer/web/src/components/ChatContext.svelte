@@ -19,15 +19,27 @@
     scope: SessionScope;
     /** The space's pages, to find by title; excluded pages are never among them. */
     pages: SpacePage[];
-    onChange: (choice: Choice) => void;
+    /** Saves a new choice; the row shows it at once, marked as saving, until this settles. */
+    onChange: (choice: Choice) => Promise<void>;
     onSelectPage: (pageId: string) => void;
     /** The chat, which keeps its choice about its pages' attachments. */
     chat?: AiChat;
     /** What the chosen pages hold, shared with the chat's notes on their attachments. */
     counts?: Coverage | null;
+    /** The chosen pages are being checked, so the chat waits and says so. */
+    checking?: boolean;
   };
 
-  let { spaceKey, scope, pages, onChange, onSelectPage, chat, counts = $bindable(null) }: Props = $props();
+  let {
+    spaceKey,
+    scope,
+    pages,
+    onChange,
+    onSelectPage,
+    chat,
+    counts = $bindable(null),
+    checking = $bindable(false),
+  }: Props = $props();
   let addOpen = $state(false);
   let addTab = $state<'pages' | 'tags'>('pages');
   // Unread until the popover first offers them, so "no tags" is not said while they are being read.
@@ -60,9 +72,14 @@
     return () => document.removeEventListener('mousedown', outside);
   });
 
-  const dirs = $derived(scope.kind === 'pages' ? (scope.dirs ?? []) : []);
-  const singles = $derived(scope.kind === 'pages' ? (scope.pageIds ?? []) : []);
-  const chosenTags = $derived(scope.kind === 'pages' ? (scope.tags ?? []) : []);
+  // A choice being saved is shown at once, so a chip appears as soon as a page is added; the saved scope
+  // takes over when the save settles, and a failed save leaves the row as it was.
+  // Raw, so the choice compared when its save settles is the one that was made, not a proxy of it.
+  let saving = $state.raw<Choice | null>(null);
+  const shown = $derived<Choice | SessionScope>(saving ?? scope);
+  const dirs = $derived(shown.kind === 'pages' ? (shown.dirs ?? []) : []);
+  const singles = $derived(shown.kind === 'pages' ? (shown.pageIds ?? []) : []);
+  const chosenTags = $derived(shown.kind === 'pages' ? (shown.tags ?? []) : []);
   const byId = $derived(new Map(pages.map((p) => [p.id, p])));
   const pageOf = (id: string): SpacePage => byId.get(id) ?? { id, title: id, path: '', under: [] };
   const tagSize = (tag: string): number | undefined => tags?.find((t) => t.tag === tag)?.pages.length;
@@ -77,8 +94,12 @@
       pageIds: [...new Set(next.pageIds ?? singles)],
       tags: [...new Set(next.tags ?? chosenTags)],
     };
-    if (choice.dirs.length + choice.pageIds.length + choice.tags.length === 0) onChange({ kind: 'space' });
-    else onChange(choice);
+    const made: Choice =
+      choice.dirs.length + choice.pageIds.length + choice.tags.length === 0 ? { kind: 'space' } : choice;
+    saving = made;
+    void onChange(made).finally(() => {
+      if (saving === made) saving = null;
+    });
   }
 
   function added(): void {
@@ -142,7 +163,10 @@
       >
     </span>
   {/each}
-  {#if scope.kind !== 'pages'}
+  {#if saving}
+    <span class="scope-saving" role="status"><span class="spinner" aria-hidden="true"></span> Saving…</span>
+  {/if}
+  {#if shown.kind !== 'pages'}
     <span class="scope-chip scope-chip-plain" title="Each question searches the whole space for the sections it needs">
       <Globe size={12} /> Whole space{pages.length ? ` · ${pages.length} pages` : ''}
     </span>
@@ -158,7 +182,7 @@
   </button>
   <span class="spacer"></span>
   <span title={counts ? readingLine(counts) : undefined}>
-    <SummaryCoverage {spaceKey} {chosen} bind:counts {chat} />
+    <SummaryCoverage {spaceKey} {chosen} bind:counts bind:checking {chat} />
   </span>
 
   {#if addOpen}

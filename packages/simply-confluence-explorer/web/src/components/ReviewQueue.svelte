@@ -246,7 +246,8 @@
           chosen = new Set();
         }}
       >
-        <Sparkles size={14} /> Write edits for {plural(pages.length, 'page')}
+        {#if busy}<span class="spinner" aria-hidden="true"></span>{:else}<Sparkles size={14} />{/if} Write edits for
+        {plural(pages.length, 'page')}
       </button>
     </div>
   {/if}

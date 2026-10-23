@@ -42,6 +42,22 @@ export function directoryLabel(page: Pick<SpacePage, 'title' | 'under'>): string
   return `${page.title} + ${plural(page.under.length, 'sub-page')}`;
 }
 
+/**
+ * Why a chat's next question must wait, or nothing when it need not: while its pages and their
+ * attachments are being checked, and while the space's search index is built, which every question
+ * reads from. A question asked then would find the attachment question or the index arriving partway.
+ */
+export function chatWaiting(state: {
+  checking: boolean;
+  counts: { indexing?: { done: number; total: number } } | null;
+}): string | undefined {
+  const building = state.counts?.indexing;
+  if (building)
+    return `Building the search index, ${building.total ? Math.floor((building.done / building.total) * 100) : 0}% of ${plural(building.total, 'page')}. You can ask once it is done.`;
+  if (state.checking) return 'Checking the pages and their attachments…';
+  return undefined;
+}
+
 /** How a chat will read its pages, from the server's count and whether they fit one request. */
 export function readingLine(counts: {
   pages: number;

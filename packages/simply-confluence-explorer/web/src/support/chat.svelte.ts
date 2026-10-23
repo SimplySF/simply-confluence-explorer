@@ -27,6 +27,8 @@ export class AiChat {
   public session = $state<AiSessionView | null>(null);
   public pending = $state<string | null>(null);
   public error = $state<string | null>(null);
+  /** The latest conversation for a scope is being read, so the chat says so rather than look empty. */
+  public opening = $state(false);
   // Reactive, so the question box can offer what fits the scope before the first question.
   private scope = $state<SessionScope | null>(null);
   private generation = 0;
@@ -41,11 +43,15 @@ export class AiChat {
     this.scope = scope;
     this.session = null;
     this.error = null;
+    this.opening = true;
     const generation = ++this.generation;
-    sessions.latest(scope).then(
-      (s) => generation === this.generation && (this.session = s),
-      (e: unknown) => generation === this.generation && (this.error = messageOf(e)),
-    );
+    sessions
+      .latest(scope)
+      .then(
+        (s) => generation === this.generation && (this.session = s),
+        (e: unknown) => generation === this.generation && (this.error = messageOf(e)),
+      )
+      .finally(() => generation === this.generation && (this.opening = false));
   }
 
   /** What the conversation reads, so the question box can offer what fits it. */
@@ -140,6 +146,7 @@ export class AiChat {
   /** Starts on a scope with no conversation shown, without resuming the latest one. */
   public begin(scope: SessionScope): void {
     this.generation++;
+    this.opening = false;
     this.scope = scope;
     this.session = null;
     this.error = null;
@@ -148,6 +155,7 @@ export class AiChat {
   /** Shows a conversation chosen from a list, such as Space chat's. */
   public show(session: AiSessionView, scope: SessionScope): void {
     this.generation++;
+    this.opening = false;
     this.scope = scope;
     this.session = session;
     this.error = null;

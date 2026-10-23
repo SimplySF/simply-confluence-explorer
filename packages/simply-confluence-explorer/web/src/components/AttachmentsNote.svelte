@@ -44,6 +44,11 @@
 
 {#if report.files > 0}
   <div class={['attachments-note', before && chat && (!choice || fresh.length) ? 'alert alert-warning' : 'muted']}>
+    {#if saving}
+      <p class="attachments-saving" role="status">
+        <span class="spinner" aria-hidden="true"></span> Saving the choice…
+      </p>
+    {/if}
     <p class="attachments-line">
       <Paperclip size={12} />
       <span>{before ? 'These pages have ' : 'The pages this answer read have '}{lines.line}</span>

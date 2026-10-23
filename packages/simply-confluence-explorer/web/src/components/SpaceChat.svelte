@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { Compass, FileText, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
+  import { Compass, FileText, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
   import { untrack } from 'svelte';
   import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
   import { jobs } from '../support/jobs.svelte.js';
-  import type { SpacePage } from '../support/pages.js';
+  import { chatWaiting, type SpacePage } from '../support/pages.js';
   import { sessions, type Coverage, type DraftSummary } from '../support/api.js';
   import { AiChat } from '../support/chat.svelte.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
@@ -38,6 +38,7 @@
   let deleting = $state<DraftSummary | null>(null);
   // What the chat's pages hold, from its scope bar, for the notes on their attachments.
   let counts = $state<Coverage | null>(null);
+  let checking = $state(false);
   // Counts the chats shown, so what a chat reads is reset when another chat is opened or started, but
   // not when the chat on screen is first saved.
   let shownChat = $state(0);
@@ -48,11 +49,37 @@
 
   const scope = $derived<SessionScope>({ kind: 'space', spaceKey });
 
+  // The list is read once before anything is shown in it, and kept on screen while it is read again.
+  let listRead = $state(false);
+  // The chat being opened from the list, which shows a spinner until it is.
+  let openingId = $state<string | null>(null);
+  // The list of chats folds to a strip, so the conversation has the room; the choice is kept per browser.
+  let folded = $state(remembered());
+
+  function remembered(): boolean {
+    try {
+      return localStorage.getItem('space_chat_list') === 'folded';
+    } catch {
+      return false; // Storage blocked: the list starts open.
+    }
+  }
+  function fold(next: boolean): void {
+    folded = next;
+    try {
+      localStorage.setItem('space_chat_list', next ? 'folded' : 'open');
+    } catch {
+      // Storage blocked: the choice holds until the page is closed.
+    }
+  }
+
   function reload(): void {
-    sessions.inSpace(spaceKey).then(
-      (l) => (list = l),
-      () => (list = []),
-    );
+    sessions
+      .inSpace(spaceKey)
+      .then(
+        (l) => (list = l),
+        () => (list = []),
+      )
+      .finally(() => (listRead = true));
   }
 
   // Another space starts with a fresh conversation and its own list.
@@ -94,11 +121,16 @@
   });
 
   async function open(id: string): Promise<void> {
+    openingId = id;
+    chat.opening = true;
     try {
       chat.show(await sessions.get(id), scope);
       nextChat();
     } catch (e) {
+      chat.opening = false;
       toast(messageOf(e), 'error');
+    } finally {
+      openingId = null;
     }
   }
 
@@ -167,42 +199,92 @@
 </script>
 
 <div class="space-chat">
-  <aside class="space-chat-list">
-    <button
-      type="button"
-      class="btn btn-secondary btn-sm"
-      onclick={() => {
-        chat.startNew();
-        nextChat();
-      }}
-    >
-      <Plus size={13} /> New chat
-    </button>
-    <div class="search-field">
-      <Search size={13} />
-      <input class="form-input input-sm" placeholder="Find a chat" aria-label="Find a chat" bind:value={search} />
-    </div>
-    <ul>
-      {#each shown as s (s.id)}
-        <li class={{ selected: s.id === chat.session?.id }}>
-          <button type="button" class="space-chat-item" onclick={() => open(s.id)} title={s.title}>
-            <span class="space-chat-item-title">{s.turnCount === 0 && s.title === spaceKey ? 'New chat' : s.title}</span
+  {#if folded}
+    <aside class="space-chat-list folded" aria-label="Chats">
+      <button
+        type="button"
+        class="btn-icon"
+        onclick={() => fold(false)}
+        title="Show the chats"
+        aria-label="Show the chats"
+      >
+        <PanelLeftOpen size={16} />
+      </button>
+      <button
+        type="button"
+        class="btn-icon"
+        onclick={() => {
+          chat.startNew();
+          nextChat();
+        }}
+        title="New chat"
+        aria-label="New chat"
+      >
+        <Plus size={16} />
+      </button>
+    </aside>
+  {:else}
+    <aside class="space-chat-list" aria-label="Chats">
+      <div class="space-chat-list-head">
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          onclick={() => {
+            chat.startNew();
+            nextChat();
+          }}
+        >
+          <Plus size={13} /> New chat
+        </button>
+        <button
+          type="button"
+          class="btn-icon btn-icon-sm"
+          onclick={() => fold(true)}
+          title="Hide the chats"
+          aria-label="Hide the chats"
+        >
+          <PanelLeftClose size={14} />
+        </button>
+      </div>
+      <div class="search-field">
+        <Search size={13} />
+        <input class="form-input input-sm" placeholder="Find a chat" aria-label="Find a chat" bind:value={search} />
+      </div>
+      {#if !listRead}
+        <p class="muted space-chat-loading" role="status">
+          <span class="spinner" aria-hidden="true"></span> Reading the chats…
+        </p>
+      {/if}
+      <ul>
+        {#each shown as s (s.id)}
+          <li class={{ selected: s.id === chat.session?.id }}>
+            <button
+              type="button"
+              class="space-chat-item"
+              onclick={() => open(s.id)}
+              title={s.title}
+              disabled={!!openingId}
             >
-            <span class="space-chat-item-meta"
-              >{new Date(s.updatedAt).toLocaleDateString()} · {Math.ceil(s.turnCount / 2)} question{Math.ceil(
-                s.turnCount / 2,
-              ) === 1
-                ? ''
-                : 's'}</span
-            >
-          </button>
-          <button type="button" class="icon-btn" aria-label="Delete {s.title}" onclick={() => (deleting = s)}>
-            <Trash2 size={12} />
-          </button>
-        </li>
-      {/each}
-    </ul>
-  </aside>
+              <span class="space-chat-item-title"
+                >{#if openingId === s.id}<span class="spinner" aria-hidden="true"></span>
+                {/if}{s.turnCount === 0 && s.title === spaceKey ? 'New chat' : s.title}</span
+              >
+              <span class="space-chat-item-meta"
+                >{new Date(s.updatedAt).toLocaleDateString()} · {Math.ceil(s.turnCount / 2)} question{Math.ceil(
+                  s.turnCount / 2,
+                ) === 1
+                  ? ''
+                  : 's'}</span
+              >
+            </button>
+            <button type="button" class="icon-btn" aria-label="Delete {s.title}" onclick={() => (deleting = s)}>
+              <Trash2 size={12} />
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </aside>
+  {/if}
 
   <section class="space-chat-main">
     <div class="space-chat-head">
@@ -242,6 +324,7 @@
       {starters}
       {onPushed}
       {onWriteNewPage}
+      waiting={chatWaiting({ checking, counts })}
       compact
     >
       {#snippet top()}
@@ -255,11 +338,16 @@
             {onSelectPage}
             {chat}
             bind:counts
+            bind:checking
           />
         {/key}
       {/snippet}
       {#snippet notes()}
-        {#if counts?.attachments}
+        {#if checking && !counts?.attachments}
+          <div class="attachments-note muted" role="status">
+            <span class="spinner" aria-hidden="true"></span> Checking these pages' attachments…
+          </div>
+        {:else if counts?.attachments}
           <AttachmentsNote {spaceKey} report={counts.attachments} {chat} before />
         {/if}
       {/snippet}

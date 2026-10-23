@@ -14,14 +14,19 @@
   let chosen = $state<SpanRecord | null>(null);
   let error = $state<string | null>(null);
   let typed = $state('');
+  let reading = $state(false);
 
   $effect(() => {
     const id = observe.traceId;
     if (!id) return;
-    observability.trace(id).then(
-      (t) => ((spans = t.spans), (events = t.events), (chosen = null), (error = null)),
-      (e: unknown) => (error = messageOf(e)),
-    );
+    reading = true;
+    observability
+      .trace(id)
+      .then(
+        (t) => ((spans = t.spans), (events = t.events), (chosen = null), (error = null)),
+        (e: unknown) => (error = messageOf(e)),
+      )
+      .finally(() => (reading = false));
   });
 
   // Each span after its parent, children in the order they started, with its depth for indenting.
@@ -74,6 +79,8 @@
 </form>
 {#if !observe.traceId}
   <p class="muted">Open a trace from a chat answer, a failed job, a problem or an event, or paste its id above.</p>
+{:else if reading}
+  <p class="muted observe-loading" role="status"><span class="spinner" aria-hidden="true"></span> Reading the trace…</p>
 {:else if error}
   <div class="alert alert-error">This trace could not be read: {error}</div>
 {:else if spans.length === 0}

@@ -217,7 +217,11 @@
 {/if}
 <div class="chat-stream" hidden={!!view}>
   {@render lead?.()}
-  {#if turns.length === 0 && !chat.pending && !batch}
+  {#if chat.opening}
+    <div class="empty-state" role="status">
+      <span class="spinner" aria-hidden="true"></span> Opening the conversation…
+    </div>
+  {:else if turns.length === 0 && !chat.pending && !batch}
     <div class="empty-state">{@render empty?.()}</div>
     {#if starters.length && !blocked}
       <div class="chat-starters">

@@ -122,12 +122,15 @@
       readStatus();
       return;
     }
+    saving = true;
     try {
       await api.saveConnection({ baseUrl: baseUrl.trim(), token: token.trim() || undefined });
       onSaved();
       onClose();
     } catch (e) {
       saveError = messageOf(e);
+    } finally {
+      saving = false;
     }
   }
 </script>
@@ -170,7 +173,7 @@
     {#if saveError}<span class="field-error footer-message">{saveError}</span>{/if}
     <button class="btn btn-secondary" onclick={onClose}>Cancel</button>
     <button class="btn btn-primary" onclick={save} disabled={saving || (section === 'confluence' && locked)}
-      ><Save size={14} /> Save & apply</button
+      >{#if saving}<span class="spinner" aria-hidden="true"></span>{:else}<Save size={14} />{/if} Save & apply</button
     >
   {/snippet}
 </Dialog>

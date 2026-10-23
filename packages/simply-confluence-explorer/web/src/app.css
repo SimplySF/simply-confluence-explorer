@@ -2889,6 +2889,17 @@ body {
   min-height: 0;
 }
 /* The Review page: each chat with work waiting, and every staged page to push. */
+.attachments-saving {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.observe-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
 .hub-chats {
   display: flex;
   flex-direction: column;
@@ -3294,6 +3305,27 @@ div.disclosure-body {
   gap: 0.5rem;
   overflow: auto;
 }
+.space-chat:has(> .space-chat-list.folded) {
+  grid-template-columns: 48px 1fr;
+}
+.space-chat-list.folded {
+  align-items: center;
+  padding: 12px 6px;
+}
+.space-chat-list-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.space-chat-list-head > .btn {
+  flex: 1;
+}
+.space-chat-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
 .space-chat-list ul {
   list-style: none;
   margin: 0;
@@ -3416,6 +3448,12 @@ span.scope-chip-name {
 }
 .scope-chip-remove:hover {
   background: var(--accent-light);
+}
+.scope-saving {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
 }
 .scope-chip-plain {
   padding-right: 10px;
