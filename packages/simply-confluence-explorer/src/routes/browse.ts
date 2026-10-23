@@ -125,7 +125,12 @@ export function addBrowseRoutes(router: Router, services: Services): Router {
         if (exclusions.isPageExcluded(detail, spaceKey) || exclusions.isPageExcluded(detail, detail.spaceKey)) {
           throw new HttpError(404, 'Page not found, or excluded by .confluenceignore');
         }
-        return { detail, parsed: parsePage(detail), isLocal: local !== undefined };
+        return {
+          detail,
+          parsed: parsePage(detail),
+          isLocal: local !== undefined,
+          ...(local && syncedIn ? { onDisk: store.attachmentEntries(syncedIn, local).map((a) => !a.missing) } : {}),
+        };
       })
   );
 }

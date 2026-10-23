@@ -21,7 +21,7 @@ message says how many pages were downloaded and how many were already current or
 line under the space's name changes from **Not synced** to the number of pages synced and when.
 
 Run it again at any time with **Update**, which takes the place of **Sync**. Only pages that changed in Confluence since the last
-sync are downloaded again. A page about to be edited is always read from Confluence first, and its
+sync are downloaded again, with any page whose attachments were added or replaced there, or are missing here. A page about to be edited is always read from Confluence first, and its
 copy here is updated if it is older (see [Changing pages](/guides/changing-pages/)).
 
 Some things to know about a sync:

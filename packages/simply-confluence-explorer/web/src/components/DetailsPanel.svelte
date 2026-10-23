@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, Download, FolderTree, RefreshCw, Sparkles } from '@lucide/svelte';
+  import { ChevronDown, Download, ExternalLink, FolderTree, RefreshCw, Sparkles } from '@lucide/svelte';
   import type { PageMetadata, PageResponse } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
@@ -116,20 +116,25 @@
     <table class="data-table">
       <thead><tr><th>File</th><th>Type</th><th>Size</th><th></th></tr></thead>
       <tbody>
-        {#each detail.attachments as a (a.id)}
+        {#each detail.attachments as a, i (a.id)}
           <tr>
             <td>{a.title}</td>
             <td class="muted">{a.mediaType}</td>
             <td class="muted">{(a.fileSize / 1024).toFixed(1)} KB</td>
-            <td>
-              <a
-                href={a.downloadUrl}
-                class="btn btn-secondary btn-sm"
-                download={a.title}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Download size={12} /> Download
+            <td class="attachment-actions">
+              {#if page.onDisk?.[i]}
+                <a
+                  href={`/api/space-cache/${encodeURIComponent(spaceKey)}/pages/${encodeURIComponent(detail.id)}/attachments/${i}`}
+                  class="btn btn-secondary btn-sm"
+                  download={a.title}
+                >
+                  <Download size={12} /> Download
+                </a>
+              {:else if page.isLocal}
+                <span class="muted">Not on this machine, sync the space again</span>
+              {/if}
+              <a href={a.downloadUrl} class="btn btn-secondary btn-sm" target="_blank" rel="noreferrer">
+                <ExternalLink size={12} /> Open in Confluence
               </a>
             </td>
           </tr>

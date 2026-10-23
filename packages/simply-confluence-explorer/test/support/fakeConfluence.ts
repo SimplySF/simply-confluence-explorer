@@ -33,7 +33,8 @@ export type FakePage = {
   spaceKey: string;
   storage: string;
   labels: string[];
-  attachments: Array<{ title: string; content: Buffer; type: string }>;
+  /** `modified` is when the attachment was last added or replaced, as an ISO date. */
+  attachments: Array<{ title: string; content: Buffer; type: string; modified?: string }>;
   ancestors: Array<{ id: string; title: string }>;
   children: string[];
   version: number;
@@ -195,6 +196,26 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       .map((p) => ({ content: { id: p.id, title: p.title }, excerpt: `@@@hl@@@${p.title}@@@endhl@@@ excerpt` }));
   };
 
+  // Enough of CQL for the sync's search: type = attachment, space = "KEY" and lastmodified >= "date".
+  // An attachment from the dataset was last changed long ago.
+  const changedAttachments = (cql: string): unknown[] => {
+    const space = /space = "([^"]+)"/.exec(cql)?.[1];
+    const since = /lastmodified >= "([^"]+)"/.exec(cql)?.[1] ?? '';
+    if (!cql.includes('type = attachment')) return [];
+    return [...pages.values()]
+      .filter((p) => p.spaceKey === space)
+      .flatMap((p) =>
+        p.attachments
+          .filter((a) => (a.modified ?? '2000-01-01') >= since)
+          .map((a) => ({ id: `att-${p.id}-${a.title}`, type: 'attachment', title: a.title, container: { id: p.id } })),
+      );
+  };
+
+  const searches: Record<string, ((cql: string) => unknown[]) | undefined> = {
+    '/rest/api/search': search,
+    '/rest/api/content/search': changedAttachments,
+  };
+
   /** Answers a page's attachment list and an attachment's download; false for any other route. */
   const attachmentRoute = (
     route: string,
@@ -265,7 +286,8 @@ export async function startFakeConfluence(): Promise<FakeConfluence> {
       const found = space(decodeURIComponent(match[1]));
       return found ? json(200, found) : json(404, { message: `No space with key : ${match[1]}` });
     }
-    if (route === '/rest/api/search') return list(search(url.searchParams.get('cql') ?? ''));
+    const searchOf = searches[route];
+    if (searchOf) return list(searchOf(url.searchParams.get('cql') ?? ''));
     if (route === '/rest/api/content') {
       if (req.method === 'POST') return json(...create(written.get(req)));
       return list([...pages.values()].filter((p) => p.spaceKey === url.searchParams.get('spaceKey')).map(rest));

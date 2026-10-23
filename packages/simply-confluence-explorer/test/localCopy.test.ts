@@ -153,6 +153,67 @@ describe('syncing a space', () => {
     }
   });
 
+  it('a re-sync downloads an attachment added to a page whose version did not change, which it skipped', async () => {
+    const app = await startApp();
+    try {
+      await sync(app, 'OPS');
+      const page = fake.page('OPS', 'Database Failover');
+      const added = { title: 'failover-diagram.png', content: Buffer.from('a new diagram'), type: 'image/png' };
+      page.attachments.push({ ...added, modified: new Date().toISOString() });
+      try {
+        const second = await sync(app, 'OPS');
+        expect(second.downloadedCount).toBe(1);
+        expect(second.attachmentsDownloaded).toBe(page.attachments.length);
+        expect(
+          fake.requests.some((r) => r.startsWith('GET /rest/api/content/search?') && r.includes('attachment')),
+        ).toBe(true);
+        const files = fs.readdirSync(path.join(app.dataDir, 'spaces', 'OPS'), { recursive: true }) as string[];
+        expect(files.some((f) => f.endsWith(`_attachments${path.sep}failover-diagram.png`))).toBe(true);
+      } finally {
+        page.attachments.pop();
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('a re-sync downloads the files of a page synced before attachments were kept, which it skipped', async () => {
+    const app = await startApp();
+    try {
+      await sync(app, 'PLAT');
+      const dirs = (fs.readdirSync(path.join(app.dataDir, 'spaces', 'PLAT', 'pages'), { recursive: true }) as string[])
+        .filter((f) => f.endsWith('_attachments'))
+        .map((f) => path.join(app.dataDir, 'spaces', 'PLAT', 'pages', f));
+      expect(dirs.length).toBeGreaterThan(0);
+      const removed = fs.readdirSync(dirs[0]).length;
+      fs.rmSync(dirs[0], { recursive: true });
+      const second = await sync(app, 'PLAT');
+      expect(second.downloadedCount).toBe(1);
+      expect(second.attachmentsDownloaded).toBe(removed);
+      expect(fs.readdirSync(dirs[0])).toHaveLength(removed);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('a re-sync whose search for changed attachments fails still finishes, and says what it could not check', async () => {
+    const app = await startApp();
+    try {
+      await sync(app, 'OPS');
+      // A last sync time that is not a date makes the search fail, as a search Confluence refused would.
+      const manifest = path.join(app.dataDir, 'spaces', 'OPS', 'manifest.json');
+      fs.writeFileSync(
+        manifest,
+        JSON.stringify({ ...JSON.parse(fs.readFileSync(manifest, 'utf8')), lastSynced: 'never' }),
+      );
+      const second = await sync(app, 'OPS');
+      expect(second.status).toBe('completed');
+      expect(second.note).toMatch(/may be missing: searching for them failed/);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('serves the synced tree and pages from disk, with exclusions still applied', async () => {
     const app = await startApp();
     try {

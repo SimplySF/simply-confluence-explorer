@@ -247,6 +247,22 @@ export class ConfluenceClient {
   }
 
   /**
+   * The pages in a space whose attachments were added or replaced since a time, found with one
+   * search. Adding or replacing an attachment leaves its page's version as it was, so a sync that
+   * compares versions alone never fetches it. The search starts a day early, because Confluence
+   * reads the date in its own time zone.
+   */
+  public async changedAttachments(spaceKey: string, since: Date): Promise<Set<string>> {
+    const day = new Date(since.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const cql = `type = attachment AND space = "${spaceKey.replace(/[^A-Za-z0-9_~.-]/g, '')}" AND lastmodified >= "${day}"`;
+    const found = await this.collect<{ container?: { id?: string } }>('/rest/api/content/search', {
+      cql,
+      expand: 'container',
+    });
+    return new Set(found.flatMap((a) => (a.container?.id ? [a.container.id] : [])));
+  }
+
+  /**
    * Creates a page under a parent, or with `dryRun` only builds the request, which converts the
    * Markdown and so refuses anything Confluence would not accept. A title already used in the space
    * is answered with a 409 that says so, because Confluence allows one page per title in a space.

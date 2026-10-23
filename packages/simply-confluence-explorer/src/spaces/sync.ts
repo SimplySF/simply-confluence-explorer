@@ -34,7 +34,9 @@ type Planned = { node: PageTreeNode; ancestors: Ancestors };
 /**
  * Copies a space, or a branch of it, from Confluence to disk. Pages that are excluded are never
  * written, and a page whose copy is already at Confluence's version is not downloaded again, so a
- * second sync of a large space reads only what changed.
+ * second sync of a large space reads only what changed. A page is fetched again at the same version
+ * when a file it lists is not on disk, or when an attachment of it changed in Confluence since the
+ * last sync, since neither changes the page's version.
  */
 export class SpaceSync {
   private readonly jobs: JobRunner<SyncProgress>;
@@ -87,6 +89,7 @@ export class SpaceSync {
       processed: 0,
       skippedCount: 0,
       downloadedCount: 0,
+      attachmentsDownloaded: 0,
       errorCount: 0,
       errors: [],
     };
@@ -118,14 +121,15 @@ export class SpaceSync {
     job.skippedCount += excluded;
     job.processed += excluded;
     const planned = visible;
+    const previous = (await this.store.listSynced()).find((s) => s.spaceKey === spaceKey);
+    const changed = previous ? await changedAttachments(job, client, spaceKey, previous.lastSynced) : new Set<string>();
 
     await runLimited(
-      planned.map((item) => (): Promise<void> => this.syncPage(job, client, spaceKey, item)),
+      planned.map((item) => (): Promise<void> => this.syncPage(job, client, spaceKey, item, changed)),
       SYNC_CONCURRENCY,
     );
     if (this.jobs.isCancelled(job.jobId)) return;
 
-    const previous = (await this.store.listSynced()).find((s) => s.spaceKey === spaceKey);
     this.store.writeManifest(spaceKey, {
       spaceKey,
       name: space.name,
@@ -170,10 +174,17 @@ export class SpaceSync {
     client: ConfluenceClient,
     spaceKey: string,
     { node }: Planned,
+    changed: ReadonlySet<string>,
   ): Promise<void> {
     if (this.jobs.isCancelled(job.jobId)) return;
     try {
-      if (this.store.cachedVersion(spaceKey, node.id) >= node.version) {
+      const cached = this.store.readPage(spaceKey, node.id);
+      const current =
+        cached &&
+        cached.version >= node.version &&
+        !changed.has(node.id) &&
+        !this.store.attachmentEntries(spaceKey, cached).some((a) => a.missing);
+      if (current) {
         job.skippedCount++;
         return;
       }
@@ -184,12 +195,31 @@ export class SpaceSync {
       );
       this.store.writePage(spaceKey, page, parsePage(page).markdown, attachments);
       job.downloadedCount++;
+      job.attachmentsDownloaded += attachments.length;
     } catch (error) {
       job.errorCount++;
       job.errors.push({ pageId: node.id, title: node.title, error: errorMessage(error) });
     } finally {
       job.processed++;
     }
+  }
+}
+
+/**
+ * The pages whose attachments changed in Confluence since the last sync. A failed search does not
+ * stop the sync; the result says what it could not check.
+ */
+async function changedAttachments(
+  job: SyncProgress,
+  client: ConfluenceClient,
+  spaceKey: string,
+  lastSynced: string,
+): Promise<Set<string>> {
+  try {
+    return await client.changedAttachments(spaceKey, new Date(lastSynced));
+  } catch (error) {
+    job.note = `Attachments added or replaced in Confluence since the last sync may be missing: searching for them failed (${errorMessage(error)}).`;
+    return new Set();
   }
 }
 

@@ -84,21 +84,24 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
         const page = store.readPage(params.spaceKey, params.pageId);
         return { pageId: params.pageId, isExcluded: page ? exclusions.isPageExcluded(page, params.spaceKey) : false };
       })
-      // One image attached to a synced page, by its place in the page's list, so the edit view can
-      // show what a marker stands for (ADR-068). Only image types are served, and no path is read
-      // from the request.
+      // One attachment of a synced page, by its place in the page's list: an image for the edit view
+      // to show what a marker stands for (ADR-068), and any file for the page's Download button. Only
+      // an image is shown in the page; anything else is a download the browser never runs, so an
+      // attached HTML or SVG file cannot act as the app. No path is read from the request.
       .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/attachments/:attachment', ({ params, res }) => {
         const page = store.readPage(params.spaceKey, params.pageId);
         if (!page || exclusions.isPageExcluded(page, params.spaceKey))
           throw new HttpError(404, 'that page is not synced on this machine');
         const title = page.attachments[Number(params.attachment)]?.title;
-        const type = title ? IMAGE_TYPES[path.extname(title).toLowerCase()] : undefined;
-        const found = type && store.attachmentFiles(params.spaceKey, page).find((f) => f.title === title);
-        if (!found) throw new HttpError(404, 'that page has no such image on this machine');
+        const found = title && store.attachmentFiles(params.spaceKey, page).find((f) => f.title === title);
+        if (!found) throw new HttpError(404, 'that page has no such attachment on this machine');
+        const image = IMAGE_TYPES[path.extname(found.title).toLowerCase()];
         res.writeHead(200, {
-          'Content-Type': type,
+          'Content-Type': image ?? 'application/octet-stream',
           'Content-Length': found.bytes,
           'Cache-Control': 'private, no-cache',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Disposition': `${image ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(found.title)}`,
         });
         res.end(fs.readFileSync(found.file));
         return undefined;

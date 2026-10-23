@@ -31,6 +31,7 @@ import { OutboundGuard } from '../src/ai/guard.js';
 import { anthropicRequest, complete } from '../src/ai/providers.js';
 import { AiSettingsStore, type Provider } from '../src/ai/settings.js';
 import { createServer } from '../src/server.js';
+import { withoutImages } from '../src/spaces/attachments.js';
 
 const tmp = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-ai-'));
 const store = (env: NodeJS.ProcessEnv = {}, dir = tmp()): AiSettingsStore => new AiSettingsStore(dir, env);
@@ -487,6 +488,28 @@ process.stdin.on('end', () => {
   });
 });
 
+test('a Gemini CLI that ends with no answer and no error is named as having given no reason, where the note said nothing', async () => {
+  const script = path.join(tmp(), 'cli.mjs');
+  fs.writeFileSync(
+    script,
+    `process.stdin.resume();
+process.stdin.on('end', () => {
+  if (!process.argv[process.argv.indexOf('-p') + 1].includes('@img-')) process.stdout.write('An answer from the text.');
+});`,
+  );
+  const reply = await runGeminiCli(script, withImage().payload, {});
+  assert.equal(reply.whyDropped, undefined);
+  const report = withoutImages(
+    { files: 0, read: [], unread: [], images: { found: 1, sent: 1, choice: 'send' } },
+    reply.imagesDropped,
+    reply.whyDropped,
+  );
+  assert.equal(
+    report.unread[0].why,
+    'not read: the AI gave no answer with the images (it gave no reason), so it was asked again without them',
+  );
+});
+
 test('no key or no model fails before anything is sent', async () => {
   await assert.rejects(complete('anthropic', { ...cfg('', 'm'), apiKey: '' }, guarded('s', 'u')), /no API key/);
   await assert.rejects(complete('openai', cfg('', ''), guarded('s', 'u')), /no model/);
@@ -506,6 +529,13 @@ test('the engine follows the chosen provider, and reports unavailable without a 
   assert.equal(ai.getEngine(), 'Claude (claude-opus-5-5)');
   const cli = engine(store(), '/x/gemini.js');
   assert.equal(cli.getEngine(), 'Gemini CLI');
+});
+
+test('the Gemini CLI is named with its version, which a report of what it did with images needs', () => {
+  const pkg = path.join(tmp(), 'gemini-cli');
+  fs.mkdirSync(path.join(pkg, 'bundle'), { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@google/gemini-cli', version: '0.65.0' }));
+  assert.equal(engine(store(), path.join(pkg, 'bundle', 'gemini.js')).getEngine(), 'Gemini CLI 0.65.0');
 });
 
 test('the settings API saves a key and never returns it', async () => {

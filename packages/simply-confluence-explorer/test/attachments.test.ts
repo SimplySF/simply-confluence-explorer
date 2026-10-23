@@ -25,6 +25,7 @@ import type {
   AttachmentsReport,
   BatchProgress,
   BranchRun,
+  PageResponse,
   SessionTurn,
   SyncProgress,
 } from '../src/api/types.js';
@@ -352,10 +353,9 @@ describe("a page's pictures in the edit view", () => {
     });
   });
 
-  it('are never a file that is not an image, one past the list, a page not synced, or an excluded page', async () => {
+  it('are never one past the list, a page not synced, or an excluded page', async () => {
     await withSynced(async (app) => {
       const id = fake.page('PLAT', 'Architecture Overview').id;
-      expect((await picture(app, id, '1')).status).toBe(404);
       expect((await picture(app, id, '2')).status).toBe(404);
       expect((await picture(app, id, 'readme.txt')).status).toBe(400);
       expect((await picture(app, id, 'readme.txt')).status).toBe(400);
@@ -365,6 +365,24 @@ describe("a page's pictures in the edit view", () => {
         purge: false,
       });
       expect((await picture(app, id, '0')).status).toBe(404);
+    });
+  });
+
+  it('include any synced file as a download the browser never shows in the app, where Download opened Confluence', async () => {
+    await withSynced(async (app) => {
+      const id = fake.page('PLAT', 'Architecture Overview').id;
+      const file = await picture(app, id, '1');
+      expect(file.status).toBe(200);
+      expect(file.headers.get('content-type')).toBe('application/octet-stream');
+      expect(file.headers.get('content-disposition')).toBe("attachment; filename*=UTF-8''capacity-notes.txt");
+      expect(file.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(await file.text()).toBe('Capacity planning notes for 2026.\n');
+      expect((await picture(app, id, '0')).headers.get('content-disposition')).toMatch(/^inline;/);
+      const { body } = await app.call<PageResponse>('GET', `/pages/${id}`);
+      expect(body.onDisk).toEqual([true, true]);
+      fs.rmSync(attachment(app, 'capacity-notes.txt'));
+      expect((await app.call<PageResponse>('GET', `/pages/${id}`)).body.onDisk).toEqual([true, false]);
+      expect((await picture(app, id, '1')).status).toBe(404);
     });
   });
 
