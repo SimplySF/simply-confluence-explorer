@@ -203,6 +203,13 @@ export type GuardedMessage = {
 };
 /** An image the guard let through unchecked, as base64, named in the report. */
 export type GuardedImage = { readonly name: string; readonly mediaType: string; readonly data: string };
+
+/**
+ * The line that goes before an image, so the model knows which file each picture is; a person asks
+ * about an image by its name, and a picture without one cannot be matched to the page that shows it.
+ * The name has passed the guard's scan of image names.
+ */
+export const imageLabel = (index: number, image: GuardedImage): string => `Image ${index + 1}: ${image.name}`;
 /** Text that has passed the guard, and any images it recorded as unchecked. Only `OutboundGuard` makes one. */
 export type GuardedPayload = {
   readonly system: string;
