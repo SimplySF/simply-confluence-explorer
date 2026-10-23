@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FileText, WandSparkles } from '@lucide/svelte';
+  import { FileText, Maximize2, Minimize2, WandSparkles } from '@lucide/svelte';
   import type { Snippet } from 'svelte';
   import type { BranchFinding, BranchItem, BranchRun, ChatQueue } from '../../../src/api/types.js';
   import { branches, sessions, type Focus } from '../support/api.js';
@@ -15,7 +15,10 @@
   // A chat beside its review queue (ADR-060). The conversation is on the left; the queue on the right
   // shows one of three steps: the suggestions the chat made, the edits made from them to decide, and
   // the pages staged to push. An edit opens in place of the conversation, with the question box kept
-  // below it, so the chat can be asked to rework the edit while it is open.
+  // below it, so the chat can be asked to rework the edit while it is open. Deciding an edit side by
+  // side needs the whole width, so opening one takes the chat and its queue to the full window, with
+  // the queue as a narrow column beside the edit; Exit full screen or Escape closes the edit and
+  // brings them back.
   type Stage = 'open' | 'in-progress' | 'staged';
   type Props = {
     chat: AiChat;
@@ -57,6 +60,22 @@
     compact = false,
   }: Props = $props();
   let stage = $state<Stage>('open');
+  let fullscreen = $state(false);
+  // An edit is decided only full screen, so leaving it closes the edit; the queue still lists it.
+  function leaveFullscreen(): void {
+    fullscreen = false;
+    open = null;
+    focus = null;
+  }
+  $effect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      // A dialog over the review, such as the push confirmation, takes Escape first.
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.modal-overlay')) leaveFullscreen();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   let queue = $state<ChatQueue | null>(null);
   let open = $state<{ runId: string; pageId: string } | null>(null);
   let focus = $state<Focus | null>(null);
@@ -87,6 +106,7 @@
     if (!sessionId || sessionId === shownId) return;
     shownId = sessionId;
     stage = 'open';
+    fullscreen = false;
     open = null;
     focus = null;
   });
@@ -222,6 +242,7 @@
   function openEdit(run: BranchRun, item: BranchItem): void {
     open = { runId: run.id, pageId: item.pageId };
     stage = item.staged ? 'staged' : 'in-progress';
+    fullscreen = true;
   }
 
   // Once a conversation has begun, what it found or agreed can become suggestions; a fresh review
@@ -373,7 +394,17 @@
   <PushQueue rows={pushRows} onChanged={() => void load()} {onPushed} />
 {/snippet}
 
-<div class="chat-review-frame">
+<div class={['chat-review-frame', fullscreen && 'fullscreen']}>
+  {#if fullscreen}
+    <div class="review-fullbar">
+      <strong>Review</strong>
+      <span class="muted review-fullbar-subject">{subject}</span>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick={leaveFullscreen} title="Back to the chat (Esc)">
+        <Minimize2 size={13} /> Exit full screen
+      </button>
+    </div>
+  {/if}
   <div class="chat-review">
     <div class="chat-review-main">
       {@render top?.()}
@@ -401,6 +432,17 @@
       <aside class="review-panel" aria-label="Review queue">
         <div class="review-panel-head">
           <h4>Review queue</h4>
+          <span class="spacer"></span>
+          {#if !fullscreen}
+            <button
+              class="btn-icon btn-icon-sm"
+              onclick={() => (fullscreen = true)}
+              title="Open the review full screen, with room to decide edits side by side"
+              aria-label="Open the review full screen"
+            >
+              <Maximize2 size={14} />
+            </button>
+          {/if}
           <button
             class="btn btn-secondary btn-sm"
             disabled={!canAdd}

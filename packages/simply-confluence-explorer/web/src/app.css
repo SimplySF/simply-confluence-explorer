@@ -2579,9 +2579,42 @@ body {
 /* A chat beside its review queue */
 .chat-review-frame {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   container-type: inline-size;
+}
+/* The review over the whole window: the queue as a column on the left, the edit beside it. Dialogs
+   and toasts stay above it. */
+.chat-review-frame.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: var(--bg-app);
+}
+.chat-review-frame.fullscreen .review-panel {
+  order: -1;
+  width: clamp(260px, 24vw, 340px);
+  border-left: none;
+  border-right: 1px solid var(--border-color);
+}
+.review-fullbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-panel);
+}
+.review-fullbar strong {
+  font-size: 15px;
+}
+.review-fullbar-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat-review {
   display: flex;
@@ -2631,8 +2664,7 @@ body {
 .review-panel-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   padding: 14px 16px 10px;
 }
 .review-panel-head h4 {

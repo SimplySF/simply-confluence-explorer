@@ -36,9 +36,11 @@ The code and prose budgets rise for it (ADR-072).
 - **Chat & review** (`ChatWorkspace.svelte`, `ReviewQueue.svelte`, `ChatThread.svelte`): the
   conversation on the left and the review queue on the right, in three steps: suggestions as cards
   grouped by page, edits to decide, and staged pages. Its footer writes the edits for the ticked
-  suggestions, and Add from chat turns the conversation into suggestions. An edit opens in place of
-  the conversation, with the question box below it. With too little room the queue goes under the
-  conversation, decided by the chat's own width rather than the window's.
+  suggestions, and Add from chat turns the conversation into suggestions. Opening an edit takes the
+  chat to the full window, since a side-by-side decision does not fit a side panel: the queue becomes
+  a column on the left and the edit fills the rest, with the question box below it. Exit full screen
+  or Escape closes the edit; the queue's expand button opens the full window by hand. With too little
+  room the queue goes under the conversation, decided by the chat's own width.
 - **Space chat** (`SpaceChat.svelte`, `ChatContext.svelte`): what the chat reads is a row of chips,
   with Whole space when there are none, and Add pages or tags opens a search of pages and tags. The
   review queue appears once the chat has asked or suggested something.
@@ -50,6 +52,8 @@ The code and prose budgets rise for it (ADR-072).
 
 ## Alternatives considered
 
+- **Deciding an edit in the side panel.** Two versions of a page side by side need the width of
+  the window, so an open edit always takes it.
 - **Keeping the four chat tabs and restyling them.** The tabs hid the queue while the conversation
   was open, which is when the chat adds to it; two columns show both.
 - **A chosen-pages switch in Space chat.** An empty choice already means the whole space, so the

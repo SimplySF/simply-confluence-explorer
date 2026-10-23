@@ -62,8 +62,9 @@ done, or no longer makes sense, is not applied and goes back to the suggestions 
 
 The **Edits to decide** step lists the edits, grouped by each time you asked for them. A page being
 written shows its current step and how long it has taken; open it to follow every step and the
-answer so far, where the AI streams it, until it turns into the edit. Open one, in place of the
-conversation, to see the page as it is now on the left and the edit on the right. Each change sits between them with **Accept** and **Reject**, and **Undo** to change
+answer so far, where the AI streams it, until it turns into the edit. Open one and the review fills
+the window, the queue on the left, to show the page as it is now and the edit side by side; **Exit
+full screen** or Esc goes back to the chat, and the expand button in the queue opens it by hand. Each change sits between them with **Accept** and **Reject**, and **Undo** to change
 your mind; **Accept all** and **Reject all** decide the page at once. Beside it is the AI's
 recommendation: the suggestions applied, what it says it changed, and anything it did not apply.
 
