@@ -13,14 +13,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const MAX_CODE_LINES = 19300; // ADR-021, ADR-062, ADR-065, ADR-067, ADR-070, ADR-071, ADR-072: package src/ and web/src/, tests excluded
+const MAX_CODE_LINES = 20400; // ADR-021, ADR-062, ADR-065, ADR-067, ADR-070, ADR-071, ADR-072, ADR-075: package src/ and web/src/, tests excluded
 const MAX_COMMENT_RATIO = 25; // ADR-014: a hard ceiling; when it is exceeded, a comment is removed and the limit stays
-const MAX_DOC_LINES = 2250; // ADR-034, ADR-055, ADR-062, ADR-067, ADR-070, ADR-072: every tracked .md except the decision log, history, review and the code of conduct
+const MAX_DOC_LINES = 2350; // ADR-034, ADR-055, ADR-062, ADR-067, ADR-070, ADR-072, ADR-075: every tracked .md except the decision log, history, review and the code of conduct
 const MAX_GUIDE_LINES = 1150; // ADR-042, ADR-067: the user guides in packages/*/docs/, which ship in the package
 const MAX_RUNTIME_DEPS = 7; // ADR-031: direct dependencies across every package.json
 const MAX_DEV_DEPS = 29; // ADR-031: direct devDependencies across every package.json
 const MAX_SITE_DEPS = 4; // ADR-043: the documentation site's dependencies, which never ship in the package
-const MAX_BUNDLE_BYTES = 409600; // ADR-014: dist/web/assets, 400 KiB
+const MAX_BUNDLE_BYTES = 460800; // ADR-014, ADR-075: dist/web/assets, 450 KiB
 const MIN_TEST_RATIO = 5; // ADR-021: at least one line of tests for every five lines of code
 const MAX_CONFLUENCE_HTTP_MODULES = 1; // ADR-031: confluence/client.ts, and nothing else
 const MAX_EXEC_MODULES = 1; // ADR-031: ai/geminiService.ts, and nothing else

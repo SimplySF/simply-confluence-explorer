@@ -242,7 +242,7 @@ behaviour stays as it is.
 
 ## ADR-014 — The budgets are set at today's size with modest headroom, not at a target the code has not reached
 
-**Status:** accepted, 2026-10-15.
+**Status:** accepted, 2026-10-15. Amended by ADR-075.
 
 A budget is a limit on the size or shape of the project, checked by a command, so that growth is a
 deliberate decision rather than something that happens unnoticed. These budgets were introduced
@@ -2021,7 +2021,7 @@ because the increase is sized to the measured change, and the next one needs its
 
 ## ADR-072 — The code budget rises to 19,300 lines and prose to 2,250 for the clarity rework of the web app
 
-**Status:** accepted, 2026-10-23. Amends ADR-071.
+**Status:** accepted, 2026-10-23. Amends ADR-071. Amended by ADR-075.
 
 The clarity rework (design doc 0014) changes the layout of every main screen: one search in the
 header, the sidebar's space state and actions, the page view's header and tabs, a chat beside its
@@ -2074,3 +2074,22 @@ them. A thread that fails gives its task the reason, and the next task starts a 
 **The argument against:** threads add a second place for code to run, and a result crosses between
 threads by copying. This is accepted because the work moved is the work that froze the server, the
 copying is small next to it, and the rule about what may run there is checked rather than trusted.
+
+---
+
+## ADR-075 — The code budget rises to 20,400 lines, prose to 2,350 and the bundle to 450 KiB, for a responsive app
+
+**Status:** accepted, 2026-10-23. Amends ADR-072 and ADR-014.
+
+Making the app keep up with the person (design doc 0015) adds code: the caches that stop the server
+reading a whole space for each request, the worker threads and the rule that holds them, the
+indicators that show every wait, and the review as its own place with a four-step flow, opened from a
+chat or from the sidebar. The code passes the 19,300 lines set by ADR-072 and the browser bundle the
+400 KiB set by ADR-014, and the design doc takes the prose near its 2,250. The limits rise to 20,400
+lines (`MAX_CODE_LINES`), 2,350 lines (`MAX_DOC_LINES`) and 450 KiB (`MAX_BUNDLE_BYTES`), sized to
+the measured change with the usual small headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit, and a larger bundle
+takes longer to load. This is accepted because the app is served from this machine, where 50 KiB more
+loads in milliseconds, the rework removes the side panel and the Ready to push page it replaces, and
+the next rise needs its own record.
