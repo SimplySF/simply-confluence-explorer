@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.8.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.8.0...%40simplysf%2Fsimply-confluence-explorer%400.8.1) (2026-10-23)
+
+### Bug Fixes
+
+- the gemini cli answers when images stop it, files can be left out, and new ones are asked about ([#49](https://github.com/SimplySF/simply-confluence-explorer/issues/49)) ([bbcaeb8](https://github.com/SimplySF/simply-confluence-explorer/commit/bbcaeb8f659d689cf1518a84826fb445a4e5cd01))
+
 # [0.8.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.7.2...%40simplysf%2Fsimply-confluence-explorer%400.8.0) (2026-10-22)
 
 ### Features
