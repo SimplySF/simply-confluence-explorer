@@ -112,14 +112,31 @@ export function cliError(stderr: string): string {
 /** Lines the CLI prints on every run, on either output, which say nothing about the answer. */
 const NOISE = [/Warning:\s*True color/i, /Ripgrep is not available/i, /YOLO mode is enabled/i];
 
-/** The CLI ended as a success without writing an answer. */
-class NoAnswerError extends Error {}
+/** The CLI ended as a success without writing an answer; `said` is its reason, when it gave one. */
+class NoAnswerError extends Error {
+  public constructor(
+    message: string,
+    public readonly said?: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The first line of what the CLI said, without its severity tag, short enough to name beside an image. */
+function reasonOf(said: string): string | undefined {
+  const line = said
+    .split('\n')[0]
+    ?.replace(/^\[(ERROR|WARNING)\]\s*/, '')
+    .trim();
+  return line ? line.slice(0, 300) : undefined;
+}
 
 /**
  * Runs one guarded prompt with the document on standard input, in a scratch working directory.
  * Aborting `signal` ends the process. The CLI can end without an answer and without a reason when it
  * is sent images; the prompt is then sent once more without them, and the reply names them as not
- * read, so the answer is never lost to them and they are never claimed as read (ADR-069).
+ * read, with what the CLI said about the first try, so the answer is never lost to them and they
+ * are never claimed as read (ADR-069).
  */
 export async function runGeminiCli(
   scriptPath: string,
@@ -134,7 +151,11 @@ export async function runGeminiCli(
   } catch (error) {
     if (images.length === 0 || !(error instanceof NoAnswerError)) throw error;
     const reply = await runOnce(scriptPath, { ...payload, images: [] }, env, signal, onText);
-    return { ...reply, imagesDropped: images.map((i) => i.name) };
+    return {
+      ...reply,
+      imagesDropped: images.map((i) => i.name),
+      ...(error.said ? { whyDropped: error.said } : {}),
+    };
   }
 }
 
@@ -217,11 +238,12 @@ function runOnce(
         .trim();
       if (!cleanOutput) {
         // The CLI can end without an answer yet report success, saying why only on its error output.
-        const said = cliError(stderrData) || 'it printed no error';
+        const reason = cliError(stderrData);
+        const said = reason || 'it printed no error';
         const sent = images.length ? ` It was sent ${images.length} image${images.length === 1 ? '' : 's'}.` : '';
         reject(
           code === 0
-            ? new NoAnswerError(`the Gemini CLI gave no answer: ${said}${sent}`)
+            ? new NoAnswerError(`the Gemini CLI gave no answer: ${said}${sent}`, reasonOf(reason))
             : new Error(`the Gemini CLI exited with code ${code ?? 'unknown'}: ${said}${sent}`),
         );
       } else {

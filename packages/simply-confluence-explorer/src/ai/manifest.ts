@@ -20,6 +20,7 @@
 // refused rather than sent with context silently missing.
 
 import type { AttachmentsReport } from '../api/types.js';
+import { droppedNote } from './reply.js';
 
 /**
  * `notes` are what one batch of a thorough answer found, sent to the request that combines them. An
@@ -183,7 +184,11 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
  * What was sent, once the provider gave no answer with some images and was asked again without them:
  * those images are no longer counted as sent, and each is named as not read (ADR-069).
  */
-export function droppedFrom(summary: ManifestSummary, dropped: string[] | undefined): ManifestSummary {
+export function droppedFrom(
+  summary: ManifestSummary,
+  dropped: string[] | undefined,
+  whyDropped?: string,
+): ManifestSummary {
   if (!dropped?.length) return summary;
   const images = Math.max(0, (summary.images ?? 0) - dropped.length);
   return {
@@ -195,7 +200,7 @@ export function droppedFrom(summary: ManifestSummary, dropped: string[] | undefi
         kind: 'image' as const,
         label,
         reason: 'not-read' as const,
-        why: 'the AI gave no answer with the images, so it was asked again without them',
+        why: droppedNote(whyDropped),
       })),
     ],
   };

@@ -538,7 +538,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       { spaceKey: session.scope.spaceKey, guard, signal },
     );
     const report = withWithheld(reply.guard, ctx.withheld);
-    withoutImages(seen.report, reply.imagesDropped);
+    withoutImages(seen.report, reply.imagesDropped, reply.whyDropped);
     const findings = suggestions ? parseFindings(reply.text) : null;
     const queueBlock = suggestions ? { text: reply.text } : queueChangesOf(reply.text);
     const revised = item ? editOfReply(queueBlock.text) : { text: queueBlock.text };
@@ -557,7 +557,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
           text,
           at: now,
           guardSummary: report.summary + ctx.note + cutOffNote(reply.cutOff),
-          sent: droppedFrom(summarise(manifest), reply.imagesDropped),
+          sent: droppedFrom(summarise(manifest), reply.imagesDropped, reply.whyDropped),
           engine: ai.getEngine(),
           matchedPages: ctx.matchedPages,
           ...turnDetails(ctx, reply.cutOff, seen.report),
