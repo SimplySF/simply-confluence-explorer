@@ -76,6 +76,10 @@ export class SpaceStore {
   private readonly revisions = new Map<string, number>();
   // Metadata already read, by file, with the file time it was read at (readMetadata).
   private readonly metadataRead = new Map<string, { mtimeMs: number; metadata: PageMetadata }>();
+  // The ids of a space's synced pages, listed again only when the folder changes: a folder's time
+  // changes whenever a file is added to it or removed, so one look at it replaces listing thousands of
+  // files, and a change made outside the app is still seen.
+  private readonly idsListed = new Map<string, { mtimeMs: number; revision: number; ids: string[] }>();
 
   public constructor(
     dataDir: string,
@@ -511,11 +515,23 @@ export class SpaceStore {
 
   private cachedIds(spaceKey: string): string[] {
     const dir = path.join(this.spaceDir(spaceKey), 'pages_cache');
-    if (!fs.existsSync(dir)) return [];
-    return fs
+    let mtimeMs: number;
+    try {
+      mtimeMs = fs.statSync(dir).mtimeMs;
+    } catch {
+      // No folder yet: the space has no synced pages.
+      return [];
+    }
+    const key = spaceKey.toUpperCase();
+    const revision = this.revision(key);
+    const listed = this.idsListed.get(key);
+    if (listed?.mtimeMs === mtimeMs && listed.revision === revision) return listed.ids;
+    const ids = fs
       .readdirSync(dir)
       .filter((f) => /^\d+\.json$/.test(f))
       .map((f) => f.slice(0, -5));
+    this.idsListed.set(key, { mtimeMs, revision, ids });
+    return ids;
   }
 
   private pagesDir(spaceKey: string): string {
