@@ -1808,7 +1808,7 @@ record.
 
 ## ADR-063 — A freeze is reported only when the server was blocked for over two seconds, once per freeze, not whenever a timer ran late
 
-**Status:** accepted, 2026-10-21. Amends ADR-054.
+**Status:** accepted, 2026-10-21. Amends ADR-054. Amended by ADR-073.
 
 The Observability page raised "The server could not answer anything for 1.x s" many times a day.
 The check behind it raised a problem whenever a 5-second check ran more than a second late, for any
@@ -2035,3 +2035,42 @@ rise to 19,300 and 2,250, sized to the measured change with the usual small head
 because the increase is sized to the measured change, the rework removes as well as adds (the Space
 menu, the chat's four tabs and the sidebar's jump form are gone), and the next rise needs its own
 record.
+
+---
+
+## ADR-073 — A frozen server is recorded for diagnosis, naming what ran, and not raised to the person
+
+**Status:** accepted, 2026-10-23. Amends ADR-063.
+
+The server notes when it could not answer for more than two seconds (ADR-063). Shown in the header's
+problem count as "The server could not answer anything for 2.4 s", it told the person nothing they
+could act on: not what the server is, why it matters, or what held it. The record now says that the
+app was busy and could not respond, for how long, and what was running then, which requests were in
+flight and which jobs were working. It stays on the Observability page, where it leads someone to the
+slow code, and the header counts only problems that failed something the person asked for.
+
+**The argument against:** a person no longer learns at once that the app froze. This is accepted
+because they already know, having waited, and a count they cannot act on teaches them to ignore the
+badge; a freeze is a defect to fix, and the record now says where to look.
+
+---
+
+## ADR-074 — Work that cannot be cut into small pieces runs on worker threads, and nothing there reaches out
+
+**Status:** accepted, 2026-10-23.
+
+The server answers every request on one thread. Reading a large space is already cut into small
+pieces that let other requests through, but reading a PDF, a workbook or a document, and scanning a
+day of telemetry, is one long stretch each, and while it ran every click waited. Such work now runs on
+a few worker threads, `node:worker_threads`, which Node provides, so no dependency is added. Only
+`src/workers/pool.ts` starts threads, and a budget, `MAX_THREAD_MODULES`, holds it to that one
+module.
+
+A worker only reads files under the data directory and computes a result. It never calls an AI
+provider, the outbound guard or Confluence, and never writes; those stay on the main thread with the
+rules that govern them (ADR-017, ADR-018, ADR-022). A test fails if a worker's modules import any of
+them. A thread that fails gives its task the reason, and the next task starts a new thread.
+
+**The argument against:** threads add a second place for code to run, and a result crosses between
+threads by copying. This is accepted because the work moved is the work that froze the server, the
+copying is small next to it, and the rule about what may run there is checked rather than trusted.

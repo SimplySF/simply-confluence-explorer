@@ -308,6 +308,22 @@ export const REVIEW_GUIDE = [
     ],
   },
   {
+    surface: 'Worker threads',
+    about: 'Reading PDFs and Office files, and scanning telemetry, on threads beside the one that answers.',
+    items: [
+      {
+        file: `${SRC}/workers/pool.ts`,
+        symbol: 'WorkerPool',
+        check: 'The only module that starts threads; a thread that stops fails its task with the reason.',
+      },
+      {
+        file: `${SRC}/workers/tasks.ts`,
+        symbol: 'runTask',
+        check: 'Only reads files and computes a result; it imports nothing that sends or writes.',
+      },
+    ],
+  },
+  {
     surface: 'Deletes files',
     about: "Removes pages from the copy of a space kept on the user's disk.",
     items: [

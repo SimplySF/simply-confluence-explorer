@@ -24,6 +24,7 @@ const MAX_BUNDLE_BYTES = 409600; // ADR-014: dist/web/assets, 400 KiB
 const MIN_TEST_RATIO = 5; // ADR-021: at least one line of tests for every five lines of code
 const MAX_CONFLUENCE_HTTP_MODULES = 1; // ADR-031: confluence/client.ts, and nothing else
 const MAX_EXEC_MODULES = 1; // ADR-031: ai/geminiService.ts, and nothing else
+const MAX_THREAD_MODULES = 1; // ADR-074: workers/pool.ts, and nothing else
 const MAX_AI_SDK_MODULES = 1; // ADR-017: ai/providers.ts, and nothing else
 const MAX_AI_SENDER_IMPORTERS = 1; // ADR-022: ai/engine.ts, where the outbound guard runs
 
@@ -147,6 +148,10 @@ const httpModules = matching(
     ) || /[^\w.]fetch\(/.test(text),
 );
 const execModules = matching(serverSources, (text) => /from '(node:)?child_process'/.test(text));
+const threadModules = matching(
+  serverSources,
+  (text) => /from '(node:)?worker_threads'/.test(text) && /\bnew Worker\(/.test(text),
+);
 const aiSdkModules = matching(serverSources, (text) => /from '(@anthropic-ai\/sdk|openai|@google\/genai)/.test(text));
 // Only the engine may import the code that sends to an AI, because the engine is where the outbound
 // guard runs. The GuardedPayload type enforces the rest at compile time.
@@ -227,6 +232,13 @@ const rows = [
     value: execModules.length,
     limit: MAX_EXEC_MODULES,
     files: execModules,
+  },
+  {
+    name: 'MAX_THREAD_MODULES',
+    label: 'thread modules',
+    value: threadModules.length,
+    limit: MAX_THREAD_MODULES,
+    files: threadModules,
   },
   {
     name: 'MAX_AI_SDK_MODULES',

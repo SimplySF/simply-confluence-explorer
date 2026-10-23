@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { queryLogs, queryTrace } from '../telemetry/query.js';
+import type { LogPage } from '../telemetry/query.js';
 import type { Router } from '../http/router.js';
 import type { Services } from './api.js';
 
@@ -25,20 +25,27 @@ const RANGES: Record<string, number> = { '15m': 15, '1h': 60, '24h': 1440, '7d':
 const list = (value: string | null): string[] | undefined => value?.split(',').filter(Boolean);
 
 export function addObserveRoutes(router: Router, services: Services): Router {
-  const { telemetry } = services;
+  const { telemetry, workers } = services;
   return router
     .add('GET', '/api/observe/now', () => telemetry.now())
     .add('GET', '/api/observe/logs', ({ query }) => {
       const minutes = RANGES[query.get('range') ?? '24h'] ?? RANGES['24h'];
-      return queryLogs(telemetry.records(), {
-        levels: list(query.get('level')),
-        kinds: list(query.get('kind')),
-        spaceKey: query.get('spaceKey')?.toUpperCase(),
-        text: query.get('q') ?? undefined,
-        since: new Date(Date.now() - minutes * 60_000).toISOString(),
-        before: query.get('before') ?? undefined,
-        limit: Number(query.get('limit')) || undefined,
+      // Scanning a day of records takes a while, so it runs on a worker thread.
+      return workers.run<LogPage>({
+        kind: 'logs',
+        dir: telemetry.recordsFolder(),
+        query: {
+          levels: list(query.get('level')),
+          kinds: list(query.get('kind')),
+          spaceKey: query.get('spaceKey')?.toUpperCase(),
+          text: query.get('q') ?? undefined,
+          since: new Date(Date.now() - minutes * 60_000).toISOString(),
+          before: query.get('before') ?? undefined,
+          limit: Number(query.get('limit')) || undefined,
+        },
       });
     })
-    .add('GET', '/api/observe/traces/:traceId', ({ params }) => queryTrace(telemetry.records(), params.traceId));
+    .add('GET', '/api/observe/traces/:traceId', ({ params }) =>
+      workers.run({ kind: 'trace', dir: telemetry.recordsFolder(), traceId: params.traceId }),
+    );
 }

@@ -26,6 +26,7 @@ import path from 'node:path';
 import type { AttachmentChoice, AttachmentsReport, ImageChoice, ImagesReport, PageDetail } from '../api/types.js';
 import type { ImageInput } from '../ai/guard.js';
 import { errorMessage } from '../util/errors.js';
+import { runTask, type Extracted } from '../workers/tasks.js';
 import { documentText, formatOf } from './documentText.js';
 
 /** The most of one attachment's text read, and of all a page's attachments together. */
@@ -66,16 +67,42 @@ const LEFT_OUT = 'left out by you';
 
 const extensionOf = (a: AttachmentFile): string => path.extname(a.title).toLowerCase();
 
+// Formats whose reading cannot be cut into small pieces: PDFs, and the zip archives of XML that Office,
+// OpenDocument and Visio files are. They are read ahead, on a worker thread where the server has one,
+// and a request waits for them in prepare(); every other format is read when asked.
+const READ_AHEAD = new Set([
+  '.pdf',
+  '.docx',
+  '.docm',
+  '.xlsx',
+  '.xlsm',
+  '.pptx',
+  '.pptm',
+  '.odt',
+  '.ods',
+  '.odp',
+  '.vsdx',
+  '.zip',
+]);
+
+/** Reads an attachment's text where the reader is told to, here on the thread that asks. */
+export type Extract = (file: string, title: string, mediaType: string) => Promise<Extracted>;
+const extractHere: Extract = (file, title, mediaType) =>
+  runTask({ kind: 'extract', file, title, mediaType }) as Promise<Extracted>;
+
 export class AttachmentReader {
   // Extracted text, by file, with the file time it was read at, so a file is read once.
   private readonly texts = new Map<string, { mtimeMs: number; text: string; as: string }>();
-  // PDFs being read, as reading one can take a while; a request waits for them in prepare().
+  // Files read ahead that gave no text, with why, by file time, so they are not read again.
+  private readonly unreadable = new Map<string, { mtimeMs: number; why: string }>();
+  // Files being read ahead, as reading one can take a while; a request waits for them in prepare().
   private readonly reading = new Map<string, Promise<void>>();
 
   public constructor(
     private readonly files: (spaceKey: string, page: PageDetail) => AttachmentFile[],
     private readonly log: (message: string) => void,
     private readonly synced: (spaceKey: string) => boolean = () => true,
+    private readonly extract: Extract = extractHere,
   ) {}
 
   /** A page's attachments as the AI reads them, but for those the chat leaves out (`skip`, by `fileKey`). */
@@ -128,17 +155,16 @@ export class AttachmentReader {
   }
 
   /**
-   * Waits for the PDFs of these pages to be read, so a request sends their text rather than going
-   * without it; one that takes longer than `PDF_WAIT_MS` is named as still being read.
+   * Waits for the PDFs and Office files of these pages to be read, so a request sends their text
+   * rather than going without it; one that takes longer than `PDF_WAIT_MS` is named as still being read.
    */
   public async prepare(pages: Array<{ spaceKey: string; page: PageDetail }>, waitMs = PDF_WAIT_MS): Promise<void> {
     const pending: Array<Promise<void>> = [];
     for (const { spaceKey, page } of pages)
       for (const a of this.files(spaceKey, page))
-        if (!a.missing && extensionOf(a) === '.pdf') {
+        if (!a.missing && READ_AHEAD.has(extensionOf(a))) {
           const stat = fs.statSync(a.file, { throwIfNoEntry: false });
-          if (stat && this.texts.get(a.file)?.mtimeMs !== stat.mtimeMs)
-            pending.push(this.readPdf(a.file, stat.mtimeMs));
+          if (stat && this.texts.get(a.file)?.mtimeMs !== stat.mtimeMs) pending.push(this.readAhead(a, stat.mtimeMs));
         }
     if (pending.length === 0) return;
     let timer: NodeJS.Timeout | undefined;
@@ -157,29 +183,34 @@ export class AttachmentReader {
     if (!stat) return { why: 'not on this machine: sync the space again to download it' };
     const kept = this.texts.get(a.file);
     if (kept?.mtimeMs === stat.mtimeMs) return kept;
-    if (ext === '.pdf') {
-      void this.readPdf(a.file, stat.mtimeMs);
-      return { why: 'a PDF still being read when this was sent; its text goes with the next question' };
+    const refused = this.unreadable.get(a.file);
+    if (refused?.mtimeMs === stat.mtimeMs) return { why: refused.why };
+    if (READ_AHEAD.has(ext)) {
+      void this.readAhead(a, stat.mtimeMs);
+      return {
+        why: `${ext === '.pdf' ? 'a PDF' : 'a file'} still being read when this was sent; its text goes with the next question`,
+      };
     }
     const read = documentText(a.title, a.mediaType, fs.readFileSync(a.file));
     if ('text' in read) this.texts.set(a.file, { mtimeMs: stat.mtimeMs, ...read });
     return read;
   }
 
-  /** Reads a PDF's text, once however many ask while it is read. */
-  private readPdf(file: string, mtimeMs: number): Promise<void> {
+  /** Reads a file's text ahead, once however many ask while it is read. */
+  private readAhead(a: AttachmentFile, mtimeMs: number): Promise<void> {
+    const { file } = a;
     const started = this.reading.get(file);
     if (started) return started;
+    const pdf = extensionOf(a) === '.pdf';
     const reading = (async (): Promise<void> => {
       try {
-        const { extractText, getDocumentProxy } = await import('unpdf');
-        const { text } = await extractText(await getDocumentProxy(new Uint8Array(fs.readFileSync(file))), {
-          mergePages: true,
-        });
-        this.texts.set(file, { mtimeMs, as: 'PDF', text: text.trim() || '(This PDF has no text; it may be a scan.)' });
+        const read = await this.extract(file, a.title, a.mediaType);
+        if ('text' in read) this.texts.set(file, { mtimeMs, ...read });
+        else this.unreadable.set(file, { mtimeMs, why: read.why });
       } catch (error) {
         this.log(`could not read the text of ${path.basename(file)}: ${errorMessage(error)}`);
-        this.texts.set(file, { mtimeMs, as: 'PDF', text: '(This PDF could not be read.)' });
+        if (pdf) this.texts.set(file, { mtimeMs, as: 'PDF', text: '(This PDF could not be read.)' });
+        else this.unreadable.set(file, { mtimeMs, why: `it could not be read: ${errorMessage(error)}` });
       } finally {
         this.reading.delete(file);
       }

@@ -21,7 +21,7 @@ import { parsePage } from '../parser/convert.js';
 import { mapChunked } from '../util/pause.js';
 import { sanitizeFilename, within } from '../util/paths.js';
 import type { PageVectors } from './vectors.js';
-import { AttachmentReader, type AttachmentFile } from './attachments.js';
+import { AttachmentReader, type AttachmentFile, type Extract } from './attachments.js';
 import { SpaceCatalog, type CatalogEntry } from './catalog.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { tagsOf } from './tags.js';
@@ -87,6 +87,7 @@ export class SpaceStore {
     dataDir: string,
     private readonly exclusions: ExclusionManager,
     log: (message: string) => void,
+    extract?: Extract,
   ) {
     this.spacesDir = path.join(dataDir, 'spaces');
     this.catalog = new SpaceCatalog({
@@ -100,6 +101,7 @@ export class SpaceStore {
       (key, page) => this.attachmentEntries(key, page),
       log,
       (key) => this.isSynced(key),
+      extract,
     );
   }
 

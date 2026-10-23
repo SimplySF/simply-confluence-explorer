@@ -191,17 +191,13 @@ export class Telemetry implements Tracer {
    */
   public *records(sinceIso?: string): Generator<TelemetryRecord> {
     this.flush();
-    const days = this.files().reverse();
-    for (const file of days) {
-      if (sinceIso && path.basename(file, '.jsonl') < dayOf(sinceIso)) break;
-      for (const line of linesBackwards(path.join(this.dir, file))) {
-        try {
-          yield JSON.parse(line) as TelemetryRecord;
-        } catch {
-          // A line cut short by a crash is skipped; the records around it are still read.
-        }
-      }
-    }
+    yield* recordsIn(this.dir, sinceIso);
+  }
+
+  /** The folder the records are written to, with what is buffered written first, for a worker to read. */
+  public recordsFolder(): string {
+    this.flush();
+    return this.dir;
   }
 
   /** Writes what is buffered, and stops sampling. */
@@ -385,6 +381,29 @@ const BACKWARDS_CHUNK = 1 << 20;
  * A file's lines from the last to the first, read a piece at a time from its end. Lines are split on
  * the newline byte, which never occurs inside a multi-byte character, so each line decodes whole.
  */
+/**
+ * The records in a telemetry folder, newest first, back to the day of `sinceIso`. Each day's file is
+ * read backwards, so a query that wants recent records stops early.
+ */
+export function* recordsIn(dir: string, sinceIso?: string): Generator<TelemetryRecord> {
+  if (!fs.existsSync(dir)) return;
+  const days = fs
+    .readdirSync(dir)
+    .filter((f) => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
+    .sort()
+    .reverse();
+  for (const file of days) {
+    if (sinceIso && path.basename(file, '.jsonl') < dayOf(sinceIso)) break;
+    for (const line of linesBackwards(path.join(dir, file))) {
+      try {
+        yield JSON.parse(line) as TelemetryRecord;
+      } catch {
+        // A line cut short by a crash is skipped; the records around it are still read.
+      }
+    }
+  }
+}
+
 export function* linesBackwards(file: string, chunk = BACKWARDS_CHUNK): Generator<string> {
   const fd = fs.openSync(file, 'r');
   try {

@@ -225,6 +225,8 @@ export class SearchIndex {
     const stamp = this.stamp(key);
     const pages = await this.store.visiblePages(key);
     progress.total = pages.length;
+    // PDFs and Office files are read first, on worker threads, so their text is in the index.
+    await this.store.attachments.prepare(pages.map((page) => ({ spaceKey: key, page })));
     const docs: Doc[] = [];
     const df = new Map<string, number>();
     const seen = new Set<string>();
