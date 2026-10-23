@@ -13,7 +13,7 @@ your disk instead of from Confluence, and the AI features that work across many 
 
 Choose a space in the sidebar and click **Sync**, under the space's name.
 
-![The Space menu, with Sync space at the top](../images/space-menu.webp)
+![The space's actions under its name, with the ⋯ menu open](../images/space-menu.webp)
 
 The sidebar shows progress as the pages arrive, with a **Stop** button, and the header shows it too
 while you browse; if you reload the page, the progress comes back. When the sync finishes, a

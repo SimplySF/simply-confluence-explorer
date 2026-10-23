@@ -35,7 +35,7 @@ sent, with why) and **Closed and dismissed** (pushed, already done, no longer re
 with an edit under way is not ticked again; **Recommend again** offers it once its edit failed, or
 the chat reworded it.
 
-![The review queue, grouped by page, with a reworded suggestion](../images/review-queue.webp)
+![The review queue beside the chat, its suggestions grouped by page, one of them ticked](../images/review-queue.webp)
 
 Every suggestion that cannot be ticked says why:
 
@@ -68,7 +68,7 @@ full screen** or Esc goes back to the chat, and the expand button in the queue o
 your mind; **Accept all** and **Reject all** decide the page at once. Beside it is the AI's
 recommendation: the suggestions applied, what it says it changed, and anything it did not apply.
 
-![An edit side by side, with the AI's recommendation](../images/edit-side-by-side.webp)
+![An edit side by side in the full-window review, with the queue on the left and the AI's recommendation](../images/edit-side-by-side.webp)
 
 **Work on this edit in the chat** makes your next question about that edit, shown as "Working on"
 above the question box. Ask for a change, such as "shorter", and the chat proposes a revised edit;
