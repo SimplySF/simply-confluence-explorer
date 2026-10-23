@@ -23,8 +23,11 @@ import crypto from 'node:crypto';
 import type {
   BranchFinding,
   BranchItem,
+  BranchItemStatus,
   BranchRun,
+  ChatQueue,
   QueuedSuggestion,
+  ReviewCounts,
   SessionTurn,
   SuggestionView,
 } from '../api/types.js';
@@ -249,6 +252,31 @@ const PROGRESS: State[] = ['writing', 'to-decide', 'failed', 'staged', 'pushed',
  * whether it is being written, waiting to be decided, staged, pushed, failed, already done or no
  * longer relevant.
  */
+/** An edit still to decide: being written, written, or stopped by a problem the person must see. */
+export const TO_DECIDE: ReadonlySet<BranchItemStatus> = new Set<BranchItemStatus>([
+  'pending',
+  'checking',
+  'working',
+  'proposed',
+  'failed',
+  'check-failed',
+  'push-failed',
+]);
+
+/**
+ * How much of a chat's review waits at each step (design doc 0015). The browser sorts a queue into
+ * the same steps, and a test checks that the two agree.
+ */
+export function reviewCounts(queue: ChatQueue): ReviewCounts {
+  const items = queue.runs.flatMap((r) => r.items);
+  return {
+    review: queue.suggestions.filter((s) => s.state === 'open').length,
+    edit: items.filter((i) => !i.staged && TO_DECIDE.has(i.status)).length,
+    stage: items.filter((i) => !i.staged && i.status === 'accepted').length,
+    push: items.filter((i) => i.staged && i.status !== 'pushed').length,
+  };
+}
+
 export function suggestionViews(suggestions: QueuedSuggestion[], runs: BranchRun[]): SuggestionView[] {
   return suggestions.map((s): SuggestionView => {
     if (s.dismissed) return { ...s, state: 'dismissed' };

@@ -10,7 +10,7 @@
     ListFilter,
     MessagesSquare,
     FileText,
-    Upload,
+    ListChecks,
     Folder,
     HardDrive,
     RefreshCw,
@@ -43,10 +43,10 @@
     onAskTag: (tag: TaggedPages) => void;
     chatOpen: boolean;
     onOpenChat: () => void;
-    /** How many staged pages wait to be pushed across the space's chats. */
-    pushCount: number;
-    pushOpen: boolean;
-    onOpenPush: () => void;
+    /** How many of the space's chats have a review with work waiting. */
+    reviewCount: number;
+    reviewOpen: boolean;
+    onOpenReview: () => void;
   };
 
   let {
@@ -63,9 +63,9 @@
     onAskTag,
     chatOpen,
     onOpenChat,
-    pushCount,
-    pushOpen,
-    onOpenPush,
+    reviewCount,
+    reviewOpen,
+    onOpenReview,
   }: Props = $props();
 
   type Row = { node: PageTreeNode; depth: number; parentId: string | null; hasChildren: boolean; expanded: boolean };
@@ -327,14 +327,16 @@
       </button>
       <button
         type="button"
-        class={['sidebar-nav-item', pushOpen && 'active']}
-        aria-current={pushOpen ? 'page' : undefined}
+        class={['sidebar-nav-item', reviewOpen && 'active']}
+        aria-current={reviewOpen ? 'page' : undefined}
         disabled={!selectedSpace}
-        onclick={onOpenPush}
-        title="The pages staged in every chat of this space, to push together"
+        onclick={onOpenReview}
+        title="Every chat's suggestions and edits, to review, stage and push"
       >
-        <Upload size={15} /> Ready to push
-        {#if pushCount}<span class="sidebar-nav-count" aria-label="{pushCount} staged">{pushCount}</span>{/if}
+        <ListChecks size={15} /> Review
+        {#if reviewCount}<span class="sidebar-nav-count" aria-label="{reviewCount} chats with work waiting"
+            >{reviewCount}</span
+          >{/if}
       </button>
     </nav>
 

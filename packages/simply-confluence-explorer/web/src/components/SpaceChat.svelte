@@ -242,7 +242,6 @@
       {starters}
       {onPushed}
       {onWriteNewPage}
-      queueWhenEmpty={false}
       compact
     >
       {#snippet top()}

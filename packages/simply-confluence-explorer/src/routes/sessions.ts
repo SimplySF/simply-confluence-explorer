@@ -21,6 +21,7 @@ import type {
   BranchItem,
   BranchRun,
   ChatQueue,
+  ChatReview,
   PageDetail,
   SessionScope,
   SessionTurn,
@@ -30,6 +31,7 @@ import {
   applyQueueChanges,
   editOfReply,
   QUEUE_SYSTEM,
+  reviewCounts,
   queueChangesOf,
   queueContext,
   pickable,
@@ -844,5 +846,28 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       .add('GET', '/api/space-cache/:spaceKey/staged', async ({ params }) => ({
         staged: await stagedIn(params.spaceKey.toUpperCase()),
       }))
+      // Every chat in a space with a review, and how much of it waits at each step, for the Review
+      // page (design doc 0015). A staged page is counted only if it may still be sent, as Ready to push
+      // lists it, so an excluded page is never counted.
+      .add('GET', '/api/space-cache/:spaceKey/reviews', async ({ params }) => {
+        const key = params.spaceKey.toUpperCase();
+        const staged = await stagedIn(key);
+        const chats: ChatReview[] = sessions.list({ spaceKey: key }).flatMap((session) => {
+          if (!session.suggestions?.length && !session.runIds?.length) return [];
+          const counts = reviewCounts(queueOf(session));
+          counts.push = staged.filter((p) => p.sessionId === session.id).length;
+          const { kind, pageId, title } = session.scope;
+          return [
+            {
+              sessionId: session.id,
+              title: session.title,
+              scope: { kind, pageId, title },
+              updatedAt: session.updatedAt,
+              counts,
+            },
+          ];
+        });
+        return { chats };
+      })
   );
 }

@@ -399,6 +399,21 @@ export type StagedPage = {
   message?: string;
 };
 
+/**
+ * How much of a chat's review waits at each step: suggestions to review, edits to decide, decided
+ * pages to stage, and staged pages to push (design doc 0015).
+ */
+export type ReviewCounts = { review: number; edit: number; stage: number; push: number };
+
+/** A chat with a review, as the Review page lists it. */
+export type ChatReview = {
+  sessionId: string;
+  title: string;
+  scope: Pick<SessionScope, 'kind' | 'pageId' | 'title'>;
+  updatedAt: string;
+  counts: ReviewCounts;
+};
+
 export type SessionFileInfo = {
   id: string;
   name: string;

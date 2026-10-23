@@ -13,7 +13,9 @@
   import NewPageDialog from './components/NewPageDialog.svelte';
   import PageView from './components/PageView.svelte';
   import SpaceChat, { type ChatSeed } from './components/SpaceChat.svelte';
-  import SpacePush from './components/SpacePush.svelte';
+  import ReviewFlow from './components/ReviewFlow.svelte';
+  import ReviewHub from './components/ReviewHub.svelte';
+  import { AiChat } from './support/chat.svelte.js';
   import ObservePage from './components/observe/ObservePage.svelte';
   import { checkConnection } from './support/connection.js';
   import { observe } from './support/observe.svelte.js';
@@ -22,7 +24,7 @@
   import SettingsDialog from './components/SettingsDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Toasts from './components/ui/Toasts.svelte';
-  import { api, observability } from './support/api.js';
+  import { api, observability, sessions } from './support/api.js';
   import { jobs, type Job } from './support/jobs.svelte.js';
   import { applyTheme, theme, toggleTheme } from './support/theme.svelte.js';
   import { messageOf, toast } from './support/toast.svelte.js';
@@ -81,8 +83,26 @@
   let resizing = $state(false);
   let dialog = $state<'settings' | 'new-page' | null>(null);
   // The page view, or Space chat in its place; both stay mounted, so each keeps where it was.
-  let view = $state<'page' | 'chat' | 'push'>('page');
-  let pushCount = $state(0);
+  let view = $state<'page' | 'chat' | 'review'>('page');
+  // Chats in the space whose review has work waiting, counted beside Review in the sidebar.
+  let reviewCount = $state(0);
+  // A review opened from the Review page or the header, over the whole window, with where Exit goes.
+  const reviewChat = new AiChat();
+  let review = $state<{ subject: string; exitLabel: string; step: 'review' | 'edit' } | null>(null);
+  let reviewOpening = $state(false);
+
+  async function openReview(sessionId: string, exitLabel: string, step: 'review' | 'edit' = 'review'): Promise<void> {
+    reviewOpening = true;
+    try {
+      const session = await sessions.get(sessionId);
+      reviewChat.show(session, session.scope);
+      review = { subject: session.title, exitLabel, step };
+    } catch (e) {
+      toast(`The review did not open: ${messageOf(e)}`, 'error');
+    } finally {
+      reviewOpening = false;
+    }
+  }
   let chatSeed = $state<ChatSeed | null>(null);
   // Every page with where it sits and the pages under it, so a chat can add a directory in one step.
   const flatten = (nodes: PageTreeNode[], path: string[] = []): SpacePage[] =>
@@ -254,15 +274,25 @@
     return () => clearInterval(timer);
   });
 
-  // The sidebar counts the staged pages waiting to push; staging happens in a chat, so the count is
-  // read again whenever the view changes.
+  // The sidebar counts the chats with a review waiting; reviews change in chats, so the count is read
+  // again whenever the view changes or a review closes, and every 15 seconds.
   $effect(() => {
     void view;
-    if (!activeSpace) return;
-    api.staged(activeSpace).then(
-      (s) => (pushCount = s.length),
-      () => (pushCount = 0), // The count is a hint; Ready to push reads the list itself.
-    );
+    void review;
+    const key = activeSpace;
+    if (!key) return;
+    const count = (): void => {
+      api.reviews(key).then(
+        (chats) =>
+          (reviewCount = chats.filter(
+            (c) => c.counts.review + c.counts.edit + c.counts.stage + c.counts.push > 0,
+          ).length),
+        () => (reviewCount = 0), // The count is a hint; the Review page reads the list itself.
+      );
+    };
+    count();
+    const timer = setInterval(count, 15_000);
+    return () => clearInterval(timer);
   });
 
   // Work started earlier, in this tab or before a reload, keeps reporting in the header.
@@ -276,7 +306,11 @@
       if (job.rootPageId) openPage(job.rootPageId);
       return;
     }
-    // Edits and batched reviews are shown in the chat they came from: a page's Chat tab, or Space chat.
+    // Edits being written open in their chat's review; a batched review is an answer, shown in its chat.
+    if (job.kind === 'review' && job.sessionId) {
+      void openReview(job.sessionId, 'Close the review', 'edit');
+      return;
+    }
     jobs.requested = job;
     if (job.rootPageId) openPage(job.rootPageId);
     else view = 'chat';
@@ -383,9 +417,9 @@
         onSelectPage={openPage}
         chatOpen={view === 'chat'}
         onOpenChat={() => (view = 'chat')}
-        {pushCount}
-        pushOpen={view === 'push'}
-        onOpenPush={() => (view = 'push')}
+        {reviewCount}
+        reviewOpen={view === 'review'}
+        onOpenReview={() => (view = 'review')}
         onAskTag={(t) => {
           chatSeed = {
             title: `#${t.tag}`,
@@ -451,31 +485,45 @@
           onWriteNewPage={writeNewPage}
         />
       </div>
-      <div class="main-slot" hidden={view !== 'push'}>
-        <SpacePush
+      <div class="main-slot" hidden={view !== 'review'}>
+        <ReviewHub
           spaceKey={activeSpace}
-          active={view === 'push'}
+          active={view === 'review' && !review}
+          pages={allPages}
+          onOpen={(c) => void openReview(c.sessionId, 'Back to Review')}
           onPushed={() => {
             reloadTree();
             pageRev++;
           }}
-          onOpenChat={(p) =>
-            openJob({
-              kind: 'review',
-              jobId: p.runId,
-              spaceKey: activeSpace,
-              rootPageId: p.chatPageId,
-              sessionId: p.sessionId,
-              label: p.chatTitle,
-              processed: 0,
-              total: 0,
-            })}
-          onCount={(n) => (pushCount = n)}
-          pages={allPages}
+          onCount={(n) => (reviewCount = n)}
         />
       </div>
     {/if}
   </div>
+
+  {#if review}
+    <ReviewFlow
+      chat={reviewChat}
+      subject={review.subject}
+      exitLabel={review.exitLabel}
+      start={review.step}
+      onExit={() => (review = null)}
+      onSelectPage={(id) => {
+        review = null;
+        openPage(id);
+      }}
+      onPushed={() => {
+        reloadTree();
+        pageRev++;
+      }}
+      onWriteNewPage={(f) => {
+        review = null;
+        writeNewPage(f);
+      }}
+    />
+  {:else if reviewOpening}
+    <div class="review-opening" role="status"><span class="spinner" aria-hidden="true"></span> Opening the review…</div>
+  {/if}
 
   {#if dialog === 'settings'}
     <SettingsDialog onClose={() => (dialog = null)} onSaved={() => connectionRev++} />
