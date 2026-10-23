@@ -54,11 +54,12 @@ explains each check.
 
 ## Connect to Confluence
 
-1. Click **Settings** in the top right corner, or press Ctrl+, (Cmd+, on a Mac).
+1. Click the gear in the top right corner, or press Ctrl+, (Cmd+, on a Mac). Settings opens on
+   **Confluence**.
 2. Enter your Confluence address, such as `https://confluence.example.com`, and paste your personal
    access token.
-3. Click **Test connection**. It should say who you are signed in as.
-4. Click **Save & Apply**.
+3. Click **Test connection**. The banner at the top should say who you are signed in as.
+4. Click **Save & apply**.
 
 The status in the header changes to **Connected**, and the spaces you can see appear in the space
 picker on the left.

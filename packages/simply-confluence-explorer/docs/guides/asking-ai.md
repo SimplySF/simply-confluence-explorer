@@ -25,7 +25,7 @@ Open **Settings** and expand **AI provider**.
 | ChatGPT (OpenAI API)   | An OpenAI API key, and a model you choose                                                              |
 | Gemini (Google API)    | A Google AI API key                                                                                    |
 
-- **API key**: paste it and click **Save AI settings**. The key is stored on your computer and never
+- **API key**: paste it and click **Save & apply**. The key is stored on your computer and never
   sent back to the browser; the field only says whether a key is set, and where it came from.
 - **Model**: Claude and Gemini start with a sensible default. For ChatGPT you must choose one. After
   saving a key, **Models** lists the models that key can use.

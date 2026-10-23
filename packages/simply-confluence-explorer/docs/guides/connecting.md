@@ -22,7 +22,8 @@ Confluence**, in case you need them while connecting.
 
 ## Connect in Settings
 
-Open **Settings** from the header, or press Ctrl+, (Cmd+, on a Mac).
+Open **Settings** with the gear in the header, or press Ctrl+, (Cmd+, on a Mac). Its sections are
+listed on the left, **Confluence**, **AI provider** and **GitLab**, each with a green dot once set up.
 
 ![The Settings dialog, with the Confluence address and the personal access token](../images/settings-connection.webp)
 
@@ -30,9 +31,10 @@ Open **Settings** from the header, or press Ctrl+, (Cmd+, on a Mac).
   `https://confluence.example.com`. It must start with `https://` or `http://`.
 - **Personal access token** is the token you copied. The **Paste** button reads it from your
   clipboard; if your browser blocks that, paste into the field with Ctrl+V.
-- **Test connection** tries the address and token you typed, without saving them, and says who you
-  are signed in as. Use it before saving, so a typo does not replace a working connection.
-- **Save & Apply** saves the connection and reloads the spaces.
+- **Test connection**, in the banner at the top, tries the address and token you typed, without
+  saving them, and says who you are signed in as; a saved connection is tested when Settings opens.
+  Use it before saving, so a typo does not replace a working connection.
+- **Save & apply** saves the connection and reloads the spaces.
 
 To change only the address, type the new one and paste the token again. If you change the address
 and leave the token field empty, the saved token is not reused for the new address, so it is never
@@ -85,7 +87,7 @@ page only whether a token is saved.
 
 To let the co-writer of a new page read a repository (see [Writing a new page](/guides/new-pages/)),
 open **Settings → GitLab**, enter your GitLab's address and a personal access token with
-`read_api` or `read_repository`, click **Test**, then **Save GitLab**. The token is saved in
+`read_api` or `read_repository`, click **Test**, then **Save & apply**. The token is saved in
 `config/gitlab.json` like the Confluence token and never sent back to the browser. Only
 repositories on that GitLab can be read, and a new address drops the saved token.
 
