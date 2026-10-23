@@ -33,6 +33,10 @@
     onPushed: () => void;
     onWriteNewPage?: (finding: BranchFinding) => void;
     onOpenCount?: (n: number) => void;
+    /** Show the review queue before the chat has asked or suggested anything. */
+    queueWhenEmpty?: boolean;
+    /** The question box as one row. */
+    compact?: boolean;
   };
 
   let {
@@ -49,6 +53,8 @@
     onPushed,
     onWriteNewPage,
     onOpenCount,
+    queueWhenEmpty = true,
+    compact = false,
   }: Props = $props();
   let stage = $state<Stage>('open');
   let queue = $state<ChatQueue | null>(null);
@@ -226,6 +232,7 @@
     { id: 'in-progress', label: 'Edits to decide', n: changes.length },
     { id: 'staged', label: 'Staged', n: staged.length },
   ]);
+  const showQueue = $derived(queueWhenEmpty || turns.length > 0 || !!queue?.suggestions.length || !!queue?.runs.length);
   const canAdd = $derived(!blocked && turns.length > 0 && !chat.sending && !batch);
 
   const STATE: Partial<Record<BranchItem['status'], string>> = {
@@ -366,65 +373,70 @@
   <PushQueue rows={pushRows} onChanged={() => void load()} {onPushed} />
 {/snippet}
 
-<div class="chat-review">
-  <div class="chat-review-main">
-    {@render top?.()}
-    <ChatThread
-      {chat}
-      {subject}
-      {blocked}
-      {active}
-      {onSelectPage}
-      {placeholder}
-      {empty}
-      {starters}
-      view={openRun && openItem ? editView : undefined}
-      lead={notes}
-      {focus}
-      onLeaveFocus={() => (focus = null)}
-      onOpenTab={(t) => (stage = t === 'review' ? 'open' : 'in-progress')}
-      currentText={(runId, pageId) =>
-        queue?.runs.find((r) => r.id === runId)?.items.find((i) => i.pageId === pageId)?.proposed}
-      onEditDecided={() => void load()}
-    />
+<div class="chat-review-frame">
+  <div class="chat-review">
+    <div class="chat-review-main">
+      {@render top?.()}
+      <ChatThread
+        {chat}
+        {subject}
+        {blocked}
+        {active}
+        {onSelectPage}
+        {placeholder}
+        {empty}
+        {starters}
+        view={openRun && openItem ? editView : undefined}
+        lead={notes}
+        {compact}
+        {focus}
+        onLeaveFocus={() => (focus = null)}
+        onOpenTab={(t) => (stage = t === 'review' ? 'open' : 'in-progress')}
+        currentText={(runId, pageId) =>
+          queue?.runs.find((r) => r.id === runId)?.items.find((i) => i.pageId === pageId)?.proposed}
+        onEditDecided={() => void load()}
+      />
+    </div>
+    {#if showQueue}
+      <aside class="review-panel" aria-label="Review queue">
+        <div class="review-panel-head">
+          <h4>Review queue</h4>
+          <button
+            class="btn btn-secondary btn-sm"
+            disabled={!canAdd}
+            onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
+            title={turns.length
+              ? 'Add the changes this conversation found or agreed to the review queue'
+              : 'Ask something first; then what the chat found or agreed can be added here'}
+          >
+            <WandSparkles size={13} /> Add from chat
+          </button>
+        </div>
+        <div class="review-steps" role="tablist" aria-label="Review steps">
+          {#each steps as st, i (st.id)}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={stage === st.id}
+              class={['review-step', stage === st.id && 'active']}
+              disabled={!chat.session}
+              onclick={() => (stage = st.id)}
+            >
+              <span class="review-step-label">{i + 1} · {st.label}</span>
+              <span class="review-step-count">{st.n}</span>
+            </button>
+          {/each}
+        </div>
+        <div class="review-panel-body">
+          {#if stage === 'open'}
+            {@render reviewTab()}
+          {:else if stage === 'in-progress'}
+            {@render changesTab()}
+          {:else}
+            {@render pushTab()}
+          {/if}
+        </div>
+      </aside>
+    {/if}
   </div>
-  <aside class="review-panel" aria-label="Review queue">
-    <div class="review-panel-head">
-      <h4>Review queue</h4>
-      <button
-        class="btn btn-secondary btn-sm"
-        disabled={!canAdd}
-        onclick={() => chat.suggest('changes', 'Turn this conversation into changes')}
-        title={turns.length
-          ? 'Add the changes this conversation found or agreed to the review queue'
-          : 'Ask something first; then what the chat found or agreed can be added here'}
-      >
-        <WandSparkles size={13} /> Add from chat
-      </button>
-    </div>
-    <div class="review-steps" role="tablist" aria-label="Review steps">
-      {#each steps as st, i (st.id)}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={stage === st.id}
-          class={['review-step', stage === st.id && 'active']}
-          disabled={!chat.session}
-          onclick={() => (stage = st.id)}
-        >
-          <span class="review-step-label">{i + 1} · {st.label}</span>
-          <span class="review-step-count">{st.n}</span>
-        </button>
-      {/each}
-    </div>
-    <div class="review-panel-body">
-      {#if stage === 'open'}
-        {@render reviewTab()}
-      {:else if stage === 'in-progress'}
-        {@render changesTab()}
-      {:else}
-        {@render pushTab()}
-      {/if}
-    </div>
-  </aside>
 </div>

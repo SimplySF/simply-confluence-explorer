@@ -2246,8 +2246,12 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: 0.5rem;
   max-width: 52rem;
-  margin: 0 auto 1rem;
+  margin: 0 auto auto;
   width: 100%;
+}
+/* Before the first question the note and the ways to begin sit together in the middle. */
+.chat-stream > .empty-state:has(+ .chat-starters) {
+  margin-bottom: 16px;
 }
 .chat-starter {
   display: flex;
@@ -2362,6 +2366,9 @@ body {
 .chat-source-more {
   color: var(--text-dim);
 }
+.chat-sources-toggle {
+  font-size: 12px;
+}
 .chat-ai .code-viewer-box {
   max-height: 400px;
   font-size: 0.82rem;
@@ -2455,6 +2462,12 @@ body {
 }
 
 /* A chat beside its review queue */
+.chat-review-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  container-type: inline-size;
+}
 .chat-review {
   display: flex;
   flex: 1;
@@ -2465,6 +2478,7 @@ body {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 .chat-stream > .alert,
 .chat-stream > .attachments-note,
@@ -2652,13 +2666,14 @@ body {
 .review-write {
   width: 100%;
 }
-@media (max-width: 900px) {
+/* With too little room for both columns, the queue goes under the conversation. */
+@container (max-width: 760px) {
   .chat-review {
     flex-direction: column;
   }
   .review-panel {
     width: auto;
-    max-height: 45%;
+    max-height: 40%;
     border-left: none;
     border-top: 1px solid var(--border-color);
   }
@@ -2938,13 +2953,14 @@ div.disclosure-body {
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: clamp(180px, 20vw, 250px) 1fr;
   height: 100%;
   min-height: 0;
 }
 .space-chat-list {
   border-right: 1px solid var(--border-color);
-  padding: 0.75rem;
+  background: var(--bg-app);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2961,11 +2977,17 @@ div.disclosure-body {
 .space-chat-list li {
   display: flex;
   align-items: center;
-  border-radius: 4px;
+  border-radius: 6px;
 }
-.space-chat-list li.selected,
 .space-chat-list li:hover {
   background: var(--bg-hover);
+}
+.space-chat-list li.selected {
+  background: var(--accent-light);
+}
+.space-chat-list li.selected .space-chat-item-title {
+  color: var(--accent-primary);
+  font-weight: 600;
 }
 .space-chat-item {
   flex: 1;
@@ -2982,92 +3004,156 @@ div.disclosure-body {
   gap: 0.1rem;
 }
 .space-chat-item-title {
-  font-size: 0.85rem;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .space-chat-item-meta {
-  font-size: 0.72rem;
+  font-size: 11px;
   color: var(--text-muted);
 }
 .space-chat-main {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
   min-width: 0;
   min-height: 0;
 }
 .space-chat-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 6px;
+  padding: 14px 20px 0;
 }
 .space-chat-head h3 {
   margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+.space-chat-main .scope-bar {
+  padding-top: 8px;
+}
+.space-chat-ask {
+  font-size: 18px;
+}
+.space-chat-main .empty-state {
+  max-width: 560px;
+}
+.space-chat-main .chat-starters {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 560px;
+}
+/* What a Space chat reads: chips in its scope bar, and the popover that adds to them. */
+.chat-context {
+  position: relative;
+}
+.scope-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 1.05rem;
-}
-.chat-context {
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-panel-secondary);
-}
-.chat-context-bar {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.65rem;
-  border: none;
-  background: none;
-  color: var(--text-main);
+  gap: 4px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent-light);
+  color: var(--accent-primary);
   font: inherit;
-  font-size: 0.82rem;
-  text-align: left;
-  cursor: pointer;
+  font-size: 12px;
 }
-.chat-context-bar span {
-  flex: 1;
-  min-width: 0;
+.scope-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
-.chat-context-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.5rem 0.65rem 0.75rem;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 0.8rem;
+span.scope-chip-name {
+  cursor: default;
 }
-.chat-context-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.chat-context-panel .pill {
+.scope-chip-remove {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.scope-chip-remove:hover {
+  background: var(--accent-light);
+}
+.scope-chip-plain {
+  padding-right: 10px;
+  background: var(--bg-panel-secondary);
+  color: var(--text-muted);
+}
+.scope-chip-add {
+  padding-right: 10px;
+  border: 1px dashed var(--border-color);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.scope-chip-add:hover,
+.scope-chip-add[aria-expanded='true'] {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+.scope-popover {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 20px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 440px;
+  max-width: calc(100% - 48px);
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-main);
+  font-size: 13px;
+}
+.scope-popover-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+}
+.scope-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+.scope-result > svg {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.scope-result-name {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.scope-result-name span {
+  font-size: 12px;
+  color: var(--text-dim);
 }
 .chat-context-tag {
   border: 1px solid var(--border-color);
   cursor: pointer;
   font: inherit;
-}
-.chat-context-tags.collapsed {
-  max-height: 3.4rem;
-  overflow: hidden;
-}
-.chat-context-tags.listed {
-  max-height: 220px;
-  overflow-y: auto;
-  align-content: flex-start;
 }
 .chat-context-tag.active {
   background: var(--accent-light);
@@ -3098,57 +3184,6 @@ div.disclosure-body {
   padding-left: 1.1rem;
 }
 
-/* A chat's actions that ask for suggestions, and the queues staged from them */
-
-/* How many of a chat's pages are in the AI index */
-.summary-coverage {
-  margin: 0.15rem 0 0.35rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-.chat-context-coverage:not(:empty) {
-  padding: 0 0.65rem 0.4rem;
-}
-.chat-context-line {
-  margin: 0;
-  padding: 0 0.65rem 0.35rem 2.05rem;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-.chat-context-results,
-.chat-context-chosen {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.chat-context-results li {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.chat-context-result-name {
-  flex: 1;
-  min-width: 12rem;
-  display: flex;
-  flex-direction: column;
-}
-.chat-context-chosen {
-  gap: 0.2rem;
-}
-.chat-context-chosen li {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
 
 /* What the co-writer of a new page reads */
 .new-page-reads {

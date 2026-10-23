@@ -121,6 +121,10 @@
 
   let input = $state('');
   let raw = $state<Record<number, boolean>>({});
+  // An answer names its first pages as chips; the rest open on request, so a whole space's list does
+  // not bury the answer.
+  const SOURCES_SHOWN = 6;
+  let allSources = $state<Record<number, boolean>>({});
   let copied = $state<number | null>(null);
   let seconds = $state(0);
   let bottom: HTMLDivElement;
@@ -315,7 +319,7 @@
           {#if t.corpus?.mode !== 'batched' && t.matchedPages?.length}
             <div class="chat-sources">
               <span class="chat-sources-label">{readLabel(t)}</span>
-              {#each t.matchedPages as p (p.id)}
+              {#each allSources[i] ? t.matchedPages : t.matchedPages.slice(0, SOURCES_SHOWN) as p (p.id)}
                 <button
                   class="chat-source"
                   onclick={() => onSelectPage(p.id)}
@@ -331,6 +335,11 @@
                   {p.title}{#if p.sections?.length}<span class="chat-source-more"> › {p.sections.length}</span>{/if}
                 </button>
               {/each}
+              {#if t.matchedPages.length > SOURCES_SHOWN}
+                <button class="link-btn chat-sources-toggle" onclick={() => (allSources[i] = !allSources[i])}>
+                  {allSources[i] ? 'Show fewer' : `+ ${t.matchedPages.length - SOURCES_SHOWN} more`}
+                </button>
+              {/if}
             </div>
           {/if}
           {#if t.queued}

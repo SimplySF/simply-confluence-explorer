@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen, ChevronDown, ChevronUp, FileText, Folder, Plus, Search, Tag, X } from '@lucide/svelte';
+  import { FileText, Folder, Globe, Plus, Search, Tag, X } from '@lucide/svelte';
   import type { SessionScope, TaggedPages } from '../../../src/api/types.js';
   import { api, type Coverage } from '../support/api.js';
   import type { AiChat } from '../support/chat.svelte.js';
@@ -8,10 +8,11 @@
   import SummaryCoverage from './SummaryCoverage.svelte';
   import Segmented from './ui/Segmented.svelte';
 
-  // What a Space chat reads, shown above it and changed in place: the whole space, or pages the person
-  // chose as directories (each with every page under it), single pages and tags, in any mix (ADR-051).
-  // There is no limit on how many: a line says whether each question reads them all or finds the
-  // sections it needs in them.
+  // What a Space chat reads, as one row above it: a chip for each directory (with every page under it),
+  // page and tag the person chose, in any mix, or the whole space when nothing is chosen (ADR-051).
+  // There is no limit on how many; the count says how many are indexed, and its hint whether each
+  // question reads them all or finds the sections it needs in them. Pages and tags are added from a
+  // popover under the row.
   type Choice = { kind: 'space' } | { kind: 'pages'; dirs: string[]; pageIds: string[]; tags: string[] };
   type Props = {
     spaceKey: string;
@@ -22,33 +23,22 @@
     onSelectPage: (pageId: string) => void;
     /** The chat, which keeps its choice about its pages' attachments. */
     chat?: AiChat;
+    /** What the chosen pages hold, shared with the chat's notes on their attachments. */
+    counts?: Coverage | null;
   };
 
-  let { spaceKey, scope, pages, onChange, onSelectPage, chat }: Props = $props();
-  let open = $state(false);
-  // Unread until the panel first offers them, so "no tags" is not said while they are being read.
+  let { spaceKey, scope, pages, onChange, onSelectPage, chat, counts = $bindable(null) }: Props = $props();
+  let addOpen = $state(false);
+  let addTab = $state<'pages' | 'tags'>('pages');
+  // Unread until the popover first offers them, so "no tags" is not said while they are being read.
   let tags = $state<TaggedPages[] | null>(null);
   let tagsBuilding = $state<{ done: number; total: number } | null>(null);
-  // Collapsed, the most-used tags fill two lines; expanded, every tag scrolls in a box of its own,
-  // so a space with hundreds of tags never pushes the conversation down.
-  let allTags = $state(false);
-  let tagFilter = $state('');
   let query = $state('');
-  let counts = $state<Coverage | null>(null);
-  // The mode the person picked. Choosing pages starts with none chosen, and until one is, the chat
-  // still reads the whole space, so the mode is kept here as well as in the chat's scope.
-  let mode = $state<'space' | 'pages'>('space');
-  $effect(() => {
-    if (scope.kind === 'pages') mode = 'pages';
-  });
-
-  function pickMode(next: 'space' | 'pages'): void {
-    mode = next;
-    if (next === 'space' && scope.kind === 'pages') onChange({ kind: 'space' });
-  }
+  let box: HTMLDivElement;
+  let find = $state<HTMLInputElement>();
 
   $effect(() => {
-    if (!open || mode !== 'pages' || tags) return;
+    if (!addOpen || tags) return;
     return readTags(
       () => api.tags(spaceKey),
       (t) => {
@@ -60,6 +50,16 @@
     );
   });
 
+  $effect(() => {
+    if (!addOpen) return;
+    find?.focus();
+    const outside = (e: MouseEvent): void => {
+      if (!box.contains(e.target as Node)) addOpen = false;
+    };
+    document.addEventListener('mousedown', outside);
+    return () => document.removeEventListener('mousedown', outside);
+  });
+
   const dirs = $derived(scope.kind === 'pages' ? (scope.dirs ?? []) : []);
   const singles = $derived(scope.kind === 'pages' ? (scope.pageIds ?? []) : []);
   const chosenTags = $derived(scope.kind === 'pages' ? (scope.tags ?? []) : []);
@@ -67,24 +67,8 @@
   const pageOf = (id: string): SpacePage => byId.get(id) ?? { id, title: id, path: '', under: [] };
   const tagSize = (tag: string): number | undefined => tags?.find((t) => t.tag === tag)?.pages.length;
   const results = $derived(searchPages(pages, query));
-  const shownTags = $derived((tags ?? []).filter((t) => t.tag.includes(tagFilter.trim().toLowerCase())));
-  const listed = $derived(allTags || tagFilter.trim() !== '');
+  const shownTags = $derived((tags ?? []).filter((t) => t.tag.includes(query.trim().toLowerCase())));
   const chosen = $derived(scope.kind === 'pages' ? { dirs, pageIds: singles, tags: chosenTags } : undefined);
-
-  const names = $derived([
-    ...dirs.map((id) => `${pageOf(id).title} + sub-pages`),
-    ...singles.map((id) => pageOf(id).title),
-    ...chosenTags.map((t) => `#${t}`),
-  ]);
-  const label = $derived(
-    scope.kind === 'pages'
-      ? names.length > 3
-        ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`
-        : names.join(', ')
-      : mode === 'pages'
-        ? 'no pages chosen yet, so the whole space'
-        : 'the whole space',
-  );
 
   function choose(next: { dirs?: string[]; pageIds?: string[]; tags?: string[] }): void {
     const choice = {
@@ -97,117 +81,155 @@
     else onChange(choice);
   }
 
-  // A directory added after one of its pages takes that page's place, so the list names it once.
-  const addDirectory = (p: SpacePage): void =>
-    choose({ dirs: [...dirs, p.id], pageIds: singles.filter((id) => id !== p.id) });
-  const addPage = (p: SpacePage): void => choose({ pageIds: [...singles, p.id] });
-  let find = $state<HTMLInputElement>();
-  function clearSearch(): void {
+  function added(): void {
+    addOpen = false;
     query = '';
-    find?.focus();
   }
-
-  const toggleTag = (tag: string): void =>
-    choose({ tags: chosenTags.includes(tag) ? chosenTags.filter((t) => t !== tag) : [...chosenTags, tag] });
+  // A directory added after one of its pages takes that page's place, so the row names it once.
+  function addDirectory(p: SpacePage): void {
+    choose({ dirs: [...dirs, p.id], pageIds: singles.filter((id) => id !== p.id) });
+    added();
+  }
+  function addPage(p: SpacePage): void {
+    choose({ pageIds: [...singles, p.id] });
+    added();
+  }
+  function addTag(tag: string): void {
+    if (!chosenTags.includes(tag)) choose({ tags: [...chosenTags, tag] });
+    added();
+  }
 </script>
 
-<div class="chat-context">
-  <button type="button" class="chat-context-bar" onclick={() => (open = !open)} aria-expanded={open}>
-    <BookOpen size={13} />
-    <span>Reading: {label}</span>
-    {#if open}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+<div class="scope-bar chat-context" bind:this={box}>
+  <span>Reading</span>
+  {#each dirs as id (id)}
+    <span class="scope-chip">
+      <Folder size={12} />
+      <button type="button" class="scope-chip-name" onclick={() => onSelectPage(id)} title="Open {pageOf(id).title}"
+        >{directoryLabel(pageOf(id))}</button
+      >
+      <button
+        type="button"
+        class="scope-chip-remove"
+        aria-label="Remove {pageOf(id).title} and its sub-pages"
+        onclick={() => choose({ dirs: dirs.filter((d) => d !== id) })}><X size={12} /></button
+      >
+    </span>
+  {/each}
+  {#each singles as id (id)}
+    <span class="scope-chip">
+      <FileText size={12} />
+      <button type="button" class="scope-chip-name" onclick={() => onSelectPage(id)} title="Open {pageOf(id).title}"
+        >{pageOf(id).title}</button
+      >
+      <button
+        type="button"
+        class="scope-chip-remove"
+        aria-label="Remove {pageOf(id).title}"
+        onclick={() => choose({ pageIds: singles.filter((p) => p !== id) })}><X size={12} /></button
+      >
+    </span>
+  {/each}
+  {#each chosenTags as t (t)}
+    <span class="scope-chip">
+      <Tag size={12} />
+      <span class="scope-chip-name">#{t}{tagSize(t) === undefined ? '' : ` · ${tagSize(t)}`}</span>
+      <button
+        type="button"
+        class="scope-chip-remove"
+        aria-label="Remove #{t}"
+        onclick={() => choose({ tags: chosenTags.filter((x) => x !== t) })}><X size={12} /></button
+      >
+    </span>
+  {/each}
+  {#if scope.kind !== 'pages'}
+    <span class="scope-chip scope-chip-plain" title="Each question searches the whole space for the sections it needs">
+      <Globe size={12} /> Whole space{pages.length ? ` · ${pages.length} pages` : ''}
+    </span>
+  {/if}
+  <button
+    type="button"
+    class="scope-chip scope-chip-add"
+    aria-expanded={addOpen}
+    onclick={() => (addOpen = !addOpen)}
+    title="Read only the directories, pages and tags you add; with none, the chat reads the whole space"
+  >
+    <Plus size={12} /> Add pages or tags
   </button>
-  {#if counts}<p class="chat-context-line">{readingLine(counts)}</p>{/if}
-  <div class="chat-context-coverage">
+  <span class="spacer"></span>
+  <span title={counts ? readingLine(counts) : undefined}>
     <SummaryCoverage {spaceKey} {chosen} bind:counts {chat} />
-  </div>
-  {#if open}
-    <div class="chat-context-panel">
+  </span>
+
+  {#if addOpen}
+    <div
+      class="scope-popover"
+      role="dialog"
+      aria-label="Add pages or tags"
+      tabindex="-1"
+      onkeydown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          addOpen = false;
+        }
+      }}
+    >
+      <div class="search-field">
+        <Search size={13} />
+        <input
+          class="form-input input-sm"
+          placeholder={addTab === 'pages' ? 'Find a page or directory by title' : 'Filter tags'}
+          aria-label={addTab === 'pages' ? 'Find a page or directory' : 'Filter tags'}
+          autocomplete="off"
+          bind:this={find}
+          bind:value={query}
+        />
+      </div>
       <Segmented
-        label="What this chat reads"
-        value={mode}
-        onChange={pickMode}
+        label="Add"
+        quiet
+        value={addTab}
+        onChange={(v) => (addTab = v)}
         options={[
-          { value: 'space', label: 'Whole space', title: 'Each question searches the whole space' },
-          { value: 'pages', label: 'Chosen pages', title: 'Only the directories, pages and tags chosen below' },
+          { value: 'pages', label: 'Pages' },
+          { value: 'tags', label: 'Tags', title: 'Every page with a tag' },
         ]}
       />
-      {#if mode === 'space'}
-        <p class="muted">
-          Each question searches the whole space for the sections it needs, and the answer says which it read and why.
-          Choose <strong>Chosen pages</strong> to read only the directories, pages and tags you pick.
-        </p>
-      {:else}
-        <div class="chat-context-section">
-          <label class="muted" for="chat-context-find">Find a page or directory</label>
-          <div class="search-field">
-            <Search size={13} />
-            <input
-              id="chat-context-find"
-              class="form-input input-sm"
-              placeholder="Start typing a title"
-              autocomplete="off"
-              bind:this={find}
-              bind:value={query}
-              onkeydown={(e) => e.key === 'Escape' && clearSearch()}
-            />
-            {#if query}
-              <button type="button" class="icon-btn" aria-label="Clear the search" title="Clear" onclick={clearSearch}>
-                <X size={13} />
-              </button>
-            {/if}
-          </div>
-          {#if results.length}
-            <ul class="chat-context-results">
-              {#each results as p (p.id)}
-                <li>
-                  <div class="chat-context-result-name">
-                    <strong>{p.title}</strong>
-                    <span class="muted">{p.path || 'Top level'}</span>
-                  </div>
-                  {#if dirs.includes(p.id)}
-                    <span class="muted">Added with its sub-pages</span>
-                  {:else}
-                    {#if singles.includes(p.id)}
-                      <span class="muted">Added</span>
-                    {:else}
-                      <button type="button" class="btn btn-secondary btn-xs" onclick={() => addPage(p)}>
-                        <Plus size={11} /> Add page
-                      </button>
-                    {/if}
-                    {#if p.under.length}
-                      <button type="button" class="btn btn-secondary btn-xs" onclick={() => addDirectory(p)}>
-                        <Folder size={11} /> Add with {p.under.length} sub-page{p.under.length === 1 ? '' : 's'}
-                      </button>
-                    {/if}
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {:else if query.trim()}
-            <span class="muted">No page has that in its title.</span>
-          {/if}
-        </div>
-        <div class="chat-context-section">
-          <span class="muted">Or add every page with a tag</span>
-          {#if (tags?.length ?? 0) > 12}
-            <div class="search-field">
-              <Search size={13} />
-              <input
-                class="form-input input-sm"
-                placeholder="Filter tags"
-                aria-label="Filter tags"
-                bind:value={tagFilter}
-              />
+      <div class="scope-popover-list">
+        {#if addTab === 'pages'}
+          {#each results as p (p.id)}
+            <div class="scope-result">
+              {#if p.under.length}<Folder size={14} />{:else}<FileText size={14} />{/if}
+              <div class="scope-result-name">
+                <strong>{p.title}</strong>
+                <span>{p.path || 'Top level'}</span>
+              </div>
+              {#if dirs.includes(p.id)}
+                <span class="muted">Added with its sub-pages</span>
+              {:else}
+                {#if singles.includes(p.id)}
+                  <span class="muted">Added</span>
+                {:else}
+                  <button type="button" class="btn btn-secondary btn-xs" onclick={() => addPage(p)}>Page</button>
+                {/if}
+                {#if p.under.length}
+                  <button type="button" class="btn btn-primary btn-xs" onclick={() => addDirectory(p)}>
+                    + {p.under.length} sub-page{p.under.length === 1 ? '' : 's'}
+                  </button>
+                {/if}
+              {/if}
             </div>
-          {/if}
-          <div class={['chip-row', 'chat-context-tags', listed ? 'listed' : 'collapsed']}>
+          {:else}
+            <p class="muted">{query.trim() ? 'No page has that in its title.' : 'Start typing a title.'}</p>
+          {/each}
+        {:else}
+          <div class="chip-row">
             {#each shownTags as t (t.tag)}
               <button
                 type="button"
                 class={['pill', 'chat-context-tag', chosenTags.includes(t.tag) && 'active']}
                 aria-pressed={chosenTags.includes(t.tag)}
-                onclick={() => toggleTag(t.tag)}
+                onclick={() => addTag(t.tag)}
               >
                 <Tag size={11} />
                 {t.tag} <span class="muted">{t.pages.length}</span>
@@ -224,61 +246,8 @@
               >
             {/each}
           </div>
-          {#if (tags?.length ?? 0) > 12 && !tagFilter.trim()}
-            <button type="button" class="link-btn" onclick={() => (allTags = !allTags)}>
-              {allTags ? 'Show fewer' : `Show all ${tags?.length} tags`}
-            </button>
-          {/if}
-        </div>
-        <div class="chat-context-section">
-          <span class="muted">Chosen</span>
-          {#if names.length}
-            <ul class="chat-context-chosen">
-              {#each dirs as id (id)}
-                <li>
-                  <Folder size={12} />
-                  <button type="button" class="link-btn" onclick={() => onSelectPage(id)}>
-                    {directoryLabel(pageOf(id))}
-                  </button>
-                  <button
-                    type="button"
-                    class="icon-btn"
-                    aria-label="Remove {pageOf(id).title} and its sub-pages"
-                    onclick={() => choose({ dirs: dirs.filter((d) => d !== id) })}
-                  >
-                    <X size={11} />
-                  </button>
-                </li>
-              {/each}
-              {#each singles as id (id)}
-                <li>
-                  <FileText size={12} />
-                  <button type="button" class="link-btn" onclick={() => onSelectPage(id)}>{pageOf(id).title}</button>
-                  <button
-                    type="button"
-                    class="icon-btn"
-                    aria-label="Remove {pageOf(id).title}"
-                    onclick={() => choose({ pageIds: singles.filter((p) => p !== id) })}
-                  >
-                    <X size={11} />
-                  </button>
-                </li>
-              {/each}
-              {#each chosenTags as t (t)}
-                <li>
-                  <Tag size={12} />
-                  <span>#{t}{tagSize(t) === undefined ? '' : ` · ${tagSize(t)} pages`}</span>
-                  <button type="button" class="icon-btn" aria-label="Remove #{t}" onclick={() => toggleTag(t)}>
-                    <X size={11} />
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {:else}
-            <span class="muted">Nothing yet. Until you add something, the chat reads the whole space.</span>
-          {/if}
-        </div>
-      {/if}
+        {/if}
+      </div>
     </div>
   {/if}
 </div>

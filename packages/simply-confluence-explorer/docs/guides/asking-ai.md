@@ -98,22 +98,20 @@ confirm.
 
 ![Space chat answering from the whole space, with the pages it read and why](../images/space-chat.webp)
 
-**Reading** above the conversation says what the chat reads; click it to change it. The line under
-it says how many pages that is, and how each question reads them.
-
-- **Whole space**: every page in the space that the exclusion rules allow.
-- **Chosen pages**: any mix of directories, single pages and tags. Type in **Find a page or
-  directory** to see matching pages with where each one sits. **Add page** adds that page alone, and
-  **Add with N sub-pages** adds it with every page under it, so you can choose two directories and a
-  page from another part of the space. **Or add every page with a tag** adds a tag's pages. Each item
-  under **Chosen** is removed with its ×; a directory goes in one click, with its sub-pages. A
-  directory or tag is read as it is when you ask, so a page added under it later is read too.
+**Reading** above the conversation shows what the chat reads, as a row of chips. With none, it reads
+the **Whole space**: every page that the exclusion rules allow. **Add pages or tags** opens a search:
+under **Pages**, **Page** adds a page alone and **+ N sub-pages** adds it with every page under it, so
+you can choose two directories and a page from another part of the space; under **Tags**, a tag adds
+every page that carries it. Each chip is removed with its ×, a directory with its sub-pages. A
+directory or tag is read as it is when you ask, so a page added under it later is read too. The count
+at the end of the row says how many of the pages are indexed; hover over it to see how each question
+reads them.
 
 ![Space chat with two directories and a page chosen, and the line saying how they are read](../images/space-chat.webp)
 
 There is no limit on how many pages a chat reads from:
 
-- **When they fit in one request**, every question reads all of them, and the line says so.
+- **When they fit in one request**, every question reads all of them, and the count's hint says so.
 - **When there are more**, each question finds the sections it needs. Pages are split at their
   headings, and the app ranks the sections by the words of your question and the one before it,
   and, with a provider that offers embeddings, by meaning as well. The AI then picks the sections

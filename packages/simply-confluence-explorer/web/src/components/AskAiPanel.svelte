@@ -175,7 +175,6 @@
             rootPageId={effective === 'branch' ? detail.id : undefined}
             chosen={effective === 'page' ? { pageIds: [detail.id] } : undefined}
             {chat}
-            inline
             bind:counts
           />
         {/if}
