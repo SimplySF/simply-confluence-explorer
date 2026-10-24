@@ -78,8 +78,8 @@ importers:
         specifier: ^2.30.0
         version: 2.30.0(supports-color@7.2.0)
       '@simplysf/simply-atlassian-core':
-        specifier: ^0.7.2
-        version: 0.7.2
+        specifier: ^0.8.0
+        version: 0.8.0
       archiver:
         specifier: ^7.0.1
         version: 7.0.1
@@ -1422,8 +1422,8 @@ packages:
     resolution: {integrity: sha512-fCTuZK4QBa+39Oz9l4OGfJfz+GpwCp3AqO7Zch3to99xHPgstVsRFpeQ8LNd2o1Gv8raL2mCFwiaHh7bFSp5DQ==}
     engines: {node: '>=22'}
 
-  '@simplysf/simply-atlassian-core@0.7.2':
-    resolution: {integrity: sha512-pU3e50/rZcgiP6TlvpriKbYCHOmIXyC5oLAjdT4918LWCZqqLhy5KNMvkBgVRbzv7k5T/gAgQ5d+pljV3g+lNA==}
+  '@simplysf/simply-atlassian-core@0.8.0':
+    resolution: {integrity: sha512-1KOe8QK6qd7HJdQH3XvUtdObWthgQkYSmJRkxTEjNNkLYyImt1VJWQuAwhiFW4qDtmw6t47JaGjhVstIoL78NQ==}
     engines: {node: '>=22.0.0'}
 
   '@sindresorhus/base62@1.0.0':
@@ -6443,7 +6443,7 @@ snapshots:
 
   '@simple-libs/stream-utils@2.0.0': {}
 
-  '@simplysf/simply-atlassian-core@0.7.2': {}
+  '@simplysf/simply-atlassian-core@0.8.0': {}
 
   '@sindresorhus/base62@1.0.0': {}
 
