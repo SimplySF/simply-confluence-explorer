@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import type { PageTreeNode, SyncProgress } from '../api/types.js';
+import type { ConfluenceSpace, DeleteProgress, PageTreeNode, SyncProgress } from '../api/types.js';
+import { HttpError } from '../http/router.js';
 import type { ConfluenceClient } from '../confluence/client.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
@@ -23,7 +24,7 @@ import { runLimited } from '../util/runLimited.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import type { ExclusionManager } from './exclusionManager.js';
-import type { SpaceStore } from './spaceStore.js';
+import { deleteFiles, type SpaceStore } from './spaceStore.js';
 
 /** How many pages a sync reads from Confluence at once. */
 const SYNC_CONCURRENCY = 4;
@@ -40,6 +41,7 @@ type Planned = { node: PageTreeNode; ancestors: Ancestors };
  */
 export class SpaceSync {
   private readonly jobs: JobRunner<SyncProgress>;
+  private readonly deletions: JobRunner<DeleteProgress>;
 
   public constructor(
     private readonly store: SpaceStore,
@@ -51,25 +53,81 @@ export class SpaceSync {
     this.jobs = new JobRunner<SyncProgress>(
       'sync',
       (job, error) => {
-        log(`sync ${job.jobId} of ${job.spaceKey} failed: ${errorMessage(error)}`);
+        log(`Sync of ${job.spaceKey} started at ${job.startedAt ?? 'an unknown time'} failed ${errorMessage(error)}`);
         job.errors.push({ pageId: '', title: job.spaceKey, error: errorMessage(error) });
         job.errorCount++;
       },
       tracer,
     );
+    this.deletions = new JobRunner<DeleteProgress>(
+      'delete',
+      (job, error) => {
+        log(`deleting the copy of ${job.spaceKey} failed: ${errorMessage(error)}`);
+        job.error = errorMessage(error);
+      },
+      tracer,
+    );
+  }
+
+  /**
+   * Starts deleting the copy of a space, in the background. The copy is moved aside first, so the
+   * space reads as not synced at once and can be synced again while the old files go.
+   */
+  public startDelete(spaceKey: string): DeleteProgress {
+    const key = spaceKey.trim().toUpperCase();
+    const running = this.deleting(key);
+    if (running) return running;
+    const { deletedPages, targets, inPlace } = this.store.setAside(key);
+    return this.deletions.start({ spaceKey: key, deletedPages, total: 0, processed: 0, inPlace }, async (job) => {
+      job.status = 'running';
+      await deleteFiles(
+        targets,
+        (done, total, current) => {
+          job.processed = done;
+          job.total = total;
+          job.currentFile = current || undefined;
+        },
+        () => this.deletions.isCancelled(job.jobId),
+      );
+    });
+  }
+
+  public deleteStatus(jobId: string): DeleteProgress | undefined {
+    return this.deletions.get(jobId);
+  }
+
+  public cancelDelete(jobId: string): boolean {
+    return this.deletions.cancel(jobId) !== undefined;
+  }
+
+  /** The deletion running for a space, so a browser that reloads can pick up its progress. */
+  public deleting(spaceKey: string): DeleteProgress | undefined {
+    const key = spaceKey.trim().toUpperCase();
+    return this.deletions.find((j) => j.spaceKey === key && (j.status === 'pending' || j.status === 'running'));
   }
 
   /** Syncs running now, for the Observability page. */
   public liveJobs(): LiveJob[] {
-    return this.jobs.running().map((j) => ({
-      jobId: j.jobId,
-      kind: 'sync',
-      label: `Syncing ${j.spaceKey}`,
-      processed: j.processed,
-      total: j.total,
-      startedAt: j.startedAt,
-      current: j.currentPageTitle,
-    }));
+    return [
+      ...this.jobs.running().map((j) => ({
+        jobId: j.jobId,
+        kind: 'sync',
+        label: `Syncing ${j.spaceKey}`,
+        processed: j.processed,
+        total: j.total,
+        startedAt: j.startedAt,
+        current: j.currentPageTitle,
+      })),
+      ...this.deletions.running().map((j) => ({
+        jobId: j.jobId,
+        kind: 'delete',
+        label: `Deleting the copy of ${j.spaceKey}`,
+        processed: j.processed,
+        total: j.total,
+        startedAt: j.startedAt,
+        current: j.currentFile,
+      })),
+    ];
   }
 
   /**
@@ -83,6 +141,8 @@ export class SpaceSync {
     const key = spaceKey.trim().toUpperCase();
     const running = this.activeFor(key);
     if (running) return running;
+    if (this.deleting(key)?.inPlace)
+      throw new HttpError(409, `the copy of ${key} is still being deleted; sync it again once that is done`);
     const fields = {
       spaceKey: key,
       total: 0,
@@ -114,8 +174,17 @@ export class SpaceSync {
     job.status = 'running';
     job.currentPageTitle = 'Reading the page tree';
     const client = this.client();
-    const space = await client.getSpace(spaceKey);
-    const tree = await client.getPageTree(spaceKey, rootPageId);
+    let space: ConfluenceSpace;
+    let tree: PageTreeNode[];
+    try {
+      space = await client.getSpace(spaceKey);
+      tree = await client.getPageTree(spaceKey, rootPageId, (found) => {
+        job.currentPageTitle = `Reading the page tree: ${found} page${found === 1 ? '' : 's'} found`;
+      });
+    } catch (error) {
+      // Said with the step, so a failure reads as this sync's and not as a page's.
+      throw new Error(`while reading the page tree: ${errorMessage(error)}`, { cause: error });
+    }
     const { visible, excluded } = this.plan(tree, spaceKey);
     job.total = visible.length + excluded;
     job.skippedCount += excluded;

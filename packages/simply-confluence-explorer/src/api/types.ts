@@ -37,6 +37,10 @@ export type ConnectionView = {
   editable: boolean;
   /** The runtime profile, such as `dev` when the app runs against the test environment. */
   profile: string;
+  /** How long a request to Confluence may take before it is given up. */
+  timeoutSeconds: number;
+  /** False when the environment sets the time limit (`CONFLUENCE_TIMEOUT_SECONDS`). */
+  timeoutEditable: boolean;
 };
 
 /** A change to the connection, sent from Settings. */
@@ -44,6 +48,7 @@ export type ConnectionUpdate = {
   baseUrl?: string;
   /** Leaving this out keeps the saved token; an empty string removes it. */
   token?: string;
+  timeoutSeconds?: number;
 };
 
 /** The outcome of one doctor check. */
@@ -177,6 +182,23 @@ export type SyncProgress = {
   /** What the sync could not check, such as attachments changed in Confluence when the search failed. */
   note?: string;
   currentPageTitle?: string;
+  startedAt?: string;
+  completedAt?: string;
+  traceId?: string;
+};
+
+/** Deleting the copy of a space, polled while it runs: how many files are gone, and the one going. */
+export type DeleteProgress = {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  spaceKey: string;
+  deletedPages: number;
+  total: number;
+  processed: number;
+  currentFile?: string;
+  /** Some of the copy could not be moved aside, so a sync of the space waits until it is deleted. */
+  inPlace: boolean;
+  error?: string;
   startedAt?: string;
   completedAt?: string;
   traceId?: string;

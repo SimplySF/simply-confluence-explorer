@@ -18,13 +18,19 @@
 // component that started it, so opening another page does not lose its progress, and the header can
 // show it and lead back to it.
 
-import type { BatchProgress, BranchRun, MetadataProgress, SyncProgress } from '../../../src/api/types.js';
+import type {
+  BatchProgress,
+  BranchRun,
+  DeleteProgress,
+  MetadataProgress,
+  SyncProgress,
+} from '../../../src/api/types.js';
 import { api, batches, branches, type Chosen } from './api.js';
 import { observe } from './observe.svelte.js';
 import { pollJob } from './poll.js';
 import { messageOf, toast } from './toast.svelte.js';
 
-export type JobKind = 'summaries' | 'sync' | 'review' | 'batch';
+export type JobKind = 'summaries' | 'sync' | 'review' | 'batch' | 'delete';
 
 export type Job = {
   kind: JobKind;
@@ -154,6 +160,22 @@ class Jobs {
     return this.list.find((j) => j.kind === 'sync' && j.spaceKey === spaceKey);
   }
 
+  /** The deletion of a space's copy, while it runs. */
+  public deleting(spaceKey: string): Job | undefined {
+    return this.list.find((j) => j.kind === 'delete' && j.spaceKey === spaceKey);
+  }
+
+  /** Starts deleting a space's copy; the space reads as not synced as soon as this returns. */
+  public async startDelete(spaceKey: string): Promise<boolean> {
+    try {
+      this.watchDelete(await api.deleteSpace(spaceKey));
+      return true;
+    } catch (e) {
+      toast(`Nothing deleted: ${messageOf(e)}`, 'error');
+      return false;
+    }
+  }
+
   /**
    * Calls `listener` whenever a job finishes, so what shows its results can read them again.
    *
@@ -182,9 +204,13 @@ class Jobs {
 
   public async stop(job: Job): Promise<void> {
     try {
-      await { sync: api.cancelSync, summaries: api.cancelMetadata, review: branches.cancel, batch: batches.cancel }[
-        job.kind
-      ](job.jobId);
+      await {
+        sync: api.cancelSync,
+        summaries: api.cancelMetadata,
+        review: branches.cancel,
+        batch: batches.cancel,
+        delete: api.cancelDelete,
+      }[job.kind](job.jobId);
     } catch (e) {
       toast(`Could not stop it: ${messageOf(e)}`, 'error');
       return;
@@ -202,6 +228,48 @@ class Jobs {
     api.activeSync(spaceKey).then(
       (p) => p && running(p.status) && this.watchSync(p),
       () => undefined,
+    );
+    api.activeDelete(spaceKey).then(
+      (p) => p && running(p.status) && this.watchDelete(p),
+      () => undefined,
+    );
+  }
+
+  private watchDelete(p: DeleteProgress): void {
+    if (this.stops.has(p.jobId)) return;
+    const job = (q: DeleteProgress): Job => ({
+      kind: 'delete',
+      jobId: q.jobId,
+      spaceKey: q.spaceKey,
+      label: `Deleting the copy of ${q.spaceKey}`,
+      processed: q.processed,
+      total: q.total,
+      current: q.currentFile ?? (q.total ? undefined : 'Listing the files to delete'),
+    });
+    this.put(job(p));
+    this.stops.set(
+      p.jobId,
+      pollJob(
+        () => api.deleteStatus(p.jobId),
+        {
+          onProgress: (q) => this.put(job(q)),
+          onFinished: (q) => {
+            if (q.status !== 'cancelled')
+              toast(
+                q.status === 'completed'
+                  ? `Deleted the copy of ${q.spaceKey}: ${q.deletedPages} page${q.deletedPages === 1 ? '' : 's'}, ${q.total} file${q.total === 1 ? '' : 's'}.`
+                  : `Deleting the copy of ${q.spaceKey} stopped: ${q.error ?? q.status}.`,
+                q.status === 'completed' ? 'success' : 'error',
+              );
+            this.finish(job(q), q.status);
+          },
+          onError: (e) => {
+            toast(`Deleting the copy of ${p.spaceKey} stopped reporting: ${messageOf(e)}`, 'error');
+            this.finish(job(p), 'failed');
+          },
+        },
+        400,
+      ),
     );
   }
 
@@ -227,7 +295,7 @@ class Jobs {
             toast(
               q.status === 'completed'
                 ? `${q.spaceKey} synced: ${q.downloadedCount} page${q.downloadedCount === 1 ? '' : 's'} and ${q.attachmentsDownloaded} attachment${q.attachmentsDownloaded === 1 ? '' : 's'} downloaded, ${q.skippedCount} already current or excluded.${q.note ? ` ${q.note}` : ''}`
-                : `Sync ${q.status}${q.errors.length ? `: ${q.errors[0].error}` : ''}.`,
+                : `Sync of ${q.spaceKey} ${q.status}${q.errors.length ? ` ${q.errors[0].error}` : ''}`,
               q.status === 'completed' ? 'success' : 'error',
             );
             this.finish(job(q), q.status);

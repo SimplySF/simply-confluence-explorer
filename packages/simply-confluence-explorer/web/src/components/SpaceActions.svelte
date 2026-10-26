@@ -25,7 +25,6 @@
 
   let { spaceKey, manifest, onChanged, onSelectPage }: Props = $props();
   let dialog = $state<'toc' | 'rules' | 'purge' | 'delete' | null>(null);
-  let deleting = $state(false);
 
   // Sync and summary runs are held in the jobs store, so they keep reporting after this menu goes away.
   const sync = $derived(jobs.sync(spaceKey));
@@ -46,21 +45,16 @@
     }
   }
 
+  const deleting = $derived(jobs.deleting(spaceKey));
+  let asking = $state(false);
   async function deleteSpace(): Promise<void> {
-    deleting = true;
-    try {
-      const r = await api.deleteSpace(spaceKey);
-      dialog = null;
-      toast(
-        `Deleted the copy of ${spaceKey}: ${r.deletedPages} page${r.deletedPages === 1 ? '' : 's'}. Sync it again to bring it back.`,
-        'success',
-      );
-      onChanged();
-    } catch (e) {
-      toast(`Nothing deleted: ${messageOf(e)}`, 'error');
-    } finally {
-      deleting = false;
-    }
+    asking = true;
+    const started = await jobs.startDelete(spaceKey);
+    asking = false;
+    if (!started) return;
+    dialog = null;
+    // The copy is moved aside at once, so the space reads as not synced while its files go.
+    onChanged();
   }
 
   function downloadZip(): void {
@@ -148,7 +142,7 @@
             needSync ??
             (sync || meta ? 'Stop the running sync or index run first' : 'Every page and file on this machine'),
           onSelect: () => (dialog = 'delete'),
-          disabled: !synced || !!sync || !!meta,
+          disabled: !synced || !!sync || !!meta || !!deleting,
         },
       ]}
     >
@@ -162,6 +156,14 @@
       total={sync.total}
       current={sync.current || 'Starting sync…'}
       onStop={() => jobs.stop(sync!)}
+    />
+  {/if}
+  {#if deleting}
+    <JobProgress
+      processed={deleting.processed}
+      total={deleting.total}
+      current={deleting.current}
+      onStop={() => jobs.stop(deleting!)}
     />
   {/if}
   {#if meta}
@@ -204,11 +206,11 @@
     <ConfirmDialog
       title="Delete the copy of {spaceKey} on this machine?"
       danger
-      busy={deleting}
+      busy={asking}
       onConfirm={() => void deleteSpace()}
       onCancel={() => (dialog = null)}
     >
-      {#snippet confirmLabel()}{#if deleting}<span class="spinner" aria-hidden="true"></span>{:else}<FolderX
+      {#snippet confirmLabel()}{#if asking}<span class="spinner" aria-hidden="true"></span>{:else}<FolderX
             size={14}
           />{/if} Delete{/snippet}
       <p>

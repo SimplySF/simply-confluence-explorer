@@ -27,6 +27,17 @@ import { readJsonOrEmpty, writePrivateJson } from '../util/privateFile.js';
 type Stored = {
   baseUrl?: string;
   token?: string;
+  timeoutSeconds?: number;
+};
+
+/**
+ * How long a request to Confluence may take. A company's Confluence can be slow to answer, as when
+ * a page has many children, so the limit can be raised in Settings or by `CONFLUENCE_TIMEOUT_SECONDS`.
+ */
+export const TIMEOUT_SECONDS = { default: 30, min: 5, max: 600 };
+const timeoutOf = (value: unknown): number | undefined => {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= TIMEOUT_SECONDS.min && n <= TIMEOUT_SECONDS.max ? n : undefined;
 };
 
 /** A connection as the server uses it, including the token. Never sent to a browser. */
@@ -34,6 +45,7 @@ export type ResolvedConnection = {
   baseUrl: string;
   token: string;
   source: ConnectionSource;
+  timeoutSeconds: number;
 };
 
 const normalize = (url: string): string => url.trim().replace(/\/+$/, '');
@@ -50,18 +62,22 @@ export class ConnectionStore {
 
   /** The connection in use: the environment's when it sets a URL, otherwise the saved one. */
   public resolve(): ResolvedConnection {
+    const saved = readJsonOrEmpty<Stored>(this.file);
+    const timeoutSeconds =
+      timeoutOf(this.env.CONFLUENCE_TIMEOUT_SECONDS) ?? timeoutOf(saved.timeoutSeconds) ?? TIMEOUT_SECONDS.default;
     if (this.env.CONFLUENCE_URL) {
       return {
         baseUrl: normalize(this.env.CONFLUENCE_URL),
         token: this.env.CONFLUENCE_PERSONAL_TOKEN ?? '',
         source: 'env',
+        timeoutSeconds,
       };
     }
-    const saved = readJsonOrEmpty<Stored>(this.file);
     return {
       baseUrl: normalize(saved.baseUrl ?? ''),
       token: saved.token ?? '',
       source: saved.baseUrl ? 'settings' : 'none',
+      timeoutSeconds,
     };
   }
 
@@ -74,6 +90,8 @@ export class ConnectionStore {
       source: current.source,
       editable: current.source !== 'env',
       profile: this.env.CONFLUENCE_EXPLORER_PROFILE ?? '',
+      timeoutSeconds: current.timeoutSeconds,
+      timeoutEditable: timeoutOf(this.env.CONFLUENCE_TIMEOUT_SECONDS) === undefined,
     };
   }
 
@@ -84,15 +102,20 @@ export class ConnectionStore {
   public candidate(change: ConnectionUpdate): Omit<ResolvedConnection, 'source'> {
     const current = this.resolve();
     const baseUrl = normalize(change.baseUrl ?? current.baseUrl);
-    if (change.token) return { baseUrl, token: change.token };
-    return { baseUrl, token: baseUrl === current.baseUrl ? current.token : '' };
+    const timeoutSeconds = timeoutOf(change.timeoutSeconds) ?? current.timeoutSeconds;
+    if (change.token) return { baseUrl, token: change.token, timeoutSeconds };
+    return { baseUrl, token: baseUrl === current.baseUrl ? current.token : '', timeoutSeconds };
   }
 
   /**
    * Saves a change made in Settings.
    */
   public update(change: ConnectionUpdate): void {
-    if (this.env.CONFLUENCE_URL) {
+    if (change.timeoutSeconds !== undefined && timeoutOf(change.timeoutSeconds) === undefined)
+      throw new Error(
+        `The time limit must be a whole number of seconds from ${TIMEOUT_SECONDS.min} to ${TIMEOUT_SECONDS.max}`,
+      );
+    if (this.env.CONFLUENCE_URL && (change.baseUrl !== undefined || change.token !== undefined)) {
       throw new Error('The connection is set by the server environment (CONFLUENCE_URL) and cannot be changed here.');
     }
     if (change.baseUrl !== undefined && !/^https?:\/\/[^\s/]+/.test(change.baseUrl.trim())) {
@@ -104,6 +127,7 @@ export class ConnectionStore {
     // A token belongs to the URL it was issued for, so a new URL without a new token drops the old one.
     if (change.token !== undefined) next.token = change.token.trim() || undefined;
     else if (urlChanged) next.token = undefined;
+    if (change.timeoutSeconds !== undefined) next.timeoutSeconds = change.timeoutSeconds;
     writePrivateJson(this.file, next);
   }
 }

@@ -140,5 +140,9 @@ function connectionUpdate(body: unknown): ConnectionUpdate {
     if (typeof value !== 'string') throw new Error(`${key} must be a string`);
     update[key] = value;
   }
+  if (fields.timeoutSeconds !== undefined) {
+    if (typeof fields.timeoutSeconds !== 'number') throw new Error('timeoutSeconds must be a number');
+    update.timeoutSeconds = fields.timeoutSeconds;
+  }
   return update;
 }

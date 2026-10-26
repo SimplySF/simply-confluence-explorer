@@ -50,7 +50,7 @@ of what was sent, when most AI requests fail, and when an index run leaves pages
 the button. It also records, without counting, when its own work kept it busy for over two seconds,
 such as "The app was busy for 2.4 s and could not respond to anything", with what was running then:
 that names the slow work, for a report, while a delay the computer causes, such as sleep, is only a
-number on **Now**.
+number on **Now**. A sync that stops with "did not complete within 30000 ms" means Confluence took longer than the app waits; raise **Wait for Confluence up to** in **Settings → Confluence connection**, or set `CONFLUENCE_TIMEOUT_SECONDS`.
 
 ![The Observability page showing running work and the server's response times](../images/observe-now.webp)
 

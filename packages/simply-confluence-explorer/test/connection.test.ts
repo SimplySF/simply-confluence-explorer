@@ -43,6 +43,8 @@ describe('the connection store', () => {
       source: 'settings',
       editable: true,
       profile: '',
+      timeoutSeconds: 30,
+      timeoutEditable: true,
     });
   });
 
@@ -66,9 +68,27 @@ describe('the connection store', () => {
 
   it("takes the environment's connection, which Settings then cannot change", () => {
     const s = store({ CONFLUENCE_URL: 'http://localhost:8090', CONFLUENCE_PERSONAL_TOKEN: 'env-token' });
-    expect(s.resolve()).toEqual({ baseUrl: 'http://localhost:8090', token: 'env-token', source: 'env' });
+    expect(s.resolve()).toEqual({
+      baseUrl: 'http://localhost:8090',
+      token: 'env-token',
+      source: 'env',
+      timeoutSeconds: 30,
+    });
     expect(s.publicView().editable).toBe(false);
     expect(() => s.update({ baseUrl: 'https://other.example.com' })).toThrow(/server environment/);
+    expect(() => s.update({ token: 'other' })).toThrow(/server environment/);
+  });
+
+  it('gives Confluence the time limit set in Settings or the environment, where 30 seconds was fixed', () => {
+    const s = store();
+    s.update({ timeoutSeconds: 120 });
+    expect(s.resolve().timeoutSeconds).toBe(120);
+    expect(s.candidate({}).timeoutSeconds).toBe(120);
+    for (const bad of [4, 601, 1.5]) expect(() => s.update({ timeoutSeconds: bad })).toThrow(/whole number of seconds/);
+    const env = store({ CONFLUENCE_URL: 'http://localhost:8090', CONFLUENCE_TIMEOUT_SECONDS: '90' });
+    expect(env.publicView()).toMatchObject({ timeoutSeconds: 90, timeoutEditable: false });
+    env.update({ timeoutSeconds: 200 });
+    expect(env.resolve().timeoutSeconds, 'the environment wins').toBe(90);
   });
 
   it('refuses a URL that is not http or https', () => {

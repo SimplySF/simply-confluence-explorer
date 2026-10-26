@@ -904,6 +904,9 @@ body {
   margin-bottom: 0.35rem;
 }
 
+.settings-timeout {
+  max-width: 8rem;
+}
 .form-input {
   width: 100%;
   padding: 0.55rem 0.75rem;

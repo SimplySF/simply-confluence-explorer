@@ -24,7 +24,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { PageDetail, PageMetadata } from '../src/api/types.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
-import { SpaceStore } from '../src/spaces/spaceStore.js';
+import { deleteFiles, SpaceStore } from '../src/spaces/spaceStore.js';
 import { tagIndex } from '../src/spaces/tags.js';
 
 const page = (id: string, title: string, extra: Partial<PageDetail> = {}): PageDetail => ({
@@ -77,6 +77,35 @@ function seeded(): ReturnType<typeof open> {
 }
 const tagsIn = async (store: SpaceStore): Promise<Record<string, string[]>> =>
   Object.fromEntries((await tagIndex(store, 'PLAT')).map((t) => [t.tag, t.pages.map((p) => p.title)]));
+
+describe("deleting a space's copy", () => {
+  it('names each file as it goes, and a stopped delete is finished by the next one, where nothing said how far it had got', async () => {
+    const { store, dataDir } = seeded();
+    const first = store.setAside('PLAT');
+    expect(store.isSynced('PLAT')).toBe(false);
+    const named: string[] = [];
+    await deleteFiles(
+      first.targets,
+      (_done, _total, current) => current && named.push(current),
+      () => named.length >= 2,
+    );
+    expect(named.length).toBe(2);
+    const aside = path.join(dataDir, 'spaces', '.deleting');
+    expect(fs.readdirSync(aside)).toHaveLength(1);
+    store.writePage('PLAT', page('9', 'Again'), '', []);
+    const second = store.setAside('PLAT');
+    expect(second.targets).toHaveLength(2);
+    let last = { done: 0, total: -1 };
+    await deleteFiles(
+      second.targets,
+      (done, total) => (last = { done, total }),
+      () => false,
+    );
+    expect(last.done).toBe(last.total);
+    expect(fs.readdirSync(aside)).toEqual([]);
+    expect(fs.readdirSync(path.join(dataDir, 'spaces', 'PLAT'))).toEqual([]);
+  });
+});
 
 describe('saving the page catalog later', () => {
   it('a catalog save after its space folder was deleted does not throw, where it stopped the test run and would stop the app', async () => {

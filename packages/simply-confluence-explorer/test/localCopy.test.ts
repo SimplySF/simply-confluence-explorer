@@ -25,6 +25,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
 import type {
+  DeleteProgress,
   PageResponse,
   PageTreeNode,
   SpaceTocNode,
@@ -214,7 +215,7 @@ describe('syncing a space', () => {
     }
   });
 
-  it('deletes the copy of a space and keeps its rules, so a sync brings it back under them, where a space could not be removed', async () => {
+  it('deletes the copy of a space in the background with its progress, keeping its rules, where a space could not be removed and a delete held up the app', async () => {
     const app = await startApp();
     try {
       await sync(app, 'PEOPLE');
@@ -222,8 +223,21 @@ describe('syncing a space', () => {
       const rules = fs.readFileSync(path.join(dir, '.confluenceignore'), 'utf8');
       const res = await fetch(`${app.base}/space-cache/PEOPLE`, { method: 'DELETE' });
       expect(res.status).toBe(200);
-      expect(((await res.json()) as { deletedPages: number }).deletedPages).toBeGreaterThan(0);
-      expect(fs.readdirSync(dir)).toEqual(['.confluenceignore']);
+      const started = (await res.json()) as DeleteProgress;
+      expect(started.deletedPages).toBeGreaterThan(0);
+      expect(fs.readdirSync(dir), 'the copy is moved aside before the answer').toEqual(['.confluenceignore']);
+      let done = started;
+      while (done.status === 'pending' || done.status === 'running') {
+        // eslint-disable-next-line no-await-in-loop -- polling waits for each answer before asking again
+        done = (await call<DeleteProgress>(app, `/space-cache/delete/status/${started.jobId}`)).body;
+      }
+      expect(done).toMatchObject({ status: 'completed', inPlace: false });
+      expect(done.total).toBeGreaterThan(done.deletedPages);
+      expect(done.processed).toBe(done.total);
+      expect(
+        fs.existsSync(path.join(app.dataDir, 'spaces', '.deleting')) &&
+          fs.readdirSync(path.join(app.dataDir, 'spaces', '.deleting')),
+      ).toEqual([]);
       expect(fs.readFileSync(path.join(dir, '.confluenceignore'), 'utf8')).toBe(rules);
       expect((await call<{ spaces: SyncedSpace[] }>(app, '/space-cache/cached')).body.spaces).toEqual([]);
       expect((await fetch(`${app.base}/space-cache/PEOPLE`, { method: 'DELETE' })).status).toBe(404);

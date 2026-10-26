@@ -17,6 +17,8 @@
 // The Confluence client reads through simply-atlassian-core and answers its failures with this
 // app's statuses. These tests run it against the fake Confluence, which serves the test dataset.
 
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spaces } from '../../../test-env/fixtures/dataset.mjs';
 import type { PageTreeNode } from '../src/api/types.js';
@@ -89,5 +91,44 @@ describe('the Confluence client', () => {
       status: 400,
       message: /Confluence is not configured/,
     });
+  });
+});
+
+describe('reading from a slow Confluence', () => {
+  const childReads = (from: number): number =>
+    fake.requests.slice(from).filter((r) => r.includes('/child/page')).length;
+
+  it('reads a tree once when the sidebar and a sync ask for it together, counting what it finds, where each read it alone', async () => {
+    let from = fake.requests.length;
+    await client().getPageTree('PLAT');
+    const alone = childReads(from);
+    from = fake.requests.length;
+    const found: number[] = [];
+    const [sidebar, sync] = await Promise.all([
+      client().getPageTree('PLAT'),
+      client().getPageTree('PLAT', undefined, (n) => found.push(n)),
+    ]);
+    expect(sync).toBe(sidebar);
+    expect(childReads(from)).toBe(alone);
+    expect(found.at(-1)).toBe(titles(sync).length);
+  });
+
+  it('gives up on a request after the time set for the connection, saying where to give it longer', async () => {
+    const silent = http.createServer(() => undefined);
+    await new Promise<void>((resolve) => silent.listen(0, '127.0.0.1', resolve));
+    try {
+      const slow = new ConfluenceClient({
+        baseUrl: `http://127.0.0.1:${(silent.address() as AddressInfo).port}`,
+        token: FAKE_TOKEN,
+        timeoutSeconds: 0.2,
+      });
+      await expect(slow.getPageDetail('1000')).rejects.toMatchObject({
+        status: 504,
+        message: expect.stringContaining('give it longer in Settings → Confluence connection'),
+      });
+    } finally {
+      silent.closeAllConnections();
+      await new Promise((resolve) => silent.close(resolve));
+    }
   });
 });
