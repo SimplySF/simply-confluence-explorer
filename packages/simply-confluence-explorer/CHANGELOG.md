@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.6](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.5...%40simplysf%2Fsimply-confluence-explorer%400.9.6) (2026-10-26)
+
+### Bug Fixes
+
+- deleting a space shows its progress, and a slow Confluence gets more time and clearer messages ([#71](https://github.com/SimplySF/simply-confluence-explorer/issues/71)) ([c3fa677](https://github.com/SimplySF/simply-confluence-explorer/commit/c3fa6772d9e4d61f2dbe7116be6018119cfb40f9))
+- **deps:** Bump openai from 7.34.0 to 7.43.0 ([#68](https://github.com/SimplySF/simply-confluence-explorer/issues/68)) ([5e12e42](https://github.com/SimplySF/simply-confluence-explorer/commit/5e12e42bac1c976ef92fe0b4262cd72225b24867))
+
 ## [0.9.5](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.4...%40simplysf%2Fsimply-confluence-explorer%400.9.5) (2026-10-26)
 
 ### Bug Fixes
