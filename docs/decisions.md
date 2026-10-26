@@ -2080,7 +2080,8 @@ copying is small next to it, and the rule about what may run there is checked ra
 
 ## ADR-075 — The code budget rises to 20,100 lines, prose to 2,350 and the bundle to 430 KiB, for a responsive app
 
-**Status:** accepted, 2026-10-23. Amends ADR-072 and ADR-014.
+**Status:** accepted, 2026-10-23. Amends ADR-072 and ADR-014. Amended by ADR-077, which raises the code
+budget to 20,400 lines.
 
 Making the app keep up with the person (design doc 0015) adds code: the caches that stop the server
 reading a whole space for each request, the worker threads and the rule that holds them, the
@@ -2121,3 +2122,19 @@ outside the outbound guard.
 **The argument against:** the model reads an escaped `\@` where the page said `@`, which is not
 exactly the page. This is accepted because the meaning is kept, the alternative let a page choose
 files for the CLI to read, and the answer the person reads has the escapes taken out.
+
+---
+
+## ADR-077 — The code budget rises to 20,400 lines for removing a review and a space's copy
+
+**Status:** accepted, 2026-10-26. Amends ADR-075.
+
+Since ADR-075 set the code budget at 20,100 lines, people asked for three things the app lacked: an
+update that downloads the attachments a page is missing, a way to clear a review or delete its chat,
+and a way to delete the copy of a space they no longer want. Each adds a route, a store method and a
+confirmation in the web app. Measured at 20,142 lines of code, the limit rises to 20,400
+(`MAX_CODE_LINES` in `scripts/budgets.mjs`), with the usual small headroom.
+
+**The argument against:** a budget raised each time it is reached is no limit. This is accepted
+because each addition removes something a person could otherwise only do by deleting files by hand,
+and the next rise needs its own record.

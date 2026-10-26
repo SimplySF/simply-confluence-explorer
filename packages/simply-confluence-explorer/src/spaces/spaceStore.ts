@@ -42,6 +42,9 @@ import { tagsOf } from './tags.js';
 
 type Manifest = Omit<SyncedSpace, 'metadataCount' | 'hasTOC'>;
 
+/** A space's own rules and choices, which outlive its copy (deleteSpace). */
+const KEPT_ON_DELETE = new Set(['.confluenceignore', '.confluenceguard', '.confluencespace.json']);
+
 /**
  * The store as a chat sees it: every page read without its attachments when the chat reads pages
  * only, or without those the person left out (ADR-069). Everything else is the store itself.
@@ -263,6 +266,22 @@ export class SpaceStore {
     for (const id of stale) this.removePage(spaceKey, id, false);
     await this.afterRemoval(spaceKey);
     return { purgedCount: stale.length, remainingPages: this.cachedIds(spaceKey).length };
+  }
+
+  /**
+   * Deletes a space's copy on this machine: its pages and attachments, AI index, embeddings, table
+   * of contents and catalog. Its exclusion and leak-guard rules and its image choice are kept, so a
+   * later sync of the space is held to the same rules, and chats about it are kept too.
+   */
+  public deleteSpace(spaceKey: string): { deletedPages: number } {
+    const key = spaceKey.trim().toUpperCase();
+    const dir = this.spaceDir(key);
+    const deletedPages = this.cachedIds(key).length;
+    for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : [])
+      if (!KEPT_ON_DELETE.has(name)) fs.rmSync(within(dir, name), { recursive: true, force: true });
+    this.catalog.forget(key);
+    this.invalidate(key);
+    return { deletedPages };
   }
 
   /**

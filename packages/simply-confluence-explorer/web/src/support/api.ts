@@ -138,6 +138,8 @@ export const api = {
   toc: (spaceKey: string) => call<{ toc: SpaceTocNode[] }>(`/space-cache/${key(spaceKey)}/toc`).then((r) => r.toc),
   zipUrl: (spaceKey: string) => `/api/space-cache/${key(spaceKey)}/zip`,
   purgeStale: (spaceKey: string) => call<PurgeResult>(`/space-cache/${key(spaceKey)}/cache/purge`, 'POST'),
+  deleteSpace: (spaceKey: string) =>
+    call<{ spaceKey: string; deletedPages: number }>(`/space-cache/${key(spaceKey)}`, 'DELETE'),
   purgePage: (spaceKey: string, pageId: string, options: { includeSubPages: boolean; addToIgnore: boolean }) =>
     call<{ purgedCount: number }>(`/space-cache/${key(spaceKey)}/pages/${key(pageId)}/purge`, 'POST', options),
   descendants: (spaceKey: string, pageId: string) =>
