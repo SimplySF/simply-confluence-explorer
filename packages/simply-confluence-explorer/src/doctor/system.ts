@@ -95,8 +95,8 @@ export function systemDeps(
   ai: { isAvailable: () => boolean; getEngine: () => string },
   env: NodeJS.ProcessEnv,
 ): DoctorDeps {
-  const { baseUrl, token } = connection.resolve();
-  const client = new ConfluenceClient({ baseUrl, token });
+  const { baseUrl, token, timeoutSeconds } = connection.resolve();
+  const client = new ConfluenceClient({ baseUrl, token, timeoutSeconds });
   return {
     nodeVersion: process.version,
     platform: process.platform,

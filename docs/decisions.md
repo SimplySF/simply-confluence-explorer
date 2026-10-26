@@ -2127,7 +2127,8 @@ files for the CLI to read, and the answer the person reads has the escapes taken
 
 ## ADR-077 — The code budget rises to 20,400 lines for removing a review and a space's copy
 
-**Status:** accepted, 2026-10-26. Amends ADR-075.
+**Status:** accepted, 2026-10-26. Amends ADR-075. Amended by ADR-078, which raises the code budget to
+20,700 lines.
 
 Since ADR-075 set the code budget at 20,100 lines, people asked for three things the app lacked: an
 update that downloads the attachments a page is missing, a way to clear a review or delete its chat,
@@ -2138,3 +2139,20 @@ confirmation in the web app. Measured at 20,142 lines of code, the limit rises t
 **The argument against:** a budget raised each time it is reached is no limit. This is accepted
 because each addition removes something a person could otherwise only do by deleting files by hand,
 and the next rise needs its own record.
+
+---
+
+## ADR-078 — The code budget rises to 20,700 lines for a delete that shows its progress and a slow Confluence
+
+**Status:** accepted, 2026-10-26. Amends ADR-077.
+
+Deleting the copy of a large space held up the whole app for minutes without saying how far it had
+got, and a sync running beside it timed out. A sync also gave up after a fixed 30 seconds when a
+company's Confluence was slow, and the sidebar and the sync read the same page tree from Confluence
+twice. The fixes move a deletion into the background with its progress, make the time limit a
+setting, share one tree read between the two, and say which step of a sync failed. Measured at 20,425
+lines of code, the limit rises to 20,700 (`MAX_CODE_LINES` in `scripts/budgets.mjs`).
+
+**The argument against:** a budget raised twice in a day is a budget that is not holding. This is
+accepted because each change answers a failure a person met on a real space, and the next rise needs
+its own record.

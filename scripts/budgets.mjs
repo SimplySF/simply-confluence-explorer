@@ -13,7 +13,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const MAX_CODE_LINES = 20400; // ADR-021, ADR-062, ADR-065, ADR-067, ADR-070, ADR-071, ADR-072, ADR-075, ADR-077: package src/ and web/src/, tests excluded
+const MAX_CODE_LINES = 20700; // ADR-021, ADR-062, ADR-065, ADR-067, ADR-070, ADR-071, ADR-072, ADR-075, ADR-077, ADR-078: package src/ and web/src/, tests excluded
 const MAX_COMMENT_RATIO = 25; // ADR-014: a hard ceiling; when it is exceeded, a comment is removed and the limit stays
 const MAX_DOC_LINES = 2350; // ADR-034, ADR-055, ADR-062, ADR-067, ADR-070, ADR-072, ADR-075: every tracked .md except the decision log, history, review and the code of conduct
 const MAX_GUIDE_LINES = 1150; // ADR-042, ADR-067: the user guides in packages/*/docs/, which ship in the package

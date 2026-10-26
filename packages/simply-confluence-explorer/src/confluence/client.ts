@@ -22,6 +22,7 @@ import {
   ConfluenceClient as LibraryClient,
   HttpError as LibraryHttpError,
   HttpTransport,
+  NetworkError,
   preparePageUpdate,
   resolveConfluenceConfig,
   updatePage,
@@ -59,7 +60,16 @@ type Linked = { _links?: { webui?: string; download?: string; next?: string } };
 // eslint-disable-next-line no-underscore-dangle -- Atlassian's field name
 const linksOf = (item: Linked): NonNullable<Linked['_links']> => item._links ?? {};
 
-export type ConnectionDetails = { baseUrl: string; token: string };
+export type ConnectionDetails = { baseUrl: string; token: string; timeoutSeconds?: number };
+
+/**
+ * Tree reads in flight, by connection, space and root, so the sidebar and a sync reading the same
+ * tree at once make one set of requests to Confluence rather than two; each is told the count.
+ */
+const treeReads = new Map<
+  string,
+  { promise: Promise<PageTreeNode[]>; found: number; listeners: Set<(found: number) => void> }
+>();
 
 export class ConfluenceClient {
   public readonly baseUrl: string;
@@ -77,7 +87,11 @@ export class ConfluenceClient {
       const config = resolveConfluenceConfig({ url: connection.baseUrl, personalToken: connection.token }, {});
       this.library = new LibraryClient(config);
       this.headers = buildAuthHeaders(config);
-      this.transport = new HttpTransport({ baseUrl: config.url, headers: this.headers });
+      this.transport = new HttpTransport({
+        baseUrl: config.url,
+        headers: this.headers,
+        timeoutMs: (connection.timeoutSeconds ?? 30) * 1000,
+      });
     } catch (error) {
       // Reported on first use, so a missing connection is a clear 400 rather than a crash at startup.
       this.configError = errorMessage(error);
@@ -135,7 +149,10 @@ export class ConfluenceClient {
   }
 
   public async getPageDetail(pageId: string): Promise<PageDetail> {
-    const content = (await call(() => this.lib().getPage(pageId, { expand: PAGE_EXPAND }))) as RestContent;
+    // Read through this client's own requests, so it keeps the connection's time limit.
+    const content = await this.get<RestContent>(`/rest/api/content/${encodeURIComponent(pageId)}`, {
+      expand: PAGE_EXPAND.join(','),
+    });
     if (typeof content !== 'object' || !content.id)
       throw new HttpError(404, `Page ${pageId} was not found in Confluence`);
     const detail = this.toDetail(content);
@@ -152,20 +169,31 @@ export class ConfluenceClient {
    * when one is given. A space without a homepage is read as a flat list and assembled from each
    * page's ancestors.
    */
-  public async getPageTree(spaceKey: string, rootPageId?: string): Promise<PageTreeNode[]> {
-    const rootId = rootPageId ?? (await this.getSpace(spaceKey)).homepageId;
-    if (rootId) {
-      const root = await this.getPageDetail(rootId);
-      const node: PageTreeNode = { ...summaryOf(root), children: [] };
-      await this.loadChildren(node, 0);
-      return [node];
+  public async getPageTree(
+    spaceKey: string,
+    rootPageId?: string,
+    onFound?: (found: number) => void,
+  ): Promise<PageTreeNode[]> {
+    const key = `${this.cacheKey}\n${spaceKey.toUpperCase()}\n${rootPageId ?? ''}`;
+    let read = treeReads.get(key);
+    if (!read) {
+      const started = {
+        promise: Promise.resolve([] as PageTreeNode[]),
+        found: 0,
+        listeners: new Set<(n: number) => void>(),
+      };
+      started.promise = this.readTree(spaceKey, rootPageId, (n) => {
+        started.found = n;
+        for (const tell of started.listeners) tell(n);
+      }).finally(() => treeReads.delete(key));
+      treeReads.set(key, started);
+      read = started;
     }
-    const pages = await this.collect<RestContent>('/rest/api/content', {
-      spaceKey,
-      type: 'page',
-      expand: 'ancestors,version',
-    });
-    return assembleTree(pages.map((p) => this.toNode(p, spaceKey, p.ancestors?.at(-1)?.id)));
+    if (!onFound) return read.promise;
+    const reading = read;
+    reading.listeners.add(onFound);
+    onFound(reading.found);
+    return reading.promise.finally(() => reading.listeners.delete(onFound));
   }
 
   /**
@@ -307,14 +335,36 @@ export class ConfluenceClient {
     }
   }
 
-  private async loadChildren(parent: PageTreeNode, depth: number): Promise<void> {
+  private async readTree(
+    spaceKey: string,
+    rootPageId: string | undefined,
+    tell: (found: number) => void,
+  ): Promise<PageTreeNode[]> {
+    const rootId = rootPageId ?? (await this.getSpace(spaceKey)).homepageId;
+    if (rootId) {
+      const root = await this.getPageDetail(rootId);
+      const node: PageTreeNode = { ...summaryOf(root), children: [] };
+      const found = { n: 1 };
+      await this.loadChildren(node, 0, () => tell(++found.n));
+      return [node];
+    }
+    const pages = await this.collect<RestContent>('/rest/api/content', {
+      spaceKey,
+      type: 'page',
+      expand: 'ancestors,version',
+    });
+    return assembleTree(pages.map((p) => this.toNode(p, spaceKey, p.ancestors?.at(-1)?.id)));
+  }
+
+  private async loadChildren(parent: PageTreeNode, depth: number, found: () => void): Promise<void> {
     if (depth >= MAX_TREE_DEPTH) return;
     const children = await this.collect<RestContent>(`/rest/api/content/${encodeURIComponent(parent.id)}/child/page`, {
       expand: CHILD_EXPAND.join(','),
     });
     parent.children = children.map((c) => this.toNode(c, parent.spaceKey, parent.id));
+    parent.children.forEach(found);
     await runLimited(
-      parent.children.map((child) => (): Promise<void> => this.loadChildren(child, depth + 1)),
+      parent.children.map((child) => (): Promise<void> => this.loadChildren(child, depth + 1, found)),
       TREE_CONCURRENCY,
     );
   }
@@ -419,6 +469,11 @@ async function call<T>(request: () => Promise<T>): Promise<T> {
     // The token was refused, or Confluence failed or could not be reached. That is a bad gateway: it
     // is not this server's fault, and not a 401 for the browser either, which holds no credentials.
     if (error instanceof AuthError) throw new HttpError(502, `Confluence refused the token: ${error.message}`);
+    if (error instanceof NetworkError && error.message.includes('did not complete within'))
+      throw new HttpError(
+        504,
+        `${error.message} Confluence took too long to answer; if it is often this slow, give it longer in Settings → Confluence connection.`,
+      );
     throw new HttpError(502, errorMessage(error));
   }
 }

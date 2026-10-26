@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { DeleteProgress, PageTreeNode, SyncProgress } from '../api/types.js';
+import type { ConfluenceSpace, DeleteProgress, PageTreeNode, SyncProgress } from '../api/types.js';
 import { HttpError } from '../http/router.js';
 import type { ConfluenceClient } from '../confluence/client.js';
 import { JobRunner } from '../jobs/jobRunner.js';
@@ -53,7 +53,7 @@ export class SpaceSync {
     this.jobs = new JobRunner<SyncProgress>(
       'sync',
       (job, error) => {
-        log(`sync ${job.jobId} of ${job.spaceKey} failed: ${errorMessage(error)}`);
+        log(`Sync of ${job.spaceKey} started at ${job.startedAt ?? 'an unknown time'} failed ${errorMessage(error)}`);
         job.errors.push({ pageId: '', title: job.spaceKey, error: errorMessage(error) });
         job.errorCount++;
       },
@@ -174,8 +174,17 @@ export class SpaceSync {
     job.status = 'running';
     job.currentPageTitle = 'Reading the page tree';
     const client = this.client();
-    const space = await client.getSpace(spaceKey);
-    const tree = await client.getPageTree(spaceKey, rootPageId);
+    let space: ConfluenceSpace;
+    let tree: PageTreeNode[];
+    try {
+      space = await client.getSpace(spaceKey);
+      tree = await client.getPageTree(spaceKey, rootPageId, (found) => {
+        job.currentPageTitle = `Reading the page tree: ${found} page${found === 1 ? '' : 's'} found`;
+      });
+    } catch (error) {
+      // Said with the step, so a failure reads as this sync's and not as a page's.
+      throw new Error(`while reading the page tree: ${errorMessage(error)}`, { cause: error });
+    }
     const { visible, excluded } = this.plan(tree, spaceKey);
     job.total = visible.length + excluded;
     job.skippedCount += excluded;

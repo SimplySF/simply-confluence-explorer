@@ -34,6 +34,7 @@
   // Only a new token is typed here; the saved one stays on the server and is never shown.
   let token = $state('');
   let showToken = $state(false);
+  let timeoutSeconds = $state(30);
   let pasteNote = $state<string | null>(null);
   let testing = $state(false);
   let testResult = $state<AuthVerifyResponse | null>(null);
@@ -80,6 +81,7 @@
       (view) => {
         connection = view;
         baseUrl = view.baseUrl;
+        timeoutSeconds = view.timeoutSeconds;
         // A saved connection is tested at once, so the section opens on whether it works.
         if (view.baseUrl && view.tokenSet) void test();
       },
@@ -124,7 +126,10 @@
     }
     saving = true;
     try {
-      await api.saveConnection({ baseUrl: baseUrl.trim(), token: token.trim() || undefined });
+      const timeout = connection?.timeoutEditable ? { timeoutSeconds } : {};
+      await api.saveConnection(
+        locked ? timeout : { baseUrl: baseUrl.trim(), token: token.trim() || undefined, ...timeout },
+      );
       onSaved();
       onClose();
     } catch (e) {
@@ -172,7 +177,10 @@
   {#snippet footer()}
     {#if saveError}<span class="field-error footer-message">{saveError}</span>{/if}
     <button class="btn btn-secondary" onclick={onClose}>Cancel</button>
-    <button class="btn btn-primary" onclick={save} disabled={saving || (section === 'confluence' && locked)}
+    <button
+      class="btn btn-primary"
+      onclick={save}
+      disabled={saving || (section === 'confluence' && locked && connection?.timeoutEditable === false)}
       >{#if saving}<span class="spinner" aria-hidden="true"></span>{:else}<Save size={14} />{/if} Save & apply</button
     >
   {/snippet}
@@ -278,6 +286,28 @@
       {/if}
     </div>
     {#if pasteNote}<div class="muted field-note">{pasteNote}</div>{/if}
+  </div>
+
+  <div class="form-group">
+    <label class="form-label label-split" for="settings-timeout">
+      <span>Wait for Confluence up to</span>
+      <span class="muted">seconds, from 5 to 600</span>
+    </label>
+    <input
+      id="settings-timeout"
+      type="number"
+      min="5"
+      max="600"
+      step="1"
+      class="form-input settings-timeout"
+      disabled={connection?.timeoutEditable === false}
+      bind:value={timeoutSeconds}
+    />
+    <div class="muted field-note">
+      {connection?.timeoutEditable === false
+        ? 'Set by the server environment (CONFLUENCE_TIMEOUT_SECONDS); change it there.'
+        : 'Raise this if your Confluence is slow to answer, as when a page has many children and a sync gives up.'}
+    </div>
   </div>
 
   <details class="disclosure">

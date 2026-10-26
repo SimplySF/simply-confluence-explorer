@@ -37,6 +37,10 @@ export type ConnectionView = {
   editable: boolean;
   /** The runtime profile, such as `dev` when the app runs against the test environment. */
   profile: string;
+  /** How long a request to Confluence may take before it is given up. */
+  timeoutSeconds: number;
+  /** False when the environment sets the time limit (`CONFLUENCE_TIMEOUT_SECONDS`). */
+  timeoutEditable: boolean;
 };
 
 /** A change to the connection, sent from Settings. */
@@ -44,6 +48,7 @@ export type ConnectionUpdate = {
   baseUrl?: string;
   /** Leaving this out keeps the saved token; an empty string removes it. */
   token?: string;
+  timeoutSeconds?: number;
 };
 
 /** The outcome of one doctor check. */
