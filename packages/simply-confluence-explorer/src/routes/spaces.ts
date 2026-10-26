@@ -34,7 +34,7 @@ const flag = (body: unknown, key: string): boolean => fieldsOf(body)[key] === tr
  * @param services What the routes share.
  */
 export function addSpaceRoutes(router: Router, services: Services): Router {
-  const { store, sync, exclusions } = services;
+  const { store, sync, exclusions, metadata } = services;
   const notFound = (jobId: string): never => {
     throw new HttpError(404, `no sync job ${jobId}`);
   };
@@ -112,6 +112,14 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
           addToIgnore: flag(body, 'addToIgnore'),
         }),
       )
+      // Deletes the space's copy on this machine; its rules stay (deleteSpace). Confluence is not changed.
+      .add('DELETE', '/api/space-cache/:spaceKey', ({ params }) => {
+        if (!store.isSynced(params.spaceKey))
+          throw new HttpError(404, `${params.spaceKey} is not synced on this machine`);
+        if (sync.activeFor(params.spaceKey) || metadata.activeFor(params.spaceKey))
+          throw new HttpError(409, `a sync or an index run of ${params.spaceKey} is running; stop it first`);
+        return { spaceKey: params.spaceKey.toUpperCase(), ...store.deleteSpace(params.spaceKey) };
+      })
       .add('POST', '/api/space-cache/:spaceKey/cache/purge', ({ params }): Promise<PurgeResult> =>
         store.purgeStale(params.spaceKey),
       )

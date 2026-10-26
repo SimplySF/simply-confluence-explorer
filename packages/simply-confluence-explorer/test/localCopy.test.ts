@@ -214,6 +214,29 @@ describe('syncing a space', () => {
     }
   });
 
+  it('deletes the copy of a space and keeps its rules, so a sync brings it back under them, where a space could not be removed', async () => {
+    const app = await startApp();
+    try {
+      await sync(app, 'PEOPLE');
+      const dir = path.join(app.dataDir, 'spaces', 'PEOPLE');
+      const rules = fs.readFileSync(path.join(dir, '.confluenceignore'), 'utf8');
+      const res = await fetch(`${app.base}/space-cache/PEOPLE`, { method: 'DELETE' });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { deletedPages: number }).deletedPages).toBeGreaterThan(0);
+      expect(fs.readdirSync(dir)).toEqual(['.confluenceignore']);
+      expect(fs.readFileSync(path.join(dir, '.confluenceignore'), 'utf8')).toBe(rules);
+      expect((await call<{ spaces: SyncedSpace[] }>(app, '/space-cache/cached')).body.spaces).toEqual([]);
+      expect((await fetch(`${app.base}/space-cache/PEOPLE`, { method: 'DELETE' })).status).toBe(404);
+      await sync(app, 'PEOPLE');
+      const { body } = await call<{ tree: PageTreeNode[]; isLocal: boolean }>(app, '/spaces/PEOPLE/pages');
+      expect(body.isLocal).toBe(true);
+      expect(titles(body.tree)).toContain('Benefits Overview');
+      for (const title of expectations.PEOPLE.excluded) expect(titles(body.tree)).not.toContain(title);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('serves the synced tree and pages from disk, with exclusions still applied', async () => {
     const app = await startApp();
     try {

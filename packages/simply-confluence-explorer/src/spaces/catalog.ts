@@ -128,6 +128,13 @@ export class SpaceCatalog {
     return [...this.builds].map(([spaceKey, b]) => ({ spaceKey, done: b.done, total: b.total }));
   }
 
+  /** Drops a space's catalog, and any save of it still waiting, as when its copy is deleted. */
+  public forget(spaceKey: string): void {
+    clearTimeout(this.saves.get(spaceKey));
+    this.saves.delete(spaceKey);
+    this.spaces.delete(spaceKey);
+  }
+
   /** Records a page as written; a newer version has no AI summary until it is indexed again. */
   public put(spaceKey: string, page: PageDetail): void {
     this.change(spaceKey, (pages) => pages.set(page.id, entryOf(page)));
