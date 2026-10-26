@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.5](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.4...%40simplysf%2Fsimply-confluence-explorer%400.9.5) (2026-10-26)
+
+### Bug Fixes
+
+- a space's copy can be deleted, so it can be downloaded afresh ([#69](https://github.com/SimplySF/simply-confluence-explorer/issues/69)) ([fa786d0](https://github.com/SimplySF/simply-confluence-explorer/commit/fa786d05efe2728de5da132b06ccc49c4f892404))
+- **deps:** Bump @simplysf/simply-atlassian-core from 0.7.2 to 0.8.0 ([#67](https://github.com/SimplySF/simply-confluence-explorer/issues/67)) ([d869bc3](https://github.com/SimplySF/simply-confluence-explorer/commit/d869bc31a92a06e0d7ffb0d6de2b11f870ee8532))
+
 ## [0.9.4](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.3...%40simplysf%2Fsimply-confluence-explorer%400.9.4) (2026-10-23)
 
 ### Bug Fixes
