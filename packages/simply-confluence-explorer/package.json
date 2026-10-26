@@ -46,7 +46,7 @@
     "svelte": "^5.56.10",
     "svelte-check": "^4.7.6",
     "vite": "^8.2.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"
@@ -203,7 +203,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.134.0",
     "@google/genai": "^2.30.0",
-    "@simplysf/simply-atlassian-core": "^0.7.2",
+    "@simplysf/simply-atlassian-core": "^0.8.0",
     "archiver": "^7.0.1",
     "openai": "^7.34.0",
     "unpdf": "1.8.1",
