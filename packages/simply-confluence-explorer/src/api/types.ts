@@ -182,6 +182,23 @@ export type SyncProgress = {
   traceId?: string;
 };
 
+/** Deleting the copy of a space, polled while it runs: how many files are gone, and the one going. */
+export type DeleteProgress = {
+  jobId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  spaceKey: string;
+  deletedPages: number;
+  total: number;
+  processed: number;
+  currentFile?: string;
+  /** Some of the copy could not be moved aside, so a sync of the space waits until it is deleted. */
+  inPlace: boolean;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  traceId?: string;
+};
+
 /** One entry in a space's table of contents. */
 export type SpaceTocNode = {
   id: string;

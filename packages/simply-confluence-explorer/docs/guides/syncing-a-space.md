@@ -107,7 +107,7 @@ Removing a page here deletes only your copy. Nothing changes in Confluence.
   pages under it as well. By default the app also adds a rule to the space's exclusions, so the next
   sync does not download the page again.
 - **Stale copies**: **Remove stale cached pages…** in the **⋯** menu removes copies that the space's
-  rules now exclude, and copies whose Markdown file you deleted yourself. **Delete the copy of KEY…** removes the whole space, keeping its rules and chats; sync it again to bring it back.
+  rules now exclude, and copies whose Markdown file you deleted yourself. **Delete the copy of KEY…** removes the whole space in the background, showing each file as it goes, and keeps its rules and chats; you can sync it again at once.
 
 ## Where the files are
 

@@ -44,6 +44,8 @@ type Manifest = Omit<SyncedSpace, 'metadataCount' | 'hasTOC'>;
 
 /** A space's own rules and choices, which outlive its copy (deleteSpace). */
 const KEPT_ON_DELETE = new Set(['.confluenceignore', '.confluenceguard', '.confluencespace.json']);
+/** Where copies being deleted wait, beside the spaces; a name starting with a dot is never a space. */
+const DELETING = '.deleting';
 
 /**
  * The store as a chat sees it: every page read without its attachments when the chat reads pages
@@ -269,19 +271,35 @@ export class SpaceStore {
   }
 
   /**
-   * Deletes a space's copy on this machine: its pages and attachments, AI index, embeddings, table
+   * Moves a space's copy aside to be deleted: its pages and attachments, AI index, embeddings, table
    * of contents and catalog. Its exclusion and leak-guard rules and its image choice are kept, so a
-   * later sync of the space is held to the same rules, and chats about it are kept too.
+   * later sync of the space is held to the same rules, and chats about it are kept too. A move is
+   * instant, so the space reads as not synced at once; an entry that cannot be moved, such as one
+   * another program holds open on Windows, is deleted where it is (`inPlace`).
+   *
+   * @returns What to delete with `deleteFiles`: the folder moved aside, any copies a deletion that
+   * stopped before it ended left, and each entry that could not be moved.
    */
-  public deleteSpace(spaceKey: string): { deletedPages: number } {
+  public setAside(spaceKey: string): { deletedPages: number; targets: string[]; inPlace: boolean } {
     const key = spaceKey.trim().toUpperCase();
     const dir = this.spaceDir(key);
     const deletedPages = this.cachedIds(key).length;
-    for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : [])
-      if (!KEPT_ON_DELETE.has(name)) fs.rmSync(within(dir, name), { recursive: true, force: true });
+    const aside = within(this.spacesDir, DELETING, `${sanitizeFilename(key)}-${Date.now()}`);
+    fs.mkdirSync(aside, { recursive: true });
+    const stuck: string[] = [];
+    for (const name of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+      if (KEPT_ON_DELETE.has(name)) continue;
+      try {
+        fs.renameSync(within(dir, name), within(aside, name));
+      } catch {
+        // Deleted where it is instead; the job reports it as it goes, and a failure there is reported.
+        stuck.push(within(dir, name));
+      }
+    }
     this.catalog.forget(key);
     this.invalidate(key);
-    return { deletedPages };
+    const earlier = fs.readdirSync(within(this.spacesDir, DELETING)).map((n) => within(this.spacesDir, DELETING, n));
+    return { deletedPages, targets: [...earlier, ...stuck], inPlace: stuck.length > 0 };
   }
 
   /**
@@ -532,7 +550,7 @@ export class SpaceStore {
     if (!fs.existsSync(this.spacesDir)) return [];
     return fs
       .readdirSync(this.spacesDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
       .map((e) => e.name);
   }
 
@@ -609,4 +627,34 @@ export function attachmentFileNames(titles: string[]): string[] {
     used.add(name.toLowerCase());
     return name;
   });
+}
+
+/**
+ * Deletes what `SpaceStore.setAside` returned, file by file, without holding up other requests, telling
+ * `progress` each file as it goes. A stop between files leaves the rest, to go with the next delete.
+ */
+export async function deleteFiles(
+  targets: string[],
+  progress: (done: number, total: number, current: string) => void,
+  stopped: () => boolean,
+): Promise<void> {
+  const files: string[] = [];
+  for (const target of targets) {
+    // eslint-disable-next-line no-await-in-loop -- a few targets, each listed in turn
+    const stat = await fs.promises.stat(target).catch(() => undefined);
+    if (!stat?.isDirectory()) files.push(target);
+    else
+      // eslint-disable-next-line no-await-in-loop -- as above
+      for (const e of await fs.promises.readdir(target, { recursive: true, withFileTypes: true }))
+        if (!e.isDirectory()) files.push(path.join(e.parentPath, e.name));
+  }
+  for (const [i, file] of files.entries()) {
+    if (stopped()) return;
+    progress(i, files.length, path.basename(file));
+    // eslint-disable-next-line no-await-in-loop -- one file at a time, so each can be reported
+    await fs.promises.rm(file, { force: true });
+  }
+  progress(files.length, files.length, '');
+  // eslint-disable-next-line no-await-in-loop -- the folders left once their files are gone
+  for (const target of targets) await fs.promises.rm(target, { recursive: true, force: true });
 }

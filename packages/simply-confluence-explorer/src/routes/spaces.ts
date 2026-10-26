@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
-import type { PurgeResult, SpaceTocNode, SyncProgress, TagsResponse } from '../api/types.js';
+import type { DeleteProgress, PurgeResult, SpaceTocNode, SyncProgress, TagsResponse } from '../api/types.js';
 import { IMAGE_TYPES } from '../spaces/attachments.js';
 import { tagIndex } from '../spaces/tags.js';
 import { HttpError, type Router } from '../http/router.js';
@@ -112,14 +112,26 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
           addToIgnore: flag(body, 'addToIgnore'),
         }),
       )
-      // Deletes the space's copy on this machine; its rules stay (deleteSpace). Confluence is not changed.
-      .add('DELETE', '/api/space-cache/:spaceKey', ({ params }) => {
+      // Deletes the space's copy on this machine in the background, its rules kept (setAside).
+      // Confluence is not changed.
+      .add('DELETE', '/api/space-cache/:spaceKey', ({ params }): DeleteProgress => {
         if (!store.isSynced(params.spaceKey))
           throw new HttpError(404, `${params.spaceKey} is not synced on this machine`);
         if (sync.activeFor(params.spaceKey) || metadata.activeFor(params.spaceKey))
           throw new HttpError(409, `a sync or an index run of ${params.spaceKey} is running; stop it first`);
-        return { spaceKey: params.spaceKey.toUpperCase(), ...store.deleteSpace(params.spaceKey) };
+        return sync.startDelete(params.spaceKey);
       })
+      .add('GET', '/api/space-cache/delete/status/:jobId', ({ params }) => {
+        const job = sync.deleteStatus(params.jobId);
+        if (!job) throw new HttpError(404, `no deletion ${params.jobId}`);
+        return job;
+      })
+      .add('POST', '/api/space-cache/delete/cancel/:jobId', ({ params }) => ({
+        cancelled: sync.cancelDelete(params.jobId),
+      }))
+      .add('GET', '/api/space-cache/:spaceKey/delete/active', ({ params }) => ({
+        activeJob: sync.deleting(params.spaceKey) ?? null,
+      }))
       .add('POST', '/api/space-cache/:spaceKey/cache/purge', ({ params }): Promise<PurgeResult> =>
         store.purgeStale(params.spaceKey),
       )
