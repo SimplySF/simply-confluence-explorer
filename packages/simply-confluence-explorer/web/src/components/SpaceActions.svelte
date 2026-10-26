@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Ellipsis, FolderSync, FolderTree, ShieldCheck, Sparkles, Trash2 } from '@lucide/svelte';
+  import { Download, Ellipsis, FolderSync, FolderTree, FolderX, ShieldCheck, Sparkles, Trash2 } from '@lucide/svelte';
   import type { SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
@@ -13,7 +13,7 @@
   import Menu from './ui/Menu.svelte';
 
   // Everything done to a space as a whole: sync and its exclusions at hand, and in the menu the AI index,
-  // its table of contents, a ZIP, and removing stale pages.
+  // its table of contents, a ZIP, removing stale pages, and deleting the copy of the space.
   type Props = {
     spaceKey: string;
     /** The space's synced copy, if there is one. */
@@ -24,7 +24,8 @@
   };
 
   let { spaceKey, manifest, onChanged, onSelectPage }: Props = $props();
-  let dialog = $state<'toc' | 'rules' | 'purge' | null>(null);
+  let dialog = $state<'toc' | 'rules' | 'purge' | 'delete' | null>(null);
+  let deleting = $state(false);
 
   // Sync and summary runs are held in the jobs store, so they keep reporting after this menu goes away.
   const sync = $derived(jobs.sync(spaceKey));
@@ -42,6 +43,23 @@
       onChanged();
     } catch (e) {
       toast(`Nothing removed: ${messageOf(e)}`, 'error');
+    }
+  }
+
+  async function deleteSpace(): Promise<void> {
+    deleting = true;
+    try {
+      const r = await api.deleteSpace(spaceKey);
+      dialog = null;
+      toast(
+        `Deleted the copy of ${spaceKey}: ${r.deletedPages} page${r.deletedPages === 1 ? '' : 's'}. Sync it again to bring it back.`,
+        'success',
+      );
+      onChanged();
+    } catch (e) {
+      toast(`Nothing deleted: ${messageOf(e)}`, 'error');
+    } finally {
+      deleting = false;
     }
   }
 
@@ -122,6 +140,16 @@
           onSelect: () => (dialog = 'purge'),
           disabled: !synced,
         },
+        {
+          label: `Delete the copy of ${spaceKey}…`,
+          icon: FolderX,
+          danger: true,
+          hint:
+            needSync ??
+            (sync || meta ? 'Stop the running sync or index run first' : 'Every page and file on this machine'),
+          onSelect: () => (dialog = 'delete'),
+          disabled: !synced || !!sync || !!meta,
+        },
       ]}
     >
       {#snippet label()}<Ellipsis size={14} />{/snippet}
@@ -170,6 +198,23 @@
       <p>
         Deletes cached copies of pages that are no longer on disk or that the space's exclusions now match. Confluence
         is not changed.
+      </p>
+    </ConfirmDialog>
+  {:else if dialog === 'delete'}
+    <ConfirmDialog
+      title="Delete the copy of {spaceKey} on this machine?"
+      danger
+      busy={deleting}
+      onConfirm={() => void deleteSpace()}
+      onCancel={() => (dialog = null)}
+    >
+      {#snippet confirmLabel()}{#if deleting}<span class="spinner" aria-hidden="true"></span>{:else}<FolderX
+            size={14}
+          />{/if} Delete{/snippet}
+      <p>
+        Deletes every synced page of {spaceKey}{manifest ? ` (${manifest.pageCount})` : ''} with its attachments, AI index
+        and table of contents. Its exclusions, leak-guard rules and image choice are kept, and so are its chats. Confluence
+        is not changed; sync the space again to bring it back.
       </p>
     </ConfirmDialog>
   {/if}
