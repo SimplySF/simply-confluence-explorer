@@ -24,6 +24,8 @@ const view: ConnectionView = {
   source: 'settings',
   editable: true,
   profile: '',
+  timeoutSeconds: 30,
+  timeoutEditable: true,
 };
 const space = { key: 'OPS', name: 'Operations', type: 'global' };
 
