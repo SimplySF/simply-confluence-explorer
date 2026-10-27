@@ -105,6 +105,31 @@ describe('the engine', () => {
     expect(answer.text).toBe('answer');
   });
 
+  it('sends a page whose email addresses the guard shortens, where the check took it for a page cut short', async () => {
+    const dataDir = tmp();
+    const sent: GuardedPayload[] = [];
+    const ai = new ConfiguredAi(new AiSettingsStore(dataDir, {}), {
+      dataDir,
+      env: {},
+      log: () => undefined,
+      transport: (payload) => {
+        sent.push(payload);
+        return Promise.resolve('answer');
+      },
+    });
+    const m = new ManifestBuilder();
+    const members = Array.from({ length: 80 }, (_, i) => `- firstname.lastname${i}@example.com`).join('\n');
+    const block = m.include('page', 'Page Group', `Members:\n${members}`);
+    const answer = await ai.chat(
+      { context: block, history: [], prompt: 'q', manifest: m.build() },
+      { guard: new OutboundGuard() },
+    );
+    expect(answer.text).toBe('answer');
+    expect(JSON.stringify(sent)).not.toContain('@example.com');
+    // A marker the guard could not have removed is still required in what is sent.
+    expect(checkPayload(m.build(), 'nothing', block)).toEqual(['Page Group is missing']);
+  });
+
   it('reports an answer the model did not finish', async () => {
     const dataDir = tmp();
     const ai = new ConfiguredAi(new AiSettingsStore(dataDir, {}), {

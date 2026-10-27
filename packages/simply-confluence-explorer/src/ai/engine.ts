@@ -209,7 +209,11 @@ export class ConfiguredAi implements AiEngine {
     // The context must reach the model whole: a request missing part of what it was built to carry is
     // refused, and raised as a problem, rather than sent.
     const problems = [
-      ...checkPayload(parts.manifest, payload.messages.map((m) => m.content).join('\n')),
+      ...checkPayload(
+        parts.manifest,
+        payload.messages.map((m) => m.content).join('\n'),
+        [parts.context, ...parts.history.map((t) => t.text), parts.prompt].join('\n'),
+      ),
       ...checkImages(parts.manifest, payload.images?.length ?? 0),
     ];
     const tracer = this.options.tracer ?? noTracer;
