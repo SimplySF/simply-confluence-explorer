@@ -321,6 +321,13 @@ export type SessionScope = {
   pageIds?: string[];
   /** For chosen pages: tags, each read as every page that carries it at the time of asking. */
   tags?: string[];
+  /** For chosen pages: pages left out of the directories and tags, each with everything under it. */
+  leftOut?: string[];
+  /**
+   * For chosen pages: words that leave out any chosen page whose title holds them, ignoring case, so
+   * a matching page added later stays out too.
+   */
+  leaveOutTitles?: string[];
   title?: string;
 };
 

@@ -31,23 +31,24 @@ refactors that keep the public surface identical (though a short doc is welcome 
 
 ## Index
 
-| #                                              | Title                                                                          | Status               |
-| ---------------------------------------------- | ------------------------------------------------------------------------------ | -------------------- |
-| [0001](0001-confluence-explorer.md)            | Confluence Explorer: what it does and how the package is built                 | Implemented (PR #12) |
-| [0002](0002-runtime-dependencies.md)           | Runtime dependencies: simply-atlassian-core and `node:http`                    | Implemented (PR #7)  |
-| [0003](0003-data-directory.md)                 | Where the app keeps its data, and the token with it                            | Implemented (PR #3)  |
-| [0004](0004-ai-providers.md)                   | Asking an AI: one engine, an outbound guard, and conversations on the server   | Implemented (PR #7)  |
-| [0005](0005-writes-to-confluence.md)           | Writing to Confluence: a push, a branch's review queue, and a new page         | Implemented (PR #11) |
-| [0006](0006-end-to-end-environment.md)         | The end-to-end suite runs against a real Data Center                           | Implemented (PR #12) |
-| [0007](0007-reviews-tags-and-space-chat.md)    | Chat as the place to work: contexts, a change queue, new pages from GitLab     | Implemented (PR #24) |
-| [0008](0008-large-spaces-and-observability.md) | Large spaces: packed indexing, context checks, thorough answers, observability | Implemented (PR #30) |
-| [0009](0009-changing-pages-with-macros.md)     | Changing pages that hold macros, change by change                              | Implemented (PR #33) |
-| [0010](0010-chat-queues.md)                    | A chat's queues: review, changes and push, from the live page                  | Implemented          |
-| [0011](0011-attachments.md)                    | Page attachments, read with their page                                         | Implemented          |
-| [0012](0012-review-visuals.md)                 | Images, diagrams and work left for a person, in review                         | Implemented          |
-| [0013](0013-attachment-account.md)             | Every attachment accounted for, in every format                                | Implemented          |
-| [0014](0014-clarity-rework.md)                 | A clearer layout for every main screen                                         | Implemented          |
-| [0015](0015-responsive-app-and-review.md)      | An app that keeps up, says when to wait, and gives review a place of its own   | Implemented          |
+| #                                              | Title                                                                                   | Status               |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------- |
+| [0001](0001-confluence-explorer.md)            | Confluence Explorer: what it does and how the package is built                          | Implemented (PR #12) |
+| [0002](0002-runtime-dependencies.md)           | Runtime dependencies: simply-atlassian-core and `node:http`                             | Implemented (PR #7)  |
+| [0003](0003-data-directory.md)                 | Where the app keeps its data, and the token with it                                     | Implemented (PR #3)  |
+| [0004](0004-ai-providers.md)                   | Asking an AI: one engine, an outbound guard, and conversations on the server            | Implemented (PR #7)  |
+| [0005](0005-writes-to-confluence.md)           | Writing to Confluence: a push, a branch's review queue, and a new page                  | Implemented (PR #11) |
+| [0006](0006-end-to-end-environment.md)         | The end-to-end suite runs against a real Data Center                                    | Implemented (PR #12) |
+| [0007](0007-reviews-tags-and-space-chat.md)    | Chat as the place to work: contexts, a change queue, new pages from GitLab              | Implemented (PR #24) |
+| [0008](0008-large-spaces-and-observability.md) | Large spaces: packed indexing, context checks, thorough answers, observability          | Implemented (PR #30) |
+| [0009](0009-changing-pages-with-macros.md)     | Changing pages that hold macros, change by change                                       | Implemented (PR #33) |
+| [0010](0010-chat-queues.md)                    | A chat's queues: review, changes and push, from the live page                           | Implemented          |
+| [0011](0011-attachments.md)                    | Page attachments, read with their page                                                  | Implemented          |
+| [0012](0012-review-visuals.md)                 | Images, diagrams and work left for a person, in review                                  | Implemented          |
+| [0013](0013-attachment-account.md)             | Every attachment accounted for, in every format                                         | Implemented          |
+| [0014](0014-clarity-rework.md)                 | A clearer layout for every main screen                                                  | Implemented          |
+| [0015](0015-responsive-app-and-review.md)      | An app that keeps up, says when to wait, and gives review a place of its own            | Implemented          |
+| [0016](0016-choosing-pages.md)                 | A Space chat's pages are chosen from the space's tree, leaving out what does not belong | Implemented          |
 
 Design docs work alongside the [decision log](../decisions.md), and each has a different job. A
 design doc describes one feature: what it does, how it behaves, and why it has that shape. It is

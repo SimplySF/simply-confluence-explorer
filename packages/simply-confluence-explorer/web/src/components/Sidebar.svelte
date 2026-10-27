@@ -20,7 +20,7 @@
   import type { ConfluenceSpace, PageTreeNode, SyncedSpace, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { syncLine } from '../support/spaceStatus.js';
-  import { ancestorsOf, collapsedFor } from '../support/tree.js';
+  import { ancestorsOf, collapsedFor, visibleRows, withChildren } from '../support/tree.js';
   import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
   import TagsView from './TagsView.svelte';
@@ -67,36 +67,6 @@
     reviewOpen,
     onOpenReview,
   }: Props = $props();
-
-  type Row = { node: PageTreeNode; depth: number; parentId: string | null; hasChildren: boolean; expanded: boolean };
-
-  /** The pages to show, in order: a collapsed page hides its children, and a filter keeps a page if it or a page under it matches. */
-  function visibleRows(nodes: PageTreeNode[], collapsed: Set<string>, filter: string): Row[] {
-    const q = filter.trim().toLowerCase();
-    const matches = (n: PageTreeNode): boolean => !q || n.title.toLowerCase().includes(q) || n.children.some(matches);
-    const rows: Row[] = [];
-    const walk = (list: PageTreeNode[], depth: number, parentId: string | null): void => {
-      for (const node of list) {
-        if (!matches(node)) continue;
-        const hasChildren = node.children.length > 0;
-        const expanded = hasChildren && !collapsed.has(node.id);
-        rows.push({ node, depth, parentId, hasChildren, expanded });
-        if (expanded) walk(node.children, depth + 1, node.id);
-      }
-    };
-    walk(nodes, 0, null);
-    return rows;
-  }
-
-  const withChildren = (nodes: PageTreeNode[], into = new Set<string>()): Set<string> => {
-    for (const n of nodes) {
-      if (n.children.length) {
-        into.add(n.id);
-        withChildren(n.children, into);
-      }
-    }
-    return into;
-  };
 
   let switcherOpen = $state(false);
   let spaceFilter = $state('');

@@ -322,6 +322,57 @@ test('chosen pages are directories, tags and pages, resolved on every turn; each
   });
 });
 
+test('a directory is read without the pages left out of it or titles a rule leaves out, and a page added later that matches the rule stays out, where a directory could only be taken whole', async () => {
+  await withApp(async (app) => {
+    await syncSpace(app, 'PEOPLE');
+    const id = (title: string): string => fake.page('PEOPLE', title).id;
+    const scope = { dirs: [id('Policies')], leftOut: [id('Travel Policy')], leaveOutTitles: [' remote ', 'remote'] };
+    const chosen = await app.call<AiSessionView>('POST', '/ai/sessions', {
+      scope: { kind: 'pages', spaceKey: 'PEOPLE', ...scope },
+    });
+    assert.equal(chosen.status, 200);
+    assert.deepEqual(chosen.body.scope.leaveOutTitles, ['remote']);
+    assert.deepEqual(sources(await ask(app, chosen.body.id, 'Which flights can be booked in economy?')), ['Policies']);
+    // The coverage count reads the same pages as the chat.
+    const pagesRead = async (): Promise<number | undefined> => {
+      let coverage: { pages?: number; indexing?: unknown } = { indexing: true };
+      while (coverage.indexing)
+        // eslint-disable-next-line no-await-in-loop -- asks again until the index is built, as the chat does
+        coverage = (await app.call<typeof coverage>('POST', '/space-cache/PEOPLE/metadata/coverage', scope)).body;
+      return coverage.pages;
+    };
+    assert.equal(await pagesRead(), 1);
+    // A page added under the directory later is read, unless a rule leaves it out.
+    const policies = fake.pages.get(id('Policies'))!;
+    const added = ['Remote Equipment', 'Parental Leave'].map((title, i) => ({
+      ...policies,
+      id: String(9000 + i),
+      title,
+      children: [],
+      version: 1,
+      ancestors: [...policies.ancestors, { id: policies.id, title: policies.title }],
+    }));
+    for (const page of added) fake.pages.set(page.id, page);
+    policies.children.push(...added.map((p) => p.id));
+    try {
+      await syncSpace(app, 'PEOPLE');
+      assert.equal(await pagesRead(), 2, 'Policies and Parental Leave, not Remote Equipment');
+      assert.deepEqual(sources(await ask(app, chosen.body.id, 'What leave can I take?')), [
+        'Policies',
+        'Parental Leave',
+      ]);
+    } finally {
+      for (const page of added) fake.pages.delete(page.id);
+      policies.children.splice(-added.length);
+    }
+    const tooMany = Array.from({ length: 10_001 }, (_, i) => `${i + 1}`);
+    const refused = await app.call('POST', '/ai/sessions', {
+      scope: { kind: 'pages', spaceKey: 'PEOPLE', dirs: [id('Policies')], leftOut: tooMany },
+    });
+    assert.equal(refused.status, 400);
+  });
+});
+
 test('a Space chat changes between the whole space and chosen pages, with the same checks', async () => {
   await withApp(async (app) => {
     await syncSpace(app, 'PEOPLE');

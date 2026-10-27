@@ -474,6 +474,7 @@
         <SpaceChat
           spaceKey={activeSpace}
           pages={allPages}
+          {tree}
           seed={chatSeed}
           onSeeded={() => (chatSeed = null)}
           active={view === 'chat'}
