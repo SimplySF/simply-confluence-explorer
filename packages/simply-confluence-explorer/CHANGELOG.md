@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.10.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.6...%40simplysf%2Fsimply-confluence-explorer%400.10.0) (2026-10-27)
+
+### Features
+
+- a Space chat's pages are chosen from the space's tree, leaving out what does not belong ([#73](https://github.com/SimplySF/simply-confluence-explorer/issues/73)) ([a7532de](https://github.com/SimplySF/simply-confluence-explorer/commit/a7532deb44651cd37585e4d4c3a51f7636671e77))
+
 ## [0.9.6](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.5...%40simplysf%2Fsimply-confluence-explorer%400.9.6) (2026-10-26)
 
 ### Bug Fixes
