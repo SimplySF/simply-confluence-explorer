@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { PageTreeNode } from '../../src/api/types.js';
-import { ancestorsOf, collapsedFor } from '../../web/src/support/tree.js';
+import { ancestorsOf, collapsedFor, visibleRows, withChildren } from '../../web/src/support/tree.js';
 
 const node = (id: string, children: PageTreeNode[] = []): PageTreeNode =>
   ({ id, title: id, children }) as unknown as PageTreeNode;
@@ -35,5 +35,14 @@ describe('the sidebar tree of a space that has just loaded', () => {
     expect([...collapsedFor(tree, 'devops')].sort()).toEqual(['ops']);
     expect(ancestorsOf(tree, 'devops')).toEqual(['eng', 'atlas']);
     expect(ancestorsOf(tree, 'missing')).toEqual([]);
+  });
+});
+
+describe('the rows a tree shows', () => {
+  it('hide what is under a folded page, and keep the way down to a page a filter matches', () => {
+    const ids = (rows: ReturnType<typeof visibleRows>): string[] => rows.map((r) => r.node.id);
+    expect(ids(visibleRows(tree, new Set(['atlas']), ''))).toEqual(['eng', 'atlas', 'notes', 'ops', 'oncall']);
+    expect(ids(visibleRows(tree, new Set(), 'runbook'))).toEqual(['eng', 'atlas', 'runbook']);
+    expect([...withChildren(tree)].sort()).toEqual(['atlas', 'eng', 'ops']);
   });
 });

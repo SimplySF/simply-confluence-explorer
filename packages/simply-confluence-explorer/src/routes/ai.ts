@@ -34,7 +34,7 @@ import { gatePageForAi, type GateDeps } from '../spaces/aiGate.js';
 import { attachmentsFor, imagesFor, previewAccount } from '../spaces/attachments.js';
 import { collectBranch, CONTEXT_CHAR_LIMIT, leftOutNote } from '../spaces/branchContext.js';
 import { corpusSize, retrieveContext } from '../spaces/contextRetriever.js';
-import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
+import { corpusPages, MAX_CORPUS_IDS, titleRules } from '../spaces/corpus.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import { generateMetadata } from '../spaces/metadata.js';
 import { isImageChoice, loadSpaceSettings, saveSpaceSettings } from '../spaces/spaceSettings.js';
@@ -63,9 +63,19 @@ async function chosenOf(
   const tags = list(fields.tags)
     .filter((t): t is string => typeof t === 'string')
     .map((t) => t.trim().toLowerCase());
-  if (pageIds.length + dirs.length > MAX_CORPUS_IDS || ![...pageIds, ...dirs].every(isValidPageId))
-    throw new HttpError(400, `pageIds and dirs are lists of at most ${MAX_CORPUS_IDS} page ids`);
-  const scope = { kind: 'pages' as const, spaceKey, pageIds: pageIds as string[], dirs: dirs as string[], tags };
+  const leftOut = list(fields.leftOut);
+  const ids = [...pageIds, ...dirs];
+  if (ids.length > MAX_CORPUS_IDS || leftOut.length > MAX_CORPUS_IDS || ![...ids, ...leftOut].every(isValidPageId))
+    throw new HttpError(400, `pageIds, dirs and leftOut are lists of at most ${MAX_CORPUS_IDS} page ids`);
+  const scope = {
+    kind: 'pages' as const,
+    spaceKey,
+    pageIds: pageIds as string[],
+    dirs: dirs as string[],
+    tags,
+    leftOut: leftOut as string[],
+    leaveOutTitles: titleRules(fields.leaveOutTitles),
+  };
   const pages = await corpusPages(store, exclusions, scope);
   if (pages.length === 0 && pageIds.length === 0) throw new HttpError(400, 'no synced pages are chosen');
   return { ids: [...new Set([...pages.map((p) => p.id), ...(pageIds as string[])])], pages };

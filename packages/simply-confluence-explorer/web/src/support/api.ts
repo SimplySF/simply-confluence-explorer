@@ -99,7 +99,13 @@ async function call<T>(url: string, method = 'GET', body?: unknown, signal?: Abo
 
 export type Descendants = { count: number; descendantIds: string[]; titles: string[] };
 /** Pages chosen as a chat chooses them: directories with every page under them, single pages, and tags. */
-export type Chosen = { dirs?: string[]; pageIds?: string[]; tags?: string[] };
+export type Chosen = {
+  dirs?: string[];
+  pageIds?: string[];
+  tags?: string[];
+  leftOut?: string[];
+  leaveOutTitles?: string[];
+};
 /**
  * How many of some pages are in the AI index, and whether all of them fit one request; while the
  * space's search index is still being built, how far that has got instead.

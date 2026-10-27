@@ -61,7 +61,7 @@ import {
   type RetrieverDeps,
   type SectionRef,
 } from '../spaces/contextRetriever.js';
-import { corpusPages, MAX_CORPUS_IDS } from '../spaces/corpus.js';
+import { corpusPages, MAX_CORPUS_IDS, titleRules } from '../spaces/corpus.js';
 import { pause } from '../util/pause.js';
 import type { Services } from './api.js';
 import { fieldsOf, optionalString } from './browse.js';
@@ -103,13 +103,20 @@ function scopeFrom(value: unknown): SessionScope {
       throw new HttpError(400, 'chosen pages need at least one directory, tag or page');
     if (dirs.length + pageIds.length > MAX_CORPUS_IDS || tags.length > 200)
       throw new HttpError(400, `chosen pages name at most ${MAX_CORPUS_IDS} pages and 200 tags`);
-    if (![...dirs, ...pageIds].every(isValidPageId)) throw new HttpError(400, 'chosen pages are named by page id');
+    const leftOut = ids(scope.leftOut);
+    const leaveOutTitles = titleRules(scope.leaveOutTitles);
+    if (leftOut.length > MAX_CORPUS_IDS)
+      throw new HttpError(400, `chosen pages leave out at most ${MAX_CORPUS_IDS} pages`);
+    if (![...dirs, ...pageIds, ...leftOut].every(isValidPageId))
+      throw new HttpError(400, 'chosen pages are named by page id');
     return {
       kind,
       spaceKey,
       ...(dirs.length ? { dirs: dirs as string[] } : {}),
       ...(pageIds.length ? { pageIds: pageIds as string[] } : {}),
       ...(tags.length ? { tags } : {}),
+      ...(leftOut.length ? { leftOut: leftOut as string[] } : {}),
+      ...(leaveOutTitles.length ? { leaveOutTitles } : {}),
       title,
     };
   }

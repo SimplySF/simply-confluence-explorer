@@ -99,17 +99,17 @@ confirm.
 ![Space chat answering from the pages it reads, with the sections it read](../images/space-chat.webp)
 
 **Reading** above the conversation shows what the chat reads, as a row of chips. With none, it reads
-the **Whole space**: every page that the exclusion rules allow. **Add pages or tags** opens a search:
-under **Pages**, **Page** adds a page alone and **+ N sub-pages** adds it with every page under it, so
-you can choose two directories and a page from another part of the space; under **Tags**, a tag adds
-every page that carries it. Each chip is removed with its ×, a directory with its sub-pages. A
+the **Whole space**: every page that the exclusion rules allow. **Choose pages…** opens the space's
+tree over the whole window: tick a page with sub-pages to read it with everything under it, then untick
+any part of it to leave that out, such as a folder of templates; under **Tags**, a tag adds every page
+that carries it. **Leave out titles containing…** leaves out every chosen page whose title holds those words, now and later. **Done** saves, **Cancel** keeps what was there. Each chip is removed with its ×. A
 directory or tag is read as it is when you ask, so a page added under it later is read too. The count
 at the end of the row says how many of the pages are indexed; hover over it to see how each question
 reads them. A page you add shows at once, marked **Saving…**. While the chat checks its pages and
 their attachments, or the space's search index is built, the row says so with the progress, and
 **Send** waits until it is done, so nothing about the pages arrives in the middle of a conversation.
 
-![Space chat with two directories and a page chosen as chips, and how many of them are indexed](../images/space-chat.webp)
+![Space chat reading two directories, with part of one left out and a title rule, and how many of them are indexed](../images/space-chat.webp)
 
 There is no limit on how many pages a chat reads from:
 

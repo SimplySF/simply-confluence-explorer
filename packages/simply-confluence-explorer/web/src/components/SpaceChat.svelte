@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Compass, FileText, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
   import { untrack } from 'svelte';
-  import type { BranchFinding, SessionScope } from '../../../src/api/types.js';
+  import type { BranchFinding, PageTreeNode, SessionScope } from '../../../src/api/types.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { chatWaiting, type SpacePage } from '../support/pages.js';
   import { sessions, type Coverage, type DraftSummary } from '../support/api.js';
@@ -20,6 +20,8 @@
     spaceKey: string;
     /** The space's pages, to choose by name; excluded pages are never among them. */
     pages: SpacePage[];
+    /** The same pages as a tree, to choose from. */
+    tree: PageTreeNode[];
     /** Start a conversation about these pages, such as a tag's. */
     seed: ChatSeed | null;
     onSeeded: () => void;
@@ -30,7 +32,7 @@
     onWriteNewPage: (finding: BranchFinding) => void;
   };
 
-  let { spaceKey, pages, seed, onSeeded, active, onSelectPage, onPushed, onWriteNewPage }: Props = $props();
+  let { spaceKey, pages, tree, seed, onSeeded, active, onSelectPage, onPushed, onWriteNewPage }: Props = $props();
   const chat = new AiChat();
   let list = $state<DraftSummary[]>([]);
   let search = $state('');
@@ -332,6 +334,7 @@
         <!-- Each chat starts with its own choice of what to read. -->
         {#key shownChat}
           <ChatContext
+            {tree}
             {spaceKey}
             scope={chat.session?.scope ?? scope}
             {pages}
