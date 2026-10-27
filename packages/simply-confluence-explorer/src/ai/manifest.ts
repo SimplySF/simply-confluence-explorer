@@ -126,26 +126,29 @@ export class ManifestBuilder {
 }
 
 /**
- * The problems with a payload: each included item whose marker is missing, or whose text after the
- * marker is much shorter than the item, as when it was cut on its way. The guard may replace a value
- * with a placeholder of a different length, so a small difference is allowed.
+ * The problems with a payload: each included item whose marker is missing from what is sent, or whose
+ * text after the marker was much shorter than the item when the request was put together, as when it
+ * was cut on its way. The length is measured before the leak guard, which replaces values such as
+ * email addresses with shorter placeholders and so would make a page of them look cut; the guard
+ * never removes text, and every marker must still be in what is sent.
  *
  * @param manifest What the request was built to carry.
- * @param payload Everything the request will send, as one string.
+ * @param sent Everything the request will send, as one string.
+ * @param built The same before the leak guard, where each item's length is measured.
  */
-export function checkPayload(manifest: ContextManifest, payload: string): string[] {
+export function checkPayload(manifest: ContextManifest, sent: string, built = sent): string[] {
   const marked = manifest.items.filter((i) => i.included && i.marker);
-  const positions = marked.map((i) => payload.indexOf(i.marker!));
+  const positions = marked.map((i) => built.indexOf(i.marker!));
   const problems: string[] = [];
   marked.forEach((item, n) => {
     const at = positions[n];
     const name = item.label || `an item of kind ${item.kind}`;
-    if (at < 0) {
+    if (at < 0 || !sent.includes(item.marker!)) {
       problems.push(`${name} is missing`);
       return;
     }
     const following = positions.filter((p) => p > at);
-    const end = following.length ? Math.min(...following) : payload.length;
+    const end = following.length ? Math.min(...following) : built.length;
     const carried = end - at - item.marker!.length - 1;
     if (carried < item.chars * 0.8 - 100)
       problems.push(`${name} arrived with ${carried} of its ${item.chars} characters`);
