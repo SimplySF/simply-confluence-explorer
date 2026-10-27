@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.10.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.10.0...%40simplysf%2Fsimply-confluence-explorer%400.10.1) (2026-10-27)
+
+### Bug Fixes
+
+- a page the leak guard shortens is no longer refused as missing context ([#75](https://github.com/SimplySF/simply-confluence-explorer/issues/75)) ([0c7dc11](https://github.com/SimplySF/simply-confluence-explorer/commit/0c7dc11c4d6b54aec6d10e746cf5341b8ae0a530))
+
 # [0.10.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.9.6...%40simplysf%2Fsimply-confluence-explorer%400.10.0) (2026-10-27)
 
 ### Features
