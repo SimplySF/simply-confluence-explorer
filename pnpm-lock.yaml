@@ -66,8 +66,8 @@ importers:
         specifier: ^8.72.0
         version: 8.72.0(eslint@10.12.0(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       wireit:
-        specifier: ^0.14.13
-        version: 0.14.13
+        specifier: ^0.15.0
+        version: 0.15.0
 
   packages/simply-confluence-explorer:
     dependencies:
@@ -2015,10 +2015,6 @@ packages:
     resolution: {integrity: sha512-kEk4UROE3064ebMhwmW1qx5BFSBWzmqMe0UwUzn5gsbDyXHmqMUSO8MW6sieYNiRJsindpdnjg4U0D9iXUkIxQ==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
 
-  binary-extensions@2.3.0:
-    resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
-    engines: {node: '>=8'}
-
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
 
@@ -2107,10 +2103,6 @@ packages:
 
   chardet@2.2.0:
     resolution: {integrity: sha512-rddelWYNPRrXq6PtNEN2S3f6t9ILzvqaN5pVgi4kqt9jHQaXIial9PznB5iSPVlQSLNaaH22ItWz3EJtQ10+OA==}
-
-  chokidar@3.6.0:
-    resolution: {integrity: sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw==}
-    engines: {node: '>= 8.10.0'}
 
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
@@ -3116,10 +3108,6 @@ packages:
 
   is-arrayish@0.2.1:
     resolution: {integrity: sha512-zz06S8t0ozoDXMG+ube26zeCTNXcKIPJZJi8hBrF4idCLms4CG9QtK7qBl1boi5ODzFpjswb5JPmHCbMpjaYzg==}
-
-  is-binary-path@2.1.0:
-    resolution: {integrity: sha512-ZMERYes6pDydyuGidse7OsHxtbI7WVeUEozgR/g7rd0xUimYNlvZRE/K2MgZTjWy725IfelLeVcEM97mmtRGXw==}
-    engines: {node: '>=8'}
 
   is-builtin-module@5.0.0:
     resolution: {integrity: sha512-f4RqJKBUe5rQkJ2eJEJBXSticB3hGbN9j0yxxMQFqIW89Jp9WYFtzfTcRlstDKVUTRzSOTLKRfO9vIztenwtxA==}
@@ -4219,10 +4207,6 @@ packages:
   readdir-glob@1.1.3:
     resolution: {integrity: sha512-v05I2k7xN8zXvPD9N+z/uhXPaj0sUFCe2rcWZIpBsqxfP7xXFQ0tipAd/wjj1YxWyWtUS5IDJpOG82JKt2EAVA==}
 
-  readdirp@3.6.0:
-    resolution: {integrity: sha512-hOS089on8RduqdbhvQ5Z37A0ESjsqz6qnRcffsMU3495FuTdqSm+7bhJ29JvIOsBDEEnan5DPu9t3To9VRlMzA==}
-    engines: {node: '>=8.10.0'}
-
   readdirp@4.1.2:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
@@ -5015,8 +4999,8 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
-  wireit@0.14.13:
-    resolution: {integrity: sha512-Fo/VlEZKY4j53DQoW7Z/fWFrNGbnrfphgVDJdFoas5rVWUA9Z14/3AixEZcEfAuywympLCq49sTXVcD+sNtIxg==}
+  wireit@0.15.0:
+    resolution: {integrity: sha512-JOAKq9FTnDGQub2ApX7Laqjbad06hnl0inNCcPS9+VaudDnUkhle6Xy0YmgUCBSJjgJIf1htvOX+KJI/3fQLlw==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -7150,8 +7134,6 @@ snapshots:
       read-cmd-shim: 7.0.1
       write-file-atomic: 8.0.0
 
-  binary-extensions@2.3.0: {}
-
   bl@4.1.0:
     dependencies:
       buffer: 5.7.1
@@ -7250,18 +7232,6 @@ snapshots:
   character-reference-invalid@2.0.1: {}
 
   chardet@2.2.0: {}
-
-  chokidar@3.6.0:
-    dependencies:
-      anymatch: 3.1.3
-      braces: 3.0.3
-      glob-parent: 5.1.2
-      is-binary-path: 2.1.0
-      is-glob: 4.0.3
-      normalize-path: 3.0.0
-      readdirp: 3.6.0
-    optionalDependencies:
-      fsevents: 2.3.3
 
   chokidar@4.0.3:
     dependencies:
@@ -8415,10 +8385,6 @@ snapshots:
       is-decimal: 2.0.1
 
   is-arrayish@0.2.1: {}
-
-  is-binary-path@2.1.0:
-    dependencies:
-      binary-extensions: 2.3.0
 
   is-builtin-module@5.0.0:
     dependencies:
@@ -9934,10 +9900,6 @@ snapshots:
     dependencies:
       minimatch: 5.1.9
 
-  readdirp@3.6.0:
-    dependencies:
-      picomatch: 2.3.2
-
   readdirp@4.1.2: {}
 
   readdirp@5.1.1: {}
@@ -10793,12 +10755,14 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
-  wireit@0.14.13:
+  wireit@0.15.0:
     dependencies:
       brace-expansion: 5.0.12
-      chokidar: 3.6.0
+      chokidar: 4.0.3
       fast-glob: 3.3.3
+      glob-parent: 6.0.2
       jsonc-parser: 3.3.1
+      picomatch: 4.0.7
       proper-lockfile: 4.1.2
 
   word-wrap@1.2.5: {}
