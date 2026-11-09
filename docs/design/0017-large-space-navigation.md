@@ -70,6 +70,8 @@ there is no way to gather those pages under one directory without moving each on
   which candidates a plan's area found. A plan that cannot be read leaves one search of the corpus.
 - **The diversity cap** applies to every search: no directory, and no series of similar titles,
   takes more than 8 of the 40 candidates unless the cap would leave fewer than 10.
+  A thorough answer takes its 150 sections across the planned areas the same way, and a batched
+  review groups pages by their area one level below the corpus's top before their shared topics.
 - **A structured request** gives the model one task, short numbered rules and an example of the
   reply, and offers its choices by number. A reply that fails its check is asked for once more with
   the reason; a second failure is named under **What was sent** and counted in the telemetry. In an
@@ -102,6 +104,8 @@ there is no way to gather those pages under one directory without moving each on
 - `test/structured.test.ts`: a reply is validated, repaired once, and a fallback is reported.
 - `test/digests.test.ts`: a digest is made from summaries only, and goes stale when an exclusion is
   added.
+- `test/plannedRetrieval.test.ts`: the cap, the plan and its fallback, the map shown in rounds, and
+  no excluded directory in a planning request.
 - `test/retrievalEval.test.ts`: on a deep generated space, questions whose answers sit in deep areas
   find those areas; the share found is held above a floor.
 - `test/restructure.test.ts`: a page is never moved under itself, a changed page is refused at the

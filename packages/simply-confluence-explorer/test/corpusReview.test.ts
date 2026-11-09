@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { BranchFinding } from '../src/api/types.js';
-import { batchPages, mergeFindings, type BatchPage } from '../src/branches/corpusReview.js';
+import { areaOf, batchPages, mergeFindings, type BatchPage } from '../src/branches/corpusReview.js';
 
 const page = (id: string, size: number, topics: string[] = [], parent?: string): BatchPage => ({
   id,
@@ -49,6 +49,28 @@ describe('packing pages into batches', () => {
       ['a', 'c'],
       ['d', 'b'],
     ]);
+  });
+
+  it('compares the pages of one area together even when their tags differ, topic by topic', () => {
+    const inArea = (id: string, topics: string[], area: string): BatchPage => ({ ...page(id, 30, topics), area });
+    const pages = [
+      inArea('refunds', ['refunds'], 'payments'),
+      inArea('login', ['auth'], 'identity'),
+      inArea('payouts', ['money'], 'payments'),
+      inArea('returns', ['refunds'], 'payments'),
+      inArea('keys', ['auth'], 'identity'),
+    ];
+    expect(batchPages(pages, 100)).toEqual([
+      ['refunds', 'returns', 'payouts'],
+      ['login', 'keys'],
+    ]);
+  });
+
+  it('places a page in the area one level below the corpus top, or in its nearest directory', () => {
+    const at = (id: string, ...ids: string[]) => ({ id, ancestors: ids.map((a) => ({ id: a, title: a })) });
+    expect(areaOf(at('deep', 'space', 'eng', 'payments', 'refunds'), 1)).toBe('payments');
+    expect(areaOf(at('payments', 'space', 'eng'), 1)).toBe('payments');
+    expect(areaOf(at('eng', 'space'), 1)).toBe('space');
   });
 
   it('starts a new batch for a group that would fit one alone, rather than splitting it', () => {

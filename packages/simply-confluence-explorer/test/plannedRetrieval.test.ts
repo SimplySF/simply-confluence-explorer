@@ -24,7 +24,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AiEngine } from '../src/ai/engine.js';
 import { ManifestBuilder, summarise } from '../src/ai/manifest.js';
 import type { PageDetail } from '../src/api/types.js';
-import { diversify, retrieveContext } from '../src/spaces/contextRetriever.js';
+import { diversify, retrieveContext, sectionBatches } from '../src/spaces/contextRetriever.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SearchIndex } from '../src/spaces/searchIndex.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
@@ -268,5 +268,14 @@ describe('a planned search', () => {
     const r = await retrieveContext('PLAN', visible, { question: 'refunds' }, { ...deps, ai }, { budget: 200_000 });
     expect(r.corpus.mode).toBe('full');
     expect(sent).toHaveLength(0);
+  });
+
+  it('spreads a thorough answer across the planned areas, and records the plan', async () => {
+    const deps = await space();
+    const visible = await deps.store.visiblePages('PLAN');
+    const { ai } = recordingAi(PAYMENTS_PLAN);
+    const batches = await sectionBatches('PLAN', visible, { question: 'refunds to a card' }, { ...deps, ai }, 1_500);
+    expect(batches.batches.flat().some((id) => id.startsWith('3#'))).toBe(true);
+    expect(batches.planned.plan?.searched.map((a) => a.title)).toEqual(['Payments']);
   });
 });

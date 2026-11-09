@@ -17,7 +17,7 @@
 import type { DirectoryDigest, PageDetail } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
-import { ManifestBuilder } from '../ai/manifest.js';
+import { ManifestBuilder, summarise, type ManifestSummary } from '../ai/manifest.js';
 import { askStructured, chosenByNumber, type StructuredPrompt } from '../ai/structured.js';
 import type { Tracer } from '../telemetry/tracer.js';
 import { pause } from '../util/pause.js';
@@ -475,11 +475,15 @@ export async function retrieveContext(
   };
 }
 
-/** The sections a thorough answer reads, as batches that each fit one request. */
-export type SectionBatches = { batches: string[][]; sections: number; weak: boolean };
+/**
+ * The sections a thorough answer reads, as batches that each fit one request, and what its plan
+ * recorded: the areas searched, and a plan whose reply could not be used.
+ */
+export type SectionBatches = { batches: string[][]; sections: number; weak: boolean; planned: ManifestSummary };
 
 /**
- * Ranks up to `THOROUGH_SECTIONS` of the corpus's sections for the question and packs them into
+ * Ranks up to `THOROUGH_SECTIONS` of the corpus's sections for the question, across the areas a plan
+ * chooses as `retrieveContext` does, and packs them into
  * batches of at most `budget` characters. A page's sections are kept together, in the order its best
  * section ranked, so a batch reads whole stretches of a page rather than scattered pieces. Each batch
  * is read later with `readBatch`, which checks every section again before it is sent.
@@ -493,9 +497,11 @@ export async function sectionBatches(
 ): Promise<SectionBatches> {
   const key = spaceKey.toUpperCase();
   const byId = new Map(pages.map((p) => [p.id, p]));
-  deps.onStep?.(`Searching ${pages.length.toLocaleString('en-US')} pages`);
+  const manifest = new ManifestBuilder();
+  const { areas } = await planFor(key, pages, query, deps, budget, manifest);
+  deps.onStep?.(searchStep(pages, areas));
   const text = [query.question, query.previous].filter(Boolean).join(' ');
-  const { ranked, weak } = await rankSections(key, byId, text, query.question, deps, THOROUGH_SECTIONS);
+  const { ranked, weak } = await rankSections(key, byId, text, query.question, deps, THOROUGH_SECTIONS, areas);
   const byPage = new Map<string, Section[]>();
   for (const id of ranked) {
     const [pageId, index] = id.split('#');
@@ -520,7 +526,12 @@ export async function sectionBatches(
     }
   }
   if (current.length) batches.push(current);
-  return { batches, sections: batches.reduce((n, b) => n + b.length, 0), weak };
+  return {
+    batches,
+    sections: batches.reduce((n, b) => n + b.length, 0),
+    weak,
+    planned: summarise(manifest.build()),
+  };
 }
 
 /** One batch of a thorough answer, as context: each section checked by the secrets check, until `budget`. */
