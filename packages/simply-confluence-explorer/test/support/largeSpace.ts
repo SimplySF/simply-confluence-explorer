@@ -268,3 +268,298 @@ export async function walk(space: LargeSpace, onStep: (step: string) => void = (
   });
   return { status, missing: after.missing, answered };
 }
+
+/** A page of the deep space as written: its title, its sections' text, and the pages below it. */
+type DeepPage = { title: string; text: string[]; children?: DeepPage[] };
+type Place = { id: string; title: string };
+
+/**
+ * The deep space's functional areas. Each answer sits four or five levels down. Most answering pages
+ * have plain titles such as "Card returns", so a question that names its area ("payments") meets
+ * that word only in the titles of the directories above them.
+ */
+const AREAS: DeepPage[] = [
+  {
+    title: 'Engineering handbook',
+    text: ['How the engineering teams work, and where each team keeps its pages.'],
+    children: [
+      {
+        title: 'Platform',
+        text: ['The shared services every product is built on.'],
+        children: [
+          {
+            title: 'Commerce',
+            text: ['The services that take money in and send it back out.'],
+            children: [
+              {
+                title: 'Payments',
+                text: ['The ledger team owns this directory.'],
+                children: [
+                  {
+                    title: 'Refunds',
+                    text: ['How money goes back to a customer.'],
+                    children: [
+                      {
+                        title: 'Card returns',
+                        text: [
+                          'Money goes back to the original card within five working days.',
+                          'A return above 500 credits needs a second approver from the ledger team.',
+                        ],
+                      },
+                      {
+                        title: 'Retry schedule',
+                        text: [
+                          'A return that the issuer declines is attempted again three times: after one hour, after six hours and after one day.',
+                          'After the third attempt the ledger team is paged and the customer is told by email.',
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    title: 'Chargeback evidence',
+                    text: [
+                      'A dispute is answered within seven days with the receipt, the delivery record and the chat log.',
+                    ],
+                  },
+                  {
+                    title: 'Payout timing',
+                    text: ['Merchants are paid every Tuesday for the week before, less the fees of that week.'],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: 'Security',
+            text: ['How the platform proves who is calling it.'],
+            children: [
+              {
+                title: 'Identity',
+                text: ['The identity team owns sign-in and machine users.'],
+                children: [
+                  {
+                    title: 'Single sign-on',
+                    text: ['Every staff tool signs in through the company directory.'],
+                    children: [
+                      {
+                        title: 'Session lifetime',
+                        text: [
+                          'A sign-on session lasts eight hours, and is renewed while the person keeps working.',
+                          'After twelve hours the person is asked for a second factor again.',
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    title: 'Machine users',
+                    text: [
+                      'Each automated caller gets its own key, which is rotated every ninety days.',
+                      'A key is never shared between two pipelines, and a human owner is named for each one.',
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Product',
+    text: ['What each product does and how it is meant to behave.'],
+    children: [
+      {
+        title: 'Mobile apps',
+        text: ['The apps people carry with them.'],
+        children: [
+          {
+            title: 'Field app',
+            text: ['The app the inspectors use on site.'],
+            children: [
+              {
+                title: 'Offline mode',
+                text: ['What the app does without a connection.'],
+                children: [
+                  {
+                    title: 'Merge rules',
+                    text: [
+                      'When the device reconnects, each changed form is merged field by field.',
+                      'Where both sides changed one field, the later change wins and the other is kept as a comment.',
+                    ],
+                  },
+                ],
+              },
+              {
+                title: 'Device limits',
+                text: ['Each device keeps at most 2 GB of drawings and photos, and drops the oldest first.'],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Operations',
+    text: ['How the systems are run day to day.'],
+    children: [
+      {
+        title: 'Infrastructure',
+        text: ['Hosting, networks and the places data is kept.'],
+        children: [
+          {
+            title: 'Regions',
+            text: ['Where the platform runs.'],
+            children: [
+              {
+                title: 'Data residency',
+                text: ['Which copy of a tenant lives where.'],
+                children: [
+                  {
+                    title: 'Where tenants live',
+                    text: [
+                      'A tenant whose contract names the European Union is kept in Frankfurt, with its backups in Dublin.',
+                      'Every other tenant is kept in Virginia.',
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'People',
+    text: ['Joining, working here and leaving.'],
+    children: [
+      {
+        title: 'Onboarding',
+        text: ['The path a new colleague takes.'],
+        children: [
+          {
+            title: 'First week',
+            text: ['What happens in the first five days.'],
+            children: [
+              {
+                title: 'Day one',
+                text: ['A buddy meets the new colleague, and the afternoon is spent on the security course.'],
+              },
+              {
+                title: 'Equipment',
+                text: ['What a new starter is given.'],
+                children: [
+                  {
+                    title: 'Laptop choices',
+                    text: [
+                      'Engineers get a 16-inch laptop with 32 GB of memory; everyone else gets the 14-inch model.',
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+/** The fixes a release note lists, which share many words with the area-recall questions. */
+const RELEASE_LINES = [
+  'Fixed: a failed refund retry fired before the card issuer answered.',
+  'Changed: refunds to a card now show in the customer history.',
+  'Fixed: offline edits made on the phone were lost when it reconnected and merged.',
+  'Improved: single sign-on renews the session sooner for each person.',
+  'Changed: customer data exports name the region the tenant is stored in.',
+  'Fixed: the laptop setup script failed for a new starter.',
+  'Improved: service accounts can be filtered on the identity screen.',
+  'Changed: dashboards load the last week of data first.',
+];
+
+const FILLER_WORDS =
+  'deploy rollback database gateway kafka postgres runbook incident pager vpn access card session data region phone retry failed edit storage customer schedule limit owner review'.split(
+    ' ',
+  );
+const FILLER_TOPICS = ['Gateway', 'Ledger', 'Search', 'Mobile', 'Network', 'Support', 'Billing', 'Reporting'];
+
+/**
+ * A deep generated space of about 3,200 pages, for measuring whether retrieval reaches the area that
+ * holds an answer (design doc 0017): the functional areas above, four or five levels down; a series
+ * of 400 release notes nested by year and minor version; a directory of templates; and filler pages
+ * under every top-level directory, down to four levels below it.
+ *
+ * @returns The id of each page by its title, so a question's area can be found.
+ */
+export function writeDeepSpace(store: SpaceStore, key: string): Map<string, string> {
+  const ids = new Map<string, string>();
+  const write = (title: string, text: string[], ancestors: Place[]): Place => {
+    const id = String(ids.size + 1);
+    store.writePage(
+      key,
+      {
+        id,
+        title,
+        spaceKey: key,
+        parentId: ancestors.at(-1)?.id,
+        version: 1,
+        author: 'a',
+        lastModified: '2026-01-01',
+        storageXml: text.map((t, s) => `<h2>Part ${s}</h2><p>${t}</p>`).join(''),
+        labels: [],
+        attachments: [],
+        ancestors,
+      },
+      '',
+      [],
+    );
+    ids.set(title, id);
+    return { id, title };
+  };
+  const tops: Place[] = [];
+  const writeTree = (page: DeepPage, ancestors: Place[]): void => {
+    const place = write(page.title, page.text, ancestors);
+    if (ancestors.length === 0) tops.push(place);
+    for (const child of page.children ?? []) writeTree(child, [...ancestors, place]);
+  };
+  AREAS.forEach((area) => writeTree(area, []));
+
+  const notes = write('Release notes', ['Every release, newest first.'], []);
+  for (let year = 0; year < 4; year++) {
+    const yearPage = write(String(2022 + year), [`The releases of ${2022 + year}.`], [notes]);
+    for (let minor = 0; minor < 4; minor++) {
+      const series = write(`Release ${year + 1}.${minor}`, ['The patch releases of this version.'], [notes, yearPage]);
+      for (let patch = 0; patch < 25; patch++) {
+        const n = (year * 4 + minor) * 25 + patch;
+        const lines = [0, 1, 2].map((k) => RELEASE_LINES[(n + k * 3) % RELEASE_LINES.length]);
+        write(`Release ${year + 1}.${minor}.${patch} notes`, lines, [notes, yearPage, series]);
+      }
+    }
+  }
+
+  const templates = write('Templates', ['Pages to copy when starting a new one.'], []);
+  for (let t = 0; t < 30; t++)
+    write(
+      `Template ${t + 1}: ${FILLER_TOPICS[t % FILLER_TOPICS.length].toLowerCase()} page`,
+      [
+        'Describe the owner, the schedule and the limits here.',
+        'List each failed step and its retry, and who to page.',
+      ],
+      [templates],
+    );
+
+  // Filler hangs off the top-level directories in a tree four pages wide, so it reaches four levels
+  // below them and uses the same words as the questions without answering any.
+  const filler: Place[][] = [];
+  const para = (seed: number): string =>
+    Array.from({ length: 40 }, (_, w) => FILLER_WORDS[(seed * 7 + w * 13) % FILLER_WORDS.length]).join(' ');
+  for (let f = 0; filler.length < 2720; f++) {
+    const above = f < 40 ? [tops[f % tops.length]] : filler[Math.floor((f - 40) / 4)];
+    const place = write(`${FILLER_TOPICS[f % FILLER_TOPICS.length]} notes ${f + 1}`, [para(f), para(f + 1)], above);
+    filler.push([...above, place]);
+  }
+  store.writeManifest(key, { spaceKey: key, name: 'Deep', lastSynced: '2026-01-01', pageCount: ids.size });
+  return ids;
+}

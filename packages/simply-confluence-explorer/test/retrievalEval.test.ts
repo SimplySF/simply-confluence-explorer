@@ -15,9 +15,13 @@
  */
 
 // How well retrieval finds the page that answers a question, among the test dataset's pages and
-// about 3,000 generated pages that use the same words (design doc 0008). The score may rise; a
-// change that lowers it fails here.
+// about 3,000 generated pages that use the same words (design doc 0008), and how often it reaches the
+// area of a deep space that holds an answer (design doc 0017). The scores may rise; a change that
+// lowers either fails here.
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PageDetail } from '../src/api/types.js';
 import { retrieveContext } from '../src/spaces/contextRetriever.js';
@@ -25,6 +29,7 @@ import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SearchIndex } from '../src/spaces/searchIndex.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
+import { writeDeepSpace } from './support/largeSpace.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
 /** Questions as a person would ask them, each with the page that answers it. */
@@ -121,5 +126,76 @@ describe('retrieval over a large space', () => {
     }
     const score = (QUESTIONS.length - missed.length) / QUESTIONS.length;
     expect(score, `score ${score.toFixed(2)}; missed:\n${missed.join('\n')}`).toBeGreaterThanOrEqual(FLOOR);
+  }, 120_000);
+});
+
+/**
+ * Questions about a deep space, each with the directory whose area holds the answer and the page in
+ * it that answers. Some name the area only by a directory's title ("payments", "identity",
+ * "onboarding", "field app"), a word the answering page's own title and text never use; others share
+ * most of their words with the 400 release notes, which then crowd out the page that answers.
+ */
+const AREA_QUESTIONS: Array<[question: string, area: string, answer: string]> = [
+  ['how does the payments area handle refunds', 'Payments', 'Card returns'],
+  ['how often do we retry a failed refund to a card', 'Payments', 'Retry schedule'],
+  ['how are offline edits merged when the phone reconnects', 'Offline mode', 'Merge rules'],
+  ['what storage limits does the field app set', 'Field app', 'Device limits'],
+  ['how long does a single sign-on session last', 'Single sign-on', 'Session lifetime'],
+  ['what does the identity area require for service accounts', 'Identity', 'Machine users'],
+  ['in which region is customer data for a european tenant stored', 'Data residency', 'Where tenants live'],
+  ['which laptop does a new starter get', 'Equipment', 'Laptop choices'],
+  ['what does onboarding cover in the first days', 'Onboarding', 'Day one'],
+];
+
+/**
+ * How many area-recall questions read at least one page of the answer's area, and how many read the
+ * answering page itself, at or above which this test passes. A directory page counts toward reaching
+ * its area, though it rarely holds the answer, which is why both are measured. Keyword search over
+ * each page's own words reached 7 areas and 3 answering pages. The planned retrieval of design doc
+ * 0017, which searches the areas a plan chooses, is expected to raise both.
+ */
+const AREA_FLOOR = { areas: 7, answers: 3 };
+
+describe('area recall on a deep space', () => {
+  it('reaches the area and the page that hold each answer at least as often as it did', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-deep-'));
+    try {
+      const exclusions = new ExclusionManager(dataDir, () => undefined);
+      const store = new SpaceStore(dataDir, exclusions, () => undefined);
+      const ids = writeDeepSpace(store, 'DEEP');
+      const index = new SearchIndex(store);
+      await index.ready('DEEP');
+      const pages = await store.visiblePages('DEEP');
+      const byId = new Map(pages.map((p) => [p.id, p]));
+      const lines: string[] = [];
+      const reached = { areas: 0, answers: 0 };
+      for (const [question, area, answer] of AREA_QUESTIONS) {
+        const areaId = ids.get(area)!;
+        const inArea = (id: string): boolean => id === areaId || !!byId.get(id)?.ancestors.some((a) => a.id === areaId);
+        // eslint-disable-next-line no-await-in-loop -- each question in turn
+        const r = await retrieveContext(
+          'DEEP',
+          pages,
+          { question },
+          { store, exclusions, index, dataDir },
+          { budget: 20_000 },
+        );
+        expect(r.corpus.mode).toBe('retrieved');
+        const found = r.selectedPages.filter((p) => inArea(p.id)).length;
+        const answered = r.selectedPages.some((p) => p.id === ids.get(answer));
+        if (found) reached.areas++;
+        if (answered) reached.answers++;
+        lines.push(
+          `${found} of ${r.selectedPages.length} pages in ${area}, answer ${answered ? 'read' : 'missed'} · ${question}`,
+        );
+      }
+      const report = `areas ${reached.areas} of 9, answers ${reached.answers} of 9:\n${lines.join('\n')}`;
+      // Printed, so a change to retrieval can report the numbers before and after it.
+      process.stdout.write(`area recall: ${report}\n`);
+      expect(reached.areas, report).toBeGreaterThanOrEqual(AREA_FLOOR.areas);
+      expect(reached.answers, report).toBeGreaterThanOrEqual(AREA_FLOOR.answers);
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
   }, 120_000);
 });
