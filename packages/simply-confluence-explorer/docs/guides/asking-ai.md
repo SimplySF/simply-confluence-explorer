@@ -166,6 +166,7 @@ and offers **Index the rest**, which runs in the background and shows in the hea
 
 Small pages are indexed several to a request, up to about 60,000 characters, and a few requests run
 at once: 2 for the Gemini CLI and 4 for an API provider, set by **Requests at once** in Settings.
+Each directory then gets a digest, a dozen to a request, from its pages' titles, summaries and tags, never their text.
 The **⋯** menu beside **Exclusions** says how many requests a run will take before it starts. A failed request is tried
 again; a page still left out is listed with its reason under **See why**, and the next run retries it.
 
@@ -186,8 +187,8 @@ AI index** redoes only those pages.
 and that a missing key or model is reported before anything is sent. `test/sessions.test.ts` checks
 conversations, the history limit, file uploads, chosen directories, pages and tags, reading in full
 or by section, and finding a section by meaning. `test/sections.test.ts`, `test/searchIndex.test.ts`,
-`test/metadata.test.ts`, `test/indexPacks.test.ts` and `test/embeddings.test.ts` check how pages are
-split, searched, summarised, packed and embedded, and `test/retrievalEval.test.ts` measures whether
+`test/metadata.test.ts`, `test/indexPacks.test.ts`, `test/digests.test.ts` and `test/embeddings.test.ts` check how pages are
+split, searched, summarised, packed, digested by directory and embedded, and `test/retrievalEval.test.ts` measures whether
 fixed questions find the right pages. `test/contextDelivery.test.ts` checks What was sent and that
 every item it lists reached the AI, and `test/thoroughAnswer.test.ts` checks thorough answers. `test/aiRoutes.test.ts` checks that excluded pages are refused and that summaries reach
 the table of contents. `test/e2e/ai.e2e.ts` asks questions against a real Confluence Data Center,

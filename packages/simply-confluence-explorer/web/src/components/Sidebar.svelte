@@ -20,7 +20,7 @@
   import type { ConfluenceSpace, PageTreeNode, SyncedSpace, TaggedPages } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { syncLine } from '../support/spaceStatus.js';
-  import { ancestorsOf, collapsedFor, visibleRows, withChildren } from '../support/tree.js';
+  import { ancestorsOf, collapsedFor, descendantCounts, visibleRows, withChildren } from '../support/tree.js';
   import { untrack } from 'svelte';
   import SpaceActions from './SpaceActions.svelte';
   import TagsView from './TagsView.svelte';
@@ -123,6 +123,7 @@
   });
 
   const rows = $derived(visibleRows(tree, collapsed, pageFilter));
+  const below = $derived(descendantCounts(tree));
 
   $effect(() => {
     if (focusId) document.getElementById(`tree-${focusId}`)?.scrollIntoView({ block: 'nearest' });
@@ -429,6 +430,7 @@
             <FileText size={14} class="tree-icon" />
           {/if}
           <span class="tree-node-title">{r.node.title}</span>
+          {#if r.hasChildren}<span class="tree-node-count" title="Pages below it">{below.get(r.node.id)}</span>{/if}
         </div>
       {/each}
     {/if}

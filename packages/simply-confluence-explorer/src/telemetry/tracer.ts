@@ -28,8 +28,9 @@ export type Attrs = Record<string, string | number | boolean | null | undefined 
 /** Problems flagged without any setup, shown until someone looks at them. */
 export type ProblemKind = 'frozen' | 'context' | 'ai-failures' | 'index-failures';
 
-/** The counters the health numbers are built from. */
-export type Metric = 'ai.requests' | 'ai.failures' | 'index.pages' | 'index.failures' | 'http.requests' | 'http.errors';
+/** The counters the health numbers are built from; `ai.fallbacks` are structured replies unusable after a repair. */
+export type Metric =
+  'ai.requests' | 'ai.failures' | 'ai.fallbacks' | 'index.pages' | 'index.failures' | 'http.requests' | 'http.errors';
 
 export type ActiveSpan = {
   traceId: string;

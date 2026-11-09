@@ -15,6 +15,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -52,4 +54,22 @@ describe('budgets', () => {
       expect(row.ok, detail).toBe(true);
     });
   }
+});
+
+describe('the prose budget', () => {
+  it("does not count the copies of the documents in an agent's worktree under .claude/, which made it fail by thousands of lines", () => {
+    const prose = (): number | undefined =>
+      (JSON.parse(execFileSync(process.execPath, [script, '--json'], { encoding: 'utf8' })) as BudgetRow[]).find(
+        (r) => r.name === 'MAX_DOC_LINES',
+      )?.value;
+    const dir = path.join(path.dirname(script), '..', '.claude', 'worktrees', 'budget-probe');
+    const before = prose();
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(path.join(dir, 'README.md'), 'a line\n'.repeat(500));
+      expect(prose()).toBe(before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

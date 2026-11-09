@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { PageTreeNode } from '../../src/api/types.js';
-import { ancestorsOf, collapsedFor, visibleRows, withChildren } from '../../web/src/support/tree.js';
+import { ancestorsOf, collapsedFor, descendantCounts, visibleRows, withChildren } from '../../web/src/support/tree.js';
 
 const node = (id: string, children: PageTreeNode[] = []): PageTreeNode =>
   ({ id, title: id, children }) as unknown as PageTreeNode;
@@ -44,5 +44,20 @@ describe('the rows a tree shows', () => {
     expect(ids(visibleRows(tree, new Set(['atlas']), ''))).toEqual(['eng', 'atlas', 'notes', 'ops', 'oncall']);
     expect(ids(visibleRows(tree, new Set(), 'runbook'))).toEqual(['eng', 'atlas', 'runbook']);
     expect([...withChildren(tree)].sort()).toEqual(['atlas', 'eng', 'ops']);
+  });
+});
+
+describe('the count of pages below each row', () => {
+  it('counts every page below a page at any depth, and none below a leaf', () => {
+    const counts = descendantCounts(tree);
+    expect(Object.fromEntries(counts)).toEqual({
+      eng: 4,
+      atlas: 2,
+      devops: 0,
+      runbook: 0,
+      notes: 0,
+      ops: 1,
+      oncall: 0,
+    });
   });
 });

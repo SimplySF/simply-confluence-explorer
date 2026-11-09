@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 import { WorkerPool } from '../src/workers/pool.js';
 import { runTask } from '../src/workers/tasks.js';
@@ -121,5 +122,43 @@ describe('what a worker thread loads', () => {
     expect(modules).toContain('workers/tasks.ts');
     for (const banned of ['ai/providers.ts', 'ai/guard.ts', 'ai/engine.ts', 'confluence/client.ts', 'gitlab/client.ts'])
       expect(modules, `a worker thread loads ${banned}`).not.toContain(banned);
+  });
+});
+
+describe('the files a worker thread loads from the sources', () => {
+  it('use only TypeScript that Node can strip, where Node 26.13 dropped the flag that transformed the rest and every worker failed to start', () => {
+    // The worker's runtime imports, followed from its entry; a type-only import is erased and not loaded.
+    const loaded = new Set<string>();
+    const follow = (file: string): void => {
+      if (loaded.has(file)) return;
+      loaded.add(file);
+      for (const m of fs
+        .readFileSync(file, 'utf8')
+        .matchAll(/^(?:import|export)(?!\s+type\b)[^;]*?from\s+'(\.[^']+)'/gm)) {
+        const target = path.resolve(path.dirname(file), m[1]).replace(/\.js$/, '.ts');
+        if (fs.existsSync(target)) follow(target);
+      }
+    };
+    follow(fileURLToPath(new URL('../src/workers/worker.ts', import.meta.url)));
+    const program = ts.createProgram([...loaded], {
+      erasableSyntaxOnly: true,
+      noEmit: true,
+      module: ts.ModuleKind.Node16,
+      moduleResolution: ts.ModuleResolutionKind.Node16,
+      target: ts.ScriptTarget.ES2022,
+      skipLibCheck: true,
+      types: ['node'],
+    });
+    // 1294: this syntax is not allowed when only erasable syntax is.
+    const refused = [...loaded].flatMap((file) =>
+      [
+        ...program.getSyntacticDiagnostics(program.getSourceFile(file)),
+        ...program.getSemanticDiagnostics(program.getSourceFile(file)),
+      ]
+        .filter((d) => d.code === 1294)
+        .map((d) => `${path.basename(file)}: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`),
+    );
+    expect(loaded.size).toBeGreaterThan(3);
+    expect(refused).toEqual([]);
   });
 });

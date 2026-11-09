@@ -41,19 +41,35 @@ import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
 
 // A review, or a request for changes, over more pages than one request can carry (ADR-051). The
-// pages are grouped by the topics their metadata shares, so pages about one subject are compared in
-// the same request, the groups are packed into batches that each fit, and each batch is reviewed in
+// pages are grouped by the area of the tree they sit in, then by the topics their metadata shares,
+// so pages about one subject are compared in the same request even where their tags differ, the groups are packed into batches that each fit, and each batch is reviewed in
 // turn. The findings are merged into one answer in the conversation, which is written only when the
 // whole run finishes, so a stopped or failed run leaves nothing behind (ADR-047).
 
-/** A page as batching sees it: its size, its topics, and the directory it sits in. */
-export type BatchPage = { id: string; size: number; topics: string[]; parent?: string };
+/**
+ * A page as batching sees it: its size, its topics, the directory it sits in, and the area of the
+ * corpus it belongs to (`areaOf`).
+ */
+export type BatchPage = { id: string; size: number; topics: string[]; parent?: string; area?: string };
 
 /**
- * Packs pages into batches no larger than `budget`. Pages are first grouped: by their most common
- * shared topic, then, for pages with no topic left to share, by the directory they sit in. Whole
- * groups are packed in turn, so two pages of one group share a batch whenever they fit in one; a
- * group larger than a batch is split across as few as it needs.
+ * The area of a corpus a page belongs to: its ancestor one level below the corpus's top pages, or,
+ * for a page no deeper than that, the page itself when it is at that level or else its parent.
+ *
+ * @param top How many ancestors the corpus's top pages have.
+ */
+export function areaOf(page: Pick<PageDetail, 'id' | 'ancestors'>, top: number): string {
+  return (
+    page.ancestors[top + 1]?.id ?? (page.ancestors.length === top + 1 ? page.id : (page.ancestors.at(-1)?.id ?? ''))
+  );
+}
+
+/**
+ * Packs pages into batches no larger than `budget`. Pages with an area are grouped by it, and within
+ * it ordered by their most common shared topic; other pages are grouped by that topic, then, with no
+ * topic left to share, by the directory they sit in. Whole groups are packed in turn, so two pages of
+ * one group share a batch whenever they fit in one; a group larger than a batch is split across as
+ * few as it needs, keeping pages of one topic together.
  *
  * @param pages The pages, in the order they should be read.
  * @param budget How many characters one batch may hold.
@@ -62,14 +78,19 @@ export function batchPages(pages: BatchPage[], budget: number): string[][] {
   const uses = new Map<string, number>();
   for (const p of pages) for (const t of new Set(p.topics)) uses.set(t, (uses.get(t) ?? 0) + 1);
   const groups = new Map<string, BatchPage[]>();
+  // The topic most pages share is the one most likely to put related pages together.
+  const sharedOf = (p: BatchPage): string =>
+    p.topics.filter((t) => (uses.get(t) ?? 0) > 1).sort((a, b) => (uses.get(b) ?? 0) - (uses.get(a) ?? 0))[0] ?? '';
   for (const p of pages) {
-    // The topic most pages share is the one most likely to put related pages together.
-    const shared = p.topics
-      .filter((t) => (uses.get(t) ?? 0) > 1)
-      .sort((a, b) => (uses.get(b) ?? 0) - (uses.get(a) ?? 0))[0];
-    const key = shared ? `topic:${shared}` : `dir:${p.parent ?? ''}`;
+    const shared = sharedOf(p);
+    const key = p.area !== undefined ? `area:${p.area}` : shared ? `topic:${shared}` : `dir:${p.parent ?? ''}`;
     groups.set(key, [...(groups.get(key) ?? []), p]);
   }
+  for (const [key, group] of groups)
+    if (key.startsWith('area:')) {
+      const order = [...new Set(group.map(sharedOf))];
+      group.sort((a, b) => order.indexOf(sharedOf(a)) - order.indexOf(sharedOf(b)));
+    }
   const batches: string[][] = [];
   let current: string[] = [];
   let used = 0;
@@ -198,6 +219,8 @@ export type ThoroughRequest = {
   /** The account of a batch's pages' attachments and the images it sends, by page id (ADR-069). */
   account?: (pageIds: string[]) => { images: ImageInput[]; report: AttachmentsReport };
   imageChoice?: ImageChoice;
+  /** What planning the search recorded, shown with what the batches sent (ADR-079). */
+  planned?: ManifestSummary;
 };
 
 /** What a batch's notes say when nothing in it helps, so the batch counts as read with nothing to add. */
@@ -258,12 +281,14 @@ export class CorpusReviews {
     this.refuseSecond(request.sessionId);
     const key = request.spaceKey.toUpperCase();
     const byId = new Map(request.pages.map((p) => [p.id, p]));
+    const top = Math.min(...request.pages.map((p) => p.ancestors.length));
     const batches = batchPages(
       request.pages.map((p) => ({
         id: p.id,
         size: this.deps.pageSize(key, p),
         topics: this.deps.readMetadataTopics(key, p),
         parent: p.ancestors.at(-1)?.id,
+        area: areaOf(p, top),
       })),
       this.deps.budget,
     ).map((ids) => ids.map((id) => byId.get(id)!));
@@ -455,7 +480,7 @@ export class CorpusReviews {
     const history = historyToSend(session.turns);
     const historyChars = history.reduce((n, t) => n + t.text.length, 0);
     const notes: Array<{ batch: number; text: string }> = [];
-    const summaries: ManifestSummary[] = [];
+    const summaries: ManifestSummary[] = [request.planned].flatMap((p) => (p ? [p] : []));
     const read: ReadPage[][] = [];
     const withheld: string[] = [];
     const overflow: string[] = [];

@@ -38,10 +38,12 @@ export type CatalogEntry = Pick<
   documentType?: string;
   /** Its AI summary is of the current kind. */
   indexed?: boolean;
+  /** Characters of Confluence storage, which the Space map adds up for each directory. */
+  size?: number;
 };
 
 /** Bumped when an entry gains or loses a field, so a catalog written before is built again. */
-const FORMAT = 1;
+const FORMAT = 2;
 /** How long after a change the catalog is saved, so a sync or an index run saves it once. */
 const SAVE_AFTER_MS = 1000;
 
@@ -67,6 +69,7 @@ export function entryOf(page: PageDetail, metadata?: PageMetadata): CatalogEntry
     author,
     lastModified,
     webUrl,
+    size: page.storageXml.length,
     ...(metadata ? withMetadata(metadata) : {}),
   };
 }

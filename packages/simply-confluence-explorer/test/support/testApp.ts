@@ -46,13 +46,43 @@ export type TestApp = {
 };
 
 /**
+ * The pages of a pack request, each with a line for every section it lists, as a model that follows
+ * the prompt replies; a pack entry without them is not kept (ADR-079).
+ */
+export function packedPages(text: string): Array<{ id: string; sections: string[] }> {
+  return [...text.matchAll(/^=== PAGE (\S+): .*===\nSections:\n((?:\d+\. .*\n?)*)/gm)].map((m) => ({
+    id: m[1],
+    sections: m[2]
+      .split('\n')
+      .filter(Boolean)
+      .map((heading) => `What ${heading.replace(/^\d+\. /, '')} says.`),
+  }));
+}
+
+/**
  * A metadata reply in the shape the request asked for: one entry for a single page, or an entry for
- * every page of a pack, keyed by the ids the request lists.
+ * every page of a pack, keyed by the ids the request lists, with a line for each of its sections.
  */
 export function metadataReply(payload: GuardedPayload, entry: Record<string, unknown>): string {
   const text = payload.messages.map((m) => m.content).join('\n');
-  const ids = [...text.matchAll(/^=== PAGE (\S+): /gm)].map((m) => m[1]);
-  return JSON.stringify(ids.length ? { pages: ids.map((id) => ({ id, ...entry })) } : entry);
+  if (/^=== DIRECTORY \d+: /m.test(text)) return digestReply(text);
+  const pages = packedPages(text);
+  return JSON.stringify(pages.length ? { pages: pages.map((p) => ({ ...p, ...entry })) } : entry);
+}
+
+/**
+ * A directory digest reply for every directory a request lists, by its number, with a summary that
+ * names the directory, so a test can follow a child's digest into its parent's request (ADR-079).
+ */
+export function digestReply(text: string): string {
+  const directories = [...text.matchAll(/^=== DIRECTORY (\d+): (.*) ===$/gm)].map((m) => ({
+    number: Number(m[1]),
+    summary: `Digest of ${m[2]}.`,
+    kind: 'living',
+    topics: ['ops'],
+    questions: [`What is in ${m[2]}?`],
+  }));
+  return JSON.stringify({ directories });
 }
 
 /** Replies with the request's placeholders echoed back, so a test can see them restored. */

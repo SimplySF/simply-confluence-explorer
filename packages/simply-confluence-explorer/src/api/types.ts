@@ -216,6 +216,51 @@ export type SpaceTocNode = {
   children: SpaceTocNode[];
 };
 
+/** One directory of the Space map (design doc 0017): what sits below it, after exclusions. */
+export type DirectoryStats = {
+  id: string;
+  title: string;
+  /** The titles of the pages above it, from the top of the space. */
+  path: string[];
+  /** Pages below it, at any depth. */
+  pages: number;
+  /** Characters of Confluence storage below it, a measure of how much there is to read. */
+  size: number;
+  /** The newest and oldest last edit below it, as ISO dates; empty when not known. */
+  newest: string;
+  oldest: string;
+  /** The share of the pages below it that have a current AI summary, from 0 to 1. */
+  indexed: number;
+  authors: number;
+  /** Nothing below it has changed for a year. */
+  stale: boolean;
+  /** What its current digest says it holds; absent when it has none (ADR-079). */
+  kind?: DirectoryKind;
+  /** Most pages below it share one title apart from numbers and dates, such as release notes. */
+  series?: { pattern: string; pages: number };
+};
+
+/** What a directory holds, by the kind of pages under it (design doc 0017). */
+export type DirectoryKind = 'living' | 'archive-series' | 'templates' | 'mixed';
+
+/**
+ * A directory's digest (ADR-079): what the pages below it are about, written by the AI index from
+ * their titles, summaries and tags and from the digests of the directories below, never page text.
+ * `stamp` names the allowed pages it was made from; a digest whose stamp no longer matches is not used.
+ */
+export type DirectoryDigest = {
+  id: string;
+  title: string;
+  summary: string;
+  kind: DirectoryKind;
+  topics: string[];
+  questions: string[];
+  stamp: string;
+  generatedAt: string;
+};
+
+export type SpaceMapResponse = { directories: DirectoryStats[]; pages: number };
+
 export type PurgeResult = { purgedCount: number; remainingPages: number };
 
 /** The AI providers a person can choose in Settings (ADR-017). */
@@ -297,6 +342,9 @@ export type MetadataProgress = {
   /** How many requests the run needs, with several small pages to a request, and how many are done. */
   requests?: number;
   requestsDone?: number;
+  /** How many directories the run digests once the pages are indexed, and how many are done (ADR-079). */
+  directories?: number;
+  directoriesDone?: number;
   /** The pages left out, each with why; the latest 200. */
   failures?: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;

@@ -24,11 +24,15 @@ import { droppedNote } from './reply.js';
 
 /**
  * `notes` are what one batch of a thorough answer found, sent to the request that combines them. An
- * `attachment` is read inside its page's text, so it is counted rather than marked (ADR-069).
+ * `attachment` is read inside its page's text, so it is counted rather than marked (ADR-069). A
+ * `choice` is a structured request whose reply chose what the answer reads (ADR-079).
  */
-export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image' | 'attachment';
-/** `not-read` is an attachment that was not read, or not read whole, with its own `why`. */
-export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit' | 'not-read';
+export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image' | 'attachment' | 'choice';
+/**
+ * `not-read` is an attachment that was not read, or not read whole, with its own `why`. `fallback` is a
+ * choice whose reply could not be used, so the answer read something else, said in its `why`.
+ */
+export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit' | 'not-read' | 'fallback';
 
 export type ManifestItem = {
   kind: ContextKind;
@@ -44,7 +48,17 @@ export type ManifestItem = {
   why?: string;
 };
 
-export type ContextManifest = { items: ManifestItem[] };
+/**
+ * The areas a planned search looked in, each with what it looked for and why, and how many of the
+ * corpus's directories it did not search, with the titles of the largest (ADR-079). Only allowed
+ * directories of the corpus are named.
+ */
+export type PlanRecord = {
+  searched: Array<{ title: string; look: string; why?: string }>;
+  notSearched: { count: number; titles: string[] };
+};
+
+export type ContextManifest = { items: ManifestItem[]; plan?: PlanRecord };
 
 /** What an answer shows under What was sent: counts and sizes, and each item left out with why. */
 export type ManifestSummary = {
@@ -58,6 +72,7 @@ export type ManifestSummary = {
   attachments?: number;
   chars: number;
   leftOut: Array<{ kind: ContextKind; label: string; reason: LeftOutReason | 'cut'; why?: string }>;
+  plan?: PlanRecord;
 };
 
 /** A thing that should never happen: context the request was built to carry is missing from it. */
@@ -72,6 +87,7 @@ export class ContextCheckError extends Error {
 export class ManifestBuilder {
   private readonly items: ManifestItem[] = [];
   private next = 0;
+  private planned?: PlanRecord;
 
   /** Records a piece of context as sent, and returns its text with the marker the check looks for. */
   public include(kind: ContextKind, label: string, text: string, cut = false): string {
@@ -101,6 +117,11 @@ export class ManifestBuilder {
     });
   }
 
+  /** Records that a structured reply could not be used, and what was done instead (ADR-079). */
+  public fallback(label: string, why: string): void {
+    this.leaveOut('choice', label, 0, 'fallback', why);
+  }
+
   /**
    * Records the attachments a request read with its pages, and names each one it did not read, or
    * read only in part, with why, so What was sent never claims more than reached the model (ADR-069).
@@ -120,8 +141,13 @@ export class ManifestBuilder {
     for (const u of report.unread) this.leaveOut('attachment', `${u.page} / ${u.name}`, 0, 'not-read', u.why);
   }
 
+  /** Records the plan a search followed; it carries no context, so the payload check ignores it. */
+  public plan(record: PlanRecord): void {
+    this.planned = record;
+  }
+
   public build(): ContextManifest {
-    return { items: [...this.items] };
+    return { items: [...this.items], ...(this.planned ? { plan: this.planned } : {}) };
   }
 }
 
@@ -180,6 +206,7 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
         .map((i) => ({ kind: i.kind, label: i.label, reason: i.reason!, ...(i.why ? { why: i.why } : {}) })),
       ...sent.filter((i) => i.cut).map((i) => ({ kind: i.kind, label: i.label, reason: 'cut' as const })),
     ],
+    ...(manifest.plan ? { plan: manifest.plan } : {}),
   };
 }
 
@@ -226,5 +253,6 @@ export function mergeSummaries(summaries: ManifestSummary[]): ManifestSummary {
       : {}),
     chars: sum('chars'),
     leftOut: summaries.flatMap((s) => s.leftOut),
+    ...(summaries.find((s) => s.plan) ? { plan: summaries.find((s) => s.plan)!.plan } : {}),
   };
 }

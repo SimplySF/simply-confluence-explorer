@@ -38,12 +38,16 @@ const STOP = new Set(
 export function stem(word: string): string {
   let w = word.length > 4 && word.endsWith('ies') ? `${word.slice(0, -3)}y` : word;
   for (const suffix of ['ing', 'ed', 'es', 's', 'ly']) {
+    // "apply", "reply" and "supply" are verbs, not an adverb's -ly; cutting them leaves "app".
+    if (suffix === 'ly' && w.endsWith('ply')) continue;
     if (w.length - suffix.length >= 3 && w.endsWith(suffix)) {
       w = w.slice(0, -suffix.length);
       break;
     }
   }
   if (w.endsWith('ie')) w = `${w.slice(0, -2)}y`;
+  // A "y" turns to "i" before a suffix, as in "retried" or "applied", so it is turned back.
+  if (w !== word && /[^aeiou]i$/.test(w)) w = `${w.slice(0, -1)}y`;
   if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);
   // A doubled last letter, as in "stopped" or "billing", meets the single one, as in "stop" or "bill".
   if (w.length > 3 && w.at(-1) === w.at(-2) && !/[aeiou]/.test(w.at(-1)!)) w = w.slice(0, -1);
@@ -72,8 +76,11 @@ export type SearchHit = { pageId: string; title: string; excerpt: string; score:
 export type SectionHit = { section: Section; title: string; score: number; covers: number };
 
 // A word in the title says more about what a page is for than one in its body, and a word in a
-// section's heading says more about the section than one in its text.
+// section's heading says more about the section than one in its text. The titles of the pages above
+// a page name the area it belongs to, so a question that names a directory finds the pages under it,
+// below a page that carries the word in its own title.
 const TITLE_WEIGHT = 3;
+const ANCESTOR_WEIGHT = 2;
 const TAG_WEIGHT = 2;
 const HEADING_WEIGHT = 2;
 const K1 = 1.2;
@@ -83,12 +90,16 @@ type PageDocs = { stamp: string; docs: Doc[]; size: number };
 type Index = { docs: Doc[]; df: Map<string, number>; avgLength: number };
 const EMPTY: Index = { docs: [], df: new Map(), avgLength: 0 };
 
-/** One page's sections as search documents. Each carries its page's title, labels, tags, summary and questions. */
+/** One page's sections as search documents. Each carries its page's title, its ancestors' titles, labels, tags, summary and questions. */
 function pageDocs(page: PageDetail, sections: Section[], meta?: PageMetadata): Doc[] {
   const pageTerms = new Map<string, number>();
   const add = (terms: Map<string, number>, text: string, weight: number): void =>
     tokens(text).forEach((t) => terms.set(t, (terms.get(t) ?? 0) + weight));
   add(pageTerms, page.title, TITLE_WEIGHT);
+  // A word of the page's place counts once however many ancestors repeat it, and not toward the
+  // length a match is weighed against, so a deep page is not marked down for how deep it sits.
+  const place = [...new Set(tokens(page.ancestors.map((a) => a.title).join(' ')))];
+  place.forEach((t) => pageTerms.set(t, (pageTerms.get(t) ?? 0) + ANCESTOR_WEIGHT));
   add(pageTerms, [...page.labels, ...(meta?.tags ?? [])].join(' '), TAG_WEIGHT);
   add(pageTerms, [meta?.summary, ...(meta?.questions ?? [])].join(' '), 1);
   // A page with no text still has its title to be found by.
@@ -102,7 +113,7 @@ function pageDocs(page: PageDetail, sections: Section[], meta?: PageMetadata): D
       section,
       title: page.title,
       excerpt: (meta?.summary ?? section.text).replace(/\s+/g, ' ').slice(0, 280),
-      length: [...terms.values()].reduce((a, b) => a + b, 0),
+      length: [...terms.values()].reduce((a, b) => a + b, 0) - place.length * ANCESTOR_WEIGHT,
       terms,
     };
   });
@@ -250,7 +261,9 @@ export class SearchIndex {
     const id = `${key}/${page.id}`;
     // The attachments' text is in both stamps, so a page is split again once a PDF of it has been read.
     const attachedChars = this.store.attachments.of(key, page).text.length;
-    const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${meta?.generatedAt ?? '-'}|${attachedChars}`;
+    // The ancestors' titles are in the stamp, so a page whose place in the space changes is indexed again.
+    const place = page.ancestors.map((a) => a.title).join('/');
+    const pageStamp = `${page.version}|${page.storageXml.length}|${page.title}|${place}|${meta?.generatedAt ?? '-'}|${attachedChars}`;
     let cached = this.pages.get(id);
     if (cached?.stamp !== pageStamp) {
       const attached = page.attachments.map((a) => `${a.title}:${a.fileSize}`).join(',');

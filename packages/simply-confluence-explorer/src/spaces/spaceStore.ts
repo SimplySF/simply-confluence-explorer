@@ -399,7 +399,6 @@ export class SpaceStore {
     return entries;
   }
 
-  /** Every synced page in the space that is not excluded, read in chunks so the server keeps answering. */
   /** Every page in the catalog that the exclusion rules allow: titles, places and tags, without text. */
   public async visibleEntries(spaceKey: string): Promise<CatalogEntry[]> {
     const key = spaceKey.toUpperCase();
@@ -408,6 +407,7 @@ export class SpaceStore {
     return [...entries.values()].filter((p) => !excluded(p));
   }
 
+  /** Every synced page in the space that is not excluded, read in chunks so the server keeps answering. */
   public async visiblePages(spaceKey: string): Promise<PageDetail[]> {
     const pages = await mapChunked(this.cachedIds(spaceKey), (id) => this.readPage(spaceKey, id));
     const excluded = this.exclusions.checker(spaceKey);

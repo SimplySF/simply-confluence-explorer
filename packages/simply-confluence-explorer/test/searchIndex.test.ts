@@ -63,6 +63,13 @@ describe('the search index', () => {
     expect(stem('spiked')).toBe(stem('spike'));
     expect(stem('policies')).toBe(stem('policy'));
     expect(stem('stopped')).toBe(stem('stop'));
+    // A y that became an i before -ed, so "retried" never met "retry".
+    expect(stem('retried')).toBe(stem('retry'));
+    expect(stem('applied')).toBe(stem('apply'));
+    expect(stem('copied')).toBe(stem('copy'));
+    expect(stem('replies')).toBe(stem('reply'));
+    expect(stem('taxi')).toBe('taxi');
+    expect(stem('quickly')).toBe('quick');
   });
 
   it('finds a page by another form of the word it uses', async () => {
@@ -74,6 +81,23 @@ describe('the search index', () => {
   it('ranks a page whose title matches above one that only mentions the words', async () => {
     const { index } = setup();
     expect((await ids(index, 'database failover')).slice(0, 2)).toEqual(['1', '2']);
+  });
+
+  it('finds a page by a word only the titles above it hold, below a page with the word in its own title', async () => {
+    const { index, store } = setup();
+    const under = (id: string, title: string, ancestors: PageDetail['ancestors']): PageDetail => ({
+      ...page(id, title, 'Money goes back to the original card within five days.'),
+      parentId: ancestors.at(-1)?.id,
+      ancestors,
+    });
+    store.writePage('PLAT', page('10', 'Payments', 'The ledger team owns this directory.'), '', []);
+    store.writePage('PLAT', under('11', 'Card returns', [{ id: '10', title: 'Payments' }]), '', []);
+    expect(await ids(index, 'payments')).toEqual(['10', '11']);
+    // A page moved under another directory keeps its version, and is found by its new place.
+    store.writePage('PLAT', page('12', 'Ledger', 'Where balances are kept.'), '', []);
+    store.refreshPage('PLAT', under('11', 'Card returns', [{ id: '12', title: 'Ledger' }]));
+    expect(await ids(index, 'ledger')).toContain('11');
+    expect(await ids(index, 'payments')).toEqual(['10']);
   });
 
   it('finds nothing in a space that is not synced', () => {

@@ -68,8 +68,10 @@ export class Telemetry implements Tracer {
   private freeze: { record: ProblemRecord; times: number; worst: number; running?: string[] } | null = null;
   private readonly timers: NodeJS.Timeout[] = [];
   private readonly print: (line: string) => void;
+  private readonly options: TelemetryOptions;
 
-  public constructor(private readonly options: TelemetryOptions) {
+  public constructor(options: TelemetryOptions) {
+    this.options = options;
     this.dir = path.join(options.dataDir, 'telemetry');
     this.print = options.console ?? ((): void => undefined);
     this.prune();

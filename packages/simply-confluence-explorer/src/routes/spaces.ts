@@ -17,8 +17,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
-import type { DeleteProgress, PurgeResult, SpaceTocNode, SyncProgress, TagsResponse } from '../api/types.js';
+import type {
+  DeleteProgress,
+  PurgeResult,
+  SpaceMapResponse,
+  SpaceTocNode,
+  SyncProgress,
+  TagsResponse,
+} from '../api/types.js';
 import { IMAGE_TYPES } from '../spaces/attachments.js';
+import { directoryStats } from '../spaces/spaceMap.js';
 import { tagIndex } from '../spaces/tags.js';
 import { HttpError, type Router } from '../http/router.js';
 import type { Services } from './api.js';
@@ -34,7 +42,7 @@ const flag = (body: unknown, key: string): boolean => fieldsOf(body)[key] === tr
  * @param services What the routes share.
  */
 export function addSpaceRoutes(router: Router, services: Services): Router {
-  const { store, sync, exclusions, metadata } = services;
+  const { store, sync, exclusions, metadata, digests } = services;
   const notFound = (jobId: string): never => {
     throw new HttpError(404, `no sync job ${jobId}`);
   };
@@ -68,6 +76,23 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
         const key = params.spaceKey.toUpperCase();
         const building = store.catalog.progress(key);
         return building ? { tags: [], building } : { tags: await tagIndex(store, key) };
+      })
+      // The tree and catalog are built in chunks on a first request; the map is worked out from them
+      // at each read, so a rule added since is honoured at once.
+      .add('GET', '/api/space-cache/:spaceKey/map', async ({ params }): Promise<SpaceMapResponse> => {
+        if (!store.isSynced(params.spaceKey))
+          throw new HttpError(404, `${params.spaceKey} has not been synced, so it has no map`);
+        const key = params.spaceKey.toUpperCase();
+        await store.treeReady(key);
+        const entries = await store.catalog.ready(key);
+        const tree = store.tree(key);
+        const count = (nodes: typeof tree): number => nodes.reduce((n, c) => n + 1 + count(c.children), 0);
+        const current = digests.currentDigests(key);
+        const directories = directoryStats(tree, entries).map((d) => {
+          const kind = current.get(d.id)?.kind;
+          return kind ? { ...d, kind } : d;
+        });
+        return { directories, pages: count(tree) };
       })
       .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', async ({ params }) => {
         // The tree is built in chunks on a first request, rather than all at once while others wait.

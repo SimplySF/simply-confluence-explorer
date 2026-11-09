@@ -296,6 +296,11 @@
                   ? ` · ${lines.leftOut.length} left out`
                   : ''}</summary
               >
+              {#if lines.plan.length}
+                <ul>
+                  {#each lines.plan as l (l)}<li>{l}</li>{/each}
+                </ul>
+              {/if}
               {#if lines.leftOut.length}
                 <ul>
                   {#each lines.leftOut as l (l)}<li>{l}</li>{/each}

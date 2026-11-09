@@ -27,6 +27,7 @@ import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { generateMetadataPack, packPages, PACK_CHARS, withRetry } from '../src/spaces/indexPacks.js';
 import { MetadataPipeline } from '../src/spaces/metadata.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
+import { packedPages } from './support/testApp.js';
 
 const page = (id: string, size = 100): PageDetail => ({
   id,
@@ -55,12 +56,12 @@ function packAi(skip: string[] = [], delayMs = 0): { ai: AiEngine; requests: str
       most = Math.max(most, busy);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       busy--;
-      const ids = [...markdown.matchAll(/^=== PAGE (\S+): /gm)].map((m) => m[1]);
-      requests.push(ids);
+      const pages = packedPages(markdown);
+      requests.push(pages.map((p) => p.id));
       const entry = { summary: 'S', tags: ['ops'] };
       return {
         text: JSON.stringify(
-          ids.length ? { pages: ids.filter((id) => !skip.includes(id)).map((id) => ({ id, ...entry })) } : entry,
+          pages.length ? { pages: pages.filter((p) => !skip.includes(p.id)).map((p) => ({ ...p, ...entry })) } : entry,
         ),
         guard: {} as never,
       };
@@ -91,6 +92,102 @@ describe('a pack reply', () => {
     expect(
       [...results.values()].every((r) => r instanceof Error && r.message.startsWith('the AI reply could not be read')),
     ).toBe(true);
+  });
+});
+
+describe('the quality of a pack reply', () => {
+  const sections = (id: string): PageDetail => ({
+    ...page(id),
+    storageXml:
+      '<h1>One</h1><p>a</p><h1>Two</h1><p>b</p><h1>Three</h1><p>c</p><h1>Four</h1><p>d</p><h1>Five</h1><p>e</p>',
+  });
+  /** An AI that answers a pack with the entry `entryOf` gives each page, a line for every section unless it says otherwise. */
+  const replying = (entryOf: (id: string) => Record<string, unknown>): AiEngine => ({
+    ...packAi().ai,
+    analyzeDocument: (markdown) =>
+      Promise.resolve({
+        text: JSON.stringify({
+          pages: packedPages(markdown).map((p) => ({ ...p, summary: 'S', tags: [], ...entryOf(p.id) })),
+        }),
+        guard: {} as never,
+      }),
+  });
+
+  it('keeps no page whose summary is empty or the default, or that describes under four in five of its sections', async () => {
+    const thin = { '2': { summary: '' }, '3': { summary: 'Documentation page.' }, '4': { sections: ['a', 'b', 'c'] } };
+    const ai = replying((id) => thin[id as keyof typeof thin] ?? {});
+    const results = await generateMetadataPack(['1', '2', '3', '4', '5'].map(sections), ai, []);
+    expect(results.get('1')).toMatchObject({ summary: 'S' });
+    expect(results.get('2')).toEqual(new Error('the AI reply gave the page no summary'));
+    expect(results.get('3')).toEqual(new Error('the AI reply gave the page no summary'));
+    expect(results.get('4')).toEqual(new Error("the AI reply described 3 of the page's 5 sections"));
+    // Four lines of five is enough.
+    expect(
+      (
+        await generateMetadataPack(
+          [sections('5')],
+          replying(() => ({ sections: ['a', 'b', 'c', 'd'] })),
+          [],
+        )
+      ).get('5'),
+    ).toMatchObject({ summary: 'S' });
+  });
+
+  it('asks again on its own for a page described too thinly, and records it as failed with why when that fails too', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-packs-'));
+    const exclusions = new ExclusionManager(dataDir, () => undefined);
+    const store = new SpaceStore(dataDir, exclusions, () => undefined);
+    for (const id of ['1', '2', '3']) store.writePage('PLAT', sections(id), '', []);
+    const alone: string[] = [];
+    const ai: AiEngine = {
+      ...packAi().ai,
+      analyzeDocument: (markdown, _prompt, title) => {
+        const pages = packedPages(markdown);
+        if (!pages.length) alone.push(title ?? '');
+        const entry = (id: string): Record<string, unknown> => ({
+          summary: id === '2' ? '' : 'S',
+          tags: [],
+          sections: id === '3' ? ['a'] : ['a', 'b', 'c', 'd', 'e'],
+        });
+        return Promise.resolve({
+          // The pack leaves page 1 out. Alone, page 3 is accepted with the lines it has; page 2 still has no summary.
+          text: JSON.stringify(
+            pages.length
+              ? { pages: pages.filter((p) => p.id !== '1').map((p) => ({ id: p.id, ...entry(p.id) })) }
+              : entry(/Page (\d)/.exec(title ?? '')![1]),
+          ),
+          guard: {} as never,
+        });
+      },
+    };
+    const pipeline = new MetadataPipeline(
+      store,
+      exclusions,
+      () => ai,
+      () => undefined,
+      undefined,
+      undefined,
+      {
+        retryDelayMs: 0,
+      },
+    );
+    const { jobId } = pipeline.start('PLAT');
+    while (['pending', 'running'].includes(pipeline.get(jobId)?.status ?? '')) {
+      // eslint-disable-next-line no-await-in-loop -- polling waits for each check before the next
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const job = pipeline.get(jobId)!;
+    // Page 1 had no entry, page 2 no summary and page 3 one line of five: each was asked for alone,
+    // page 2 twice (the repair), and never a third time.
+    expect(alone.sort()).toEqual(['Page 1', 'Page 2', 'Page 2', 'Page 3']);
+    expect(job.failures).toEqual([
+      {
+        pageId: '2',
+        title: 'Page 2',
+        error: "the AI's reply was not what was asked for, twice (it gave the page no summary)",
+      },
+    ]);
+    expect(store.readMetadata('PLAT', '3')?.sections?.map((s) => s.summary)).toEqual(['a', '', '', '', '']);
   });
 });
 

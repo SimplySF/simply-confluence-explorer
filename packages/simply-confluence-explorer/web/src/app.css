@@ -456,6 +456,15 @@ body {
   white-space: nowrap;
   overflow: visible;
 }
+.tree-node-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-panel-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 16px;
+}
 
 /* Main Content Workspace */
 .workbench-main {
@@ -4478,4 +4487,29 @@ span.scope-chip-name {
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;
+}
+
+/* The Space map (design doc 0017). */
+.space-map-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.space-map-table {
+  width: 100%;
+}
+.space-map-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.space-map-path {
+  margin-right: 4px;
+  font-size: 12px;
+}
+.space-map-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }

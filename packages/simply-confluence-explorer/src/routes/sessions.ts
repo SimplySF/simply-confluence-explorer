@@ -348,6 +348,9 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       ai,
       attachments: session.attachments !== 'pages',
       leftOut: leftOutOf(session),
+      onStep: (text) => step(session.id, text),
+      tracer: services.telemetry,
+      digest: (key, dirId) => services.digests.currentDigest(key, dirId),
     };
     const previous = session.turns.filter((t) => t.role === 'user').at(-1)?.text;
     const batches = await sectionBatches(
@@ -367,6 +370,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
       read: (ids, manifest) => readBatch(scope.spaceKey, corpus, ids, retriever, services.contextChars, manifest),
       files: (manifest) => sessions.filesContext(session.id, manifest),
       weak: batches.weak,
+      planned: batches.planned,
       account: (ids) => {
         const seen = pagesAccount(session)(corpus.filter((p) => ids.includes(p.id)));
         seen.report.read = seen.report.read.map((r) => ({ ...r, as: `${r.as}, searched for the parts that match` }));
@@ -412,6 +416,8 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             onStep: (text) => step(session.id, text),
             attachments: session.attachments !== 'pages',
             leftOut: leftOutOf(session),
+            tracer: services.telemetry,
+            digest: (key, dirId) => services.digests.currentDigest(key, dirId),
           },
           { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );

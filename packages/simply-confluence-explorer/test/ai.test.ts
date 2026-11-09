@@ -281,6 +281,24 @@ test('Gemini API: generateContent with the key header and the system prompt as a
   }
 });
 
+test('Gemini API: a reply asked for as JSON is requested as JSON, held to its schema, and a plain one is not', async () => {
+  const s = await standIn((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: '{"a":1}' }] } }] }));
+  });
+  try {
+    const schema = { type: 'object', properties: { a: { type: 'integer' } }, required: ['a'] };
+    await complete('gemini', cfg(s.url, 'gemini-pro-latest'), guarded('S', 'D'), undefined, undefined, { schema });
+    await complete('gemini', cfg(s.url, 'gemini-pro-latest'), guarded('S', 'D'));
+    const [json, plain] = s.seen.map((r) => r.body.generationConfig as Record<string, unknown> | undefined);
+    assert.equal(json?.responseMimeType, 'application/json');
+    assert.deepEqual(json?.responseJsonSchema, schema);
+    assert.equal(plain?.responseMimeType, undefined);
+  } finally {
+    s.close();
+  }
+});
+
 // Images a space chose to send (ADR-066), as each provider expects them.
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 const withImage = (): ReturnType<OutboundGuard['inspect']> =>

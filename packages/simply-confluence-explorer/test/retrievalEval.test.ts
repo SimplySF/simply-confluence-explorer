@@ -15,16 +15,23 @@
  */
 
 // How well retrieval finds the page that answers a question, among the test dataset's pages and
-// about 3,000 generated pages that use the same words (design doc 0008). The score may rise; a
-// change that lowers it fails here.
+// about 3,000 generated pages that use the same words (design doc 0008), and how often it reaches the
+// area of a deep space that holds an answer (design doc 0017). The scores may rise; a change that
+// lowers either fails here.
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ManifestBuilder, summarise as summaryOf } from '../src/ai/manifest.js';
 import type { PageDetail } from '../src/api/types.js';
 import { retrieveContext } from '../src/spaces/contextRetriever.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
 import { SearchIndex } from '../src/spaces/searchIndex.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
+import { writeDeepSpace } from './support/largeSpace.js';
+import { standInModel } from './support/standInModel.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
 /** Questions as a person would ask them, each with the page that answers it. */
@@ -51,9 +58,10 @@ const QUESTIONS: Array<[string, string]> = [
 
 /**
  * The share of questions whose answering page retrieval reads, at or above which this test passes.
- * Keyword search alone scored 13 of 18; comparing words by their stem raised it to 16.
+ * Keyword search alone scored 13 of 18; comparing words by their stem raised it to 16, and matching
+ * the titles of the pages above each page raised it to 17.
  */
-const FLOOR = 16 / 18;
+const FLOOR = 17 / 18;
 
 const WORDS =
   'database gateway billing auth backup restore replica primary service runbook incident severity api endpoint version deploy token vpn client feature decision secrets latency staging account'.split(
@@ -122,4 +130,130 @@ describe('retrieval over a large space', () => {
     const score = (QUESTIONS.length - missed.length) / QUESTIONS.length;
     expect(score, `score ${score.toFixed(2)}; missed:\n${missed.join('\n')}`).toBeGreaterThanOrEqual(FLOOR);
   }, 120_000);
+});
+
+/**
+ * Questions about a deep space, each with the directory whose area holds the answer and the page in
+ * it that answers. Some name the area only by a directory's title ("payments", "identity",
+ * "onboarding", "field app"), a word the answering page's own title and text never use; others share
+ * most of their words with the 400 release notes, which then crowd out the page that answers.
+ */
+const AREA_QUESTIONS: Array<[question: string, area: string, answer: string]> = [
+  ['how does the payments area handle refunds', 'Payments', 'Card returns'],
+  ['how often do we retry a failed refund to a card', 'Payments', 'Retry schedule'],
+  ['how are offline edits merged when the phone reconnects', 'Offline mode', 'Merge rules'],
+  ['what storage limits does the field app set', 'Field app', 'Device limits'],
+  ['how long does a single sign-on session last', 'Single sign-on', 'Session lifetime'],
+  ['what does the identity area require for service accounts', 'Identity', 'Machine users'],
+  ['in which region is customer data for a european tenant stored', 'Data residency', 'Where tenants live'],
+  ['which laptop does a new starter get', 'Equipment', 'Laptop choices'],
+  ['what does onboarding cover in the first days', 'Onboarding', 'Day one'],
+];
+
+/**
+ * How many area-recall questions read at least one page of the answer's area, and how many read the
+ * answering page itself, at or above which this test passes. A directory page counts toward reaching
+ * its area, though it rarely holds the answer, which is why both are measured. Keyword search over
+ * each page's own words reached 7 areas and 3 answering pages; matching the titles of the pages
+ * above each page raised both to 8, and capping how many candidates one directory or series may take
+ * raised the areas to 9. The answer left, about service accounts, is lost among release notes that
+ * share its words.
+ */
+const AREA_FLOOR = { areas: 9, answers: 8 };
+
+/**
+ * The same, when every page has a summary and a stand-in model (`test/support/standInModel.ts`) plans
+ * the areas to search and chooses the sections to read. Choosing from one flat ranking reached 7 areas
+ * and 7 answering pages, as release notes filled the candidates; with the diversity cap and the plan
+ * of design doc 0017 it reaches all 9 of each, and 9 of each when the plan cannot be read.
+ */
+const PLANNED_FLOOR = { areas: 9, answers: 9 };
+
+/**
+ * Writes for each page of the deep space the summary the AI index would give it, its first sentence,
+ * so the stand-in model has what a real one would read on the map and among the candidates.
+ */
+function summarise(store: SpaceStore, key: string, pages: PageDetail[]): void {
+  for (const page of pages)
+    store.writeMetadata(key, {
+      pageId: page.id,
+      title: page.title,
+      summary: /<p>(.*?)<\/p>/.exec(page.storageXml)?.[1] ?? page.title,
+      tags: [],
+      documentType: 'reference',
+      systemsMentioned: [],
+      generatedAt: '2026-01-02',
+      version: 2,
+    });
+}
+
+type Recall = { areas: number; answers: number; requests: number; report: string };
+
+/** Asks each area-recall question of the deep space, with the stand-in model when one is given. */
+async function areaRecall(model?: ReturnType<typeof standInModel>): Promise<Recall> {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-deep-'));
+  try {
+    const exclusions = new ExclusionManager(dataDir, () => undefined);
+    const store = new SpaceStore(dataDir, exclusions, () => undefined);
+    const ids = writeDeepSpace(store, 'DEEP');
+    if (model) summarise(store, 'DEEP', await store.visiblePages('DEEP'));
+    const index = new SearchIndex(store);
+    await index.ready('DEEP');
+    const pages = await store.visiblePages('DEEP');
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    const lines: string[] = [];
+    const reached = { areas: 0, answers: 0 };
+    for (const [question, area, answer] of AREA_QUESTIONS) {
+      const areaId = ids.get(area)!;
+      const inArea = (id: string): boolean => id === areaId || !!byId.get(id)?.ancestors.some((a) => a.id === areaId);
+      const manifest = new ManifestBuilder();
+      // eslint-disable-next-line no-await-in-loop -- each question in turn
+      const r = await retrieveContext(
+        'DEEP',
+        pages,
+        { question },
+        { store, exclusions, index, dataDir, ...(model ? { ai: model.ai } : {}) },
+        { budget: 20_000, manifest },
+      );
+      const plan = summaryOf(manifest.build()).plan?.searched.map((a) => a.title.split(' › ').at(-1));
+      expect(r.corpus.mode).toBe('retrieved');
+      const found = r.selectedPages.filter((p) => inArea(p.id)).length;
+      const answered = r.selectedPages.some((p) => p.id === ids.get(answer));
+      if (found) reached.areas++;
+      if (answered) reached.answers++;
+      lines.push(
+        `${found} of ${r.selectedPages.length} pages in ${area}, answer ${answered ? 'read' : 'missed'} · ${question}${
+          plan ? ` · planned: ${plan.join(', ') || 'none'}` : ''
+        }`,
+      );
+    }
+    const planning = model?.asked.filter((l) => l.startsWith('Planning')).length ?? 0;
+    return {
+      ...reached,
+      requests: planning,
+      report: `areas ${reached.areas} of 9, answers ${reached.answers} of 9, ${planning} planning requests:\n${lines.join('\n')}`,
+    };
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+}
+
+describe('area recall on a deep space', () => {
+  it('reaches the area and the page that hold each answer at least as often as it did', async () => {
+    const recall = await areaRecall();
+    // Printed, so a change to retrieval can report the numbers before and after it.
+    process.stdout.write(`area recall: ${recall.report}\n`);
+    expect(recall.areas, recall.report).toBeGreaterThanOrEqual(AREA_FLOOR.areas);
+    expect(recall.answers, recall.report).toBeGreaterThanOrEqual(AREA_FLOOR.answers);
+  }, 120_000);
+
+  it('reaches them at least as often with a plan, chosen by a stand-in model, as without one', async () => {
+    const unplanned = await areaRecall(standInModel({ plan: false }));
+    const planned = await areaRecall(standInModel());
+    process.stdout.write(`area recall, stand-in model, plan unusable: ${unplanned.report}\n`);
+    process.stdout.write(`area recall, stand-in model, planned: ${planned.report}\n`);
+    expect(planned.areas, planned.report).toBeGreaterThanOrEqual(PLANNED_FLOOR.areas);
+    expect(planned.answers, planned.report).toBeGreaterThanOrEqual(PLANNED_FLOOR.answers);
+    expect(planned.answers).toBeGreaterThanOrEqual(unplanned.answers);
+  }, 240_000);
 });

@@ -17,6 +17,7 @@
 import type { ImageChoice, MetadataProgress, PageDetail, PageMetadata } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import type { ImageInput } from '../ai/guard.js';
+import { askStructured, UnusableReply, type StructuredPrompt } from '../ai/structured.js';
 import { HttpError } from '../http/router.js';
 import { JobRunner } from '../jobs/jobRunner.js';
 import { parsePage } from '../parser/convert.js';
@@ -25,12 +26,16 @@ import { mapChunked, pause } from '../util/pause.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import { imagesFor } from './attachments.js';
+import { DIRECTORIES_PER_REQUEST, generateDigestPack, packDigests, type DigestStore } from './digests.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
-import { generateMetadataPack, packPages, withRetry } from './indexPacks.js';
+import { generateMetadataPack, packLimit, packPages, withRetry } from './indexPacks.js';
 import { tagIndex } from './tags.js';
 import type { VectorIndex } from './vectors.js';
+
+/** How much of a space, a section or a list is indexed, and about how many requests the rest would take. */
+export type Coverage = { pages: number; missing: number; requests: number; directoriesMissing?: number };
 
 /** The kind of metadata this code writes. Metadata of an older kind counts as missing and is regenerated. */
 export const METADATA_VERSION = 2;
@@ -40,24 +45,83 @@ const VOCABULARY = 60;
 /** How many sections are summarised; the rest of a very long page is found by its words alone. */
 const SUMMARISED_SECTIONS = 60;
 
-function metadataPrompt(vocabulary: string[], headings: string[]): string {
-  return `Analyze this Confluence page and return a JSON object with this exact schema:
-{
-  "summary": "1-2 sentence summary of what this page is for",
-  "tags": ["3 to 6 topics, lower case"],
-  "documentType": "architecture" | "runbook" | "overview" | "policy" | "guide" | "reference",
-  "systemsMentioned": ["SystemA", "SystemB"],
-  "audience": "who reads this page, such as on-call engineers",
-  "questions": ["up to 6 questions a reader could answer from this page"],
-  "sections": ["one line on what each section below says, in the same order"]
+const DOCUMENT_TYPES = ['architecture', 'runbook', 'overview', 'policy', 'guide', 'reference'];
+/** What a page's summary says when the reply gave none, which is never accepted from the AI. */
+const DEFAULT_SUMMARY = 'Documentation page.';
+
+/** The rules for a page's fields, shared by the request for one page and the request for a pack. */
+export function fieldRules(vocabulary: string[], sectionsRule: string): string[] {
+  const topics = vocabulary.slice(0, VOCABULARY);
+  return [
+    '"summary": one or two sentences on what the page is for. Never leave it empty.',
+    sectionsRule,
+    `"tags": 3 to 6 topics, lower case.${topics.length ? ` Choose topics from this list when one fits, and add a new one only for a subject none of them covers: ${topics.join(', ')}.` : ''}`,
+    `"documentType": one of ${DOCUMENT_TYPES.join(', ')}.`,
+    '"systemsMentioned": the systems the page names. "audience": who reads the page, such as on-call engineers. "questions": up to 6 questions a reader could answer from the page.',
+  ];
 }
-${vocabulary.length ? `Choose topics from this list when one fits, and add a new one only for a subject none of them covers: ${vocabulary.join(', ')}.\n` : ''}The page's sections are:
-${headings.map((h, i) => `${i + 1}. ${h}`).join('\n')}
-Only output the valid JSON block, with no conversational filler.`;
+
+/** One page's entry as the example in a prompt shows it. */
+export const METADATA_EXAMPLE = {
+  summary: 'How to roll back a failed deploy of the billing service.',
+  tags: ['deploy', 'rollback'],
+  documentType: 'runbook',
+  systemsMentioned: ['Billing'],
+  audience: 'on-call engineers',
+  questions: ['How do I roll back a deploy?'],
+  sections: ['When a rollback is needed.', 'The rollback steps, in order.'],
+};
+
+const list = { type: 'array', items: { type: 'string' } };
+/** One page's entry as a JSON Schema, for a provider that can be held to one. */
+export const ENTRY_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    tags: list,
+    documentType: { type: 'string', enum: DOCUMENT_TYPES },
+    systemsMentioned: list,
+    audience: { type: 'string' },
+    questions: list,
+    sections: list,
+  },
+  required: ['summary', 'tags', 'documentType', 'sections'],
+};
+
+function metadataPrompt(vocabulary: string[], headings: string[]): StructuredPrompt {
+  const listed = headings.map((h, i) => `${i + 1}. ${h}`).join('\n');
+  return {
+    task: 'Read the Confluence page below and return a JSON object that describes it.',
+    rules: fieldRules(
+      vocabulary,
+      `"sections": one short line for each of the page's ${headings.length} sections, in this order:\n${listed}`,
+    ),
+    example: JSON.stringify(METADATA_EXAMPLE),
+  };
 }
 
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
+/** Why a reply's entry is not a page's metadata: not an object, or no summary of its own. */
+export function entryProblem(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return 'it was not a JSON object';
+  const summary = (entry as { summary?: unknown }).summary;
+  if (typeof summary !== 'string' || !summary.trim() || summary.trim() === DEFAULT_SUMMARY)
+    return 'it gave the page no summary';
+  return null;
+}
+
+/**
+ * Why a pack's entry is not kept (ADR-079): no summary, or a line for fewer than four in five of the
+ * page's sections. Such a page is asked for alone, where the model attends to it whole.
+ */
+export function packEntryProblem(entry: Record<string, unknown>, headings: number): string | null {
+  const problem = entryProblem(entry);
+  if (problem) return `the AI reply ${problem.replace(/^it /, '')}`;
+  const lines = strings(entry.sections).filter((l) => l.trim()).length;
+  return lines < headings * 0.8 ? `the AI reply described ${lines} of the page's ${headings} sections` : null;
+}
 
 /** Whether metadata is of the kind this code writes, so a run knows to redo it. */
 export function isCurrentMetadata(metadata?: Pick<PageMetadata, 'version'>): boolean {
@@ -66,8 +130,9 @@ export function isCurrentMetadata(metadata?: Pick<PageMetadata, 'version'>): boo
 
 /**
  * Asks the AI for a page's summary, topics, document type, systems, audience, the questions it
- * answers and a line on each section (ADR-051). A reply without a JSON object in it is an error, not
- * an empty result, so a failed summary is never saved as if it were one.
+ * answers and a line on each section (ADR-051). A reply with no summary is asked for once more, then
+ * is an error, not an empty result, so a failed summary is never saved as if it were one. Missing
+ * section lines are accepted here: a page asked for alone keeps its summary rather than nothing.
  *
  * @param page The page, which the caller has already checked is not excluded.
  * @param ai The engine to ask.
@@ -84,15 +149,18 @@ export async function generateMetadata(
   const headings = splitSections(page.id, markdown)
     .slice(0, SUMMARISED_SECTIONS)
     .map((s) => sectionName(page.title, s));
-  const reply = (
-    await ai.analyzeDocument(markdown, metadataPrompt(vocabulary.slice(0, VOCABULARY), headings), page.title, {
-      spaceKey: page.spaceKey,
-      ...(images.length ? { images } : {}),
-    })
-  ).text;
-  const json = /\{[\s\S]*\}/.exec(reply);
-  if (!json) throw new Error('the AI reply contained no JSON metadata');
-  return toMetadata(page, JSON.parse(json[0]) as Record<string, unknown>, headings);
+  const result = await askStructured({
+    ai,
+    input: markdown,
+    prompt: metadataPrompt(vocabulary, headings),
+    schema: ENTRY_SCHEMA,
+    validate: (json) => entryProblem(json) ?? (json as Record<string, unknown>),
+    label: page.title,
+    spaceKey: page.spaceKey,
+    images,
+  });
+  if (!result.ok) throw new UnusableReply(result.reason);
+  return toMetadata(page, result.value, headings);
 }
 
 /**
@@ -104,7 +172,7 @@ export function toMetadata(page: PageDetail, m: Record<string, unknown>, heading
   return {
     pageId: page.id,
     title: page.title,
-    summary: typeof m.summary === 'string' ? m.summary : 'Documentation page.',
+    summary: typeof m.summary === 'string' ? m.summary : DEFAULT_SUMMARY,
     tags: strings(m.tags)
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean),
@@ -138,7 +206,12 @@ export class MetadataPipeline {
     log: (message: string) => void,
     private readonly vectors?: VectorIndex,
     private readonly tracer: Tracer = noTracer,
-    private readonly options: { retryDelayMs?: number; imageChoice?: (spaceKey: string) => ImageChoice } = {},
+    private readonly options: {
+      retryDelayMs?: number;
+      imageChoice?: (spaceKey: string) => ImageChoice;
+      /** Where directory digests are kept; without it a run indexes pages only. */
+      digests?: DigestStore;
+    } = {},
   ) {
     this.jobs = new JobRunner<MetadataProgress>(
       'meta',
@@ -202,22 +275,40 @@ export class MetadataPipeline {
    * How many synced pages of a space, a section or a list there are, how many are not indexed yet,
    * and about how many requests indexing them would take, leaving out excluded pages.
    */
-  public async coverage(
-    spaceKey: string,
-    rootPageId?: string,
-    pageIds?: string[],
-  ): Promise<{ pages: number; missing: number; requests: number }> {
+  public async coverage(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<Coverage> {
     const key = spaceKey.toUpperCase();
-    return this.coverageOf(key, await this.allowedPages(key, rootPageId, pageIds));
+    return this.coverageOf(
+      key,
+      await this.allowedPages(key, rootPageId, pageIds),
+      pageIds ? undefined : { rootPageId },
+    );
   }
 
-  /** The same count for pages already read and allowed, so a caller that has them does not read them again. */
+  /**
+   * The same count for pages already read and allowed, so a caller that has them does not read them
+   * again. With `directories`, the space's or the section's directories without a current digest are
+   * counted too, and their requests added; a run for chosen pages digests no directories.
+   */
   public async coverageOf(
     spaceKey: string,
     allowed: PageDetail[],
-  ): Promise<{ pages: number; missing: number; requests: number }> {
-    const missing = await this.missingOf(spaceKey.toUpperCase(), allowed);
-    return { pages: allowed.length, missing: missing.length, requests: packPages(missing).length };
+    directories?: { rootPageId?: string },
+  ): Promise<Coverage> {
+    const key = spaceKey.toUpperCase();
+    const missing = await this.missingOf(key, allowed);
+    const counts: Coverage = {
+      pages: allowed.length,
+      missing: missing.length,
+      requests: packPages(missing, packLimit(this.ai())).length,
+    };
+    const digests = this.options.digests;
+    if (!digests || !directories) return counts;
+    await this.store.treeReady(key);
+    const levels = digests.pending(key, directories.rootPageId);
+    if (levels.length === 0) return counts;
+    counts.directoriesMissing = levels.flat().length;
+    counts.requests += levels.reduce((n, level) => n + Math.ceil(level.length / DIRECTORIES_PER_REQUEST), 0);
+    return counts;
   }
 
   /** The synced pages of a space, a section or a list, leaving out excluded pages. */
@@ -357,10 +448,16 @@ export class MetadataPipeline {
     // The request that started the run is answered before the pages are looked at.
     await pause();
     const targets = await this.missing(spaceKey, rootPageId, pageIds);
-    const packs = packPages(targets);
+    const packs = packPages(targets, packLimit(ai));
     job.total = targets.length;
     job.requests = packs.length;
     job.requestsDone = 0;
+    // The directories are counted from the start, so the job shows all its work; the count is made
+    // again once the pages are indexed, as each page indexed makes its directories' digests stale.
+    if (this.options.digests && !pageIds) {
+      await this.store.treeReady(spaceKey);
+      job.directories = this.options.digests.pending(spaceKey, rootPageId).flat().length;
+    }
     // The topics already in use, counted as the run tags pages, so later pages reuse earlier pages' topics.
     const uses = new Map((await tagIndex(this.store, spaceKey)).map((t) => [t.tag, t.pages.length]));
     const stopped = (): boolean => this.jobs.isCancelled(job.jobId);
@@ -403,6 +500,7 @@ export class MetadataPipeline {
     };
     const parallel = Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length));
     await Promise.all(Array.from({ length: parallel }, worker));
+    if (this.options.digests && !pageIds && !stopped()) await this.digestPhase(job, spaceKey, ai, rootPageId, stopped);
     job.currentPageTitle = undefined;
     await this.store.writeToc(spaceKey);
     if (job.errorCount > 0)
@@ -412,8 +510,74 @@ export class MetadataPipeline {
       );
   }
 
+  /**
+   * Digests the directories that lack a current digest, lowest first, so each directory's request
+   * carries the digests of the directories below it (ADR-079). Each level is worked out again when
+   * it is reached, from the tree and the rules as they are then.
+   */
+  private async digestPhase(
+    job: MetadataProgress,
+    spaceKey: string,
+    ai: AiEngine,
+    rootPageId: string | undefined,
+    stopped: () => boolean,
+  ): Promise<void> {
+    const digests = this.options.digests!;
+    await this.store.treeReady(spaceKey);
+    const levels = digests.pending(spaceKey, rootPageId);
+    job.directories = levels.flat().length;
+    job.directoriesDone = 0;
+    const retry = <T>(fn: () => Promise<T>): Promise<T> => withRetry(fn, this.options.retryDelayMs ?? 2000, stopped);
+    for (const level of levels) {
+      if (stopped()) return;
+      const tasks = level.flatMap((id) => digests.task(spaceKey, id) ?? []);
+      job.directoriesDone += level.length - tasks.length;
+      const packs = packDigests(tasks, packLimit(ai));
+      job.requests = (job.requests ?? 0) + packs.length;
+      let next = 0;
+      const worker = async (): Promise<void> => {
+        while (next < packs.length && !stopped()) {
+          const pack = packs[next++];
+          job.currentPageTitle = pack.map((t) => t.title).join(', ');
+          // eslint-disable-next-line no-await-in-loop -- each worker takes the next pack when its last is done
+          const made = await this.tracer.span(
+            'index',
+            'pack',
+            { directories: pack.length, first: pack[0].title, spaceKey },
+            async (span) => {
+              const results = await retry(() => generateDigestPack(pack, ai, spaceKey, this.tracer)).catch(
+                (error: unknown) => new Map(pack.map((t) => [t.id, new Error(errorMessage(error))])),
+              );
+              const kept = pack.flatMap((t) => {
+                const r = results.get(t.id)!;
+                if (!(r instanceof Error)) return [r];
+                // Named as the directory's digest, so it is not read as its page's own summary failing.
+                this.recordFailure(job, { id: t.id, title: `${t.title}, its directory digest` }, r.message, spaceKey);
+                return [];
+              });
+              span.set({ failed: pack.length - kept.length });
+              return kept;
+            },
+          );
+          if (made.length) digests.write(spaceKey, made);
+          job.directoriesDone = (job.directoriesDone ?? 0) + pack.length;
+          job.requestsDone = (job.requestsDone ?? 0) + 1;
+          // eslint-disable-next-line no-await-in-loop -- lets other requests through between packs
+          await pause();
+        }
+      };
+      // eslint-disable-next-line no-await-in-loop -- a level waits for the one below it
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length)) }, worker));
+    }
+  }
+
   /** Records a page left out with its reason; running the job again retries every page still missing. */
-  private recordFailure(job: MetadataProgress, page: PageDetail, error: string, spaceKey: string): void {
+  private recordFailure(
+    job: MetadataProgress,
+    page: Pick<PageDetail, 'id' | 'title'>,
+    error: string,
+    spaceKey: string,
+  ): void {
     job.errorCount++;
     job.failures = [...(job.failures ?? []), { pageId: page.id, title: page.title, error }].slice(-200);
     this.tracer.count('index.failures');

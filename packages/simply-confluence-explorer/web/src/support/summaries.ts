@@ -16,8 +16,8 @@
 
 // What the Space menu offers for a space's AI index: each page's summary, topics, section notes and
 // the questions it answers, and its embeddings when the provider makes them (ADR-051). A run only
-// indexes pages that are not indexed yet, so once every page is there is nothing for it to do, and
-// the menu says so. A page indexed by an older kind of run, or at an older version, does not count.
+// indexes pages that are not indexed yet and digests directories without a current digest, so once
+// all of them are there is nothing for it to do, and the menu says so. A page indexed by an older kind of run, or at an older version, does not count.
 
 import type { SyncedSpace } from '../../../src/api/types.js';
 
@@ -25,23 +25,24 @@ export type SummaryAction = { label: string; hint: string; done: boolean };
 
 /**
  * @param manifest The synced space's counts.
- * @param estimate How many pages a run would index and about how many requests that takes, so a large
- *   space says what it is about to cost before it starts.
+ * @param estimate How many pages a run would index, and directories it would digest (ADR-079), and
+ *   about how many requests that takes, so a large space says what it is about to cost before it starts.
  */
 export function summaryAction(
   manifest?: Pick<SyncedSpace, 'pageCount' | 'metadataCount'>,
-  estimate?: { missing: number; requests?: number },
+  estimate?: { missing: number; requests?: number; directoriesMissing?: number },
 ): SummaryAction {
+  const dirs = estimate?.directoriesMissing ?? 0;
   const what = 'Summaries, topics, section notes and the questions each page answers, which chats search';
   const offer = {
     hint: estimate?.requests
-      ? `${estimate.missing.toLocaleString('en-US')} pages in about ${estimate.requests.toLocaleString('en-US')} requests. ${what}`
+      ? `${estimate.missing.toLocaleString('en-US')} pages${dirs ? ` and ${dirs.toLocaleString('en-US')} directories` : ''} in about ${estimate.requests.toLocaleString('en-US')} requests. ${what}`
       : what,
     done: false,
   };
   if (!manifest) return { ...offer, label: 'Build the AI index' };
   const { pageCount, metadataCount } = manifest;
-  if (pageCount > 0 && metadataCount >= pageCount)
+  if (pageCount > 0 && metadataCount >= pageCount && dirs === 0)
     return { label: 'The AI index is up to date', hint: 'Re-index one page from its Details tab', done: true };
   if (metadataCount > 0) return { ...offer, label: `Update the AI index (${metadataCount}/${pageCount})` };
   return { ...offer, label: 'Build the AI index' };

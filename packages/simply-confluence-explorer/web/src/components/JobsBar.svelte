@@ -19,7 +19,9 @@
       >
         <Loader2 size={12} class="spin" />
         <span class="jobs-bar-label">{job.label}</span>
-        {#if job.total > 0}<span class="jobs-bar-count">{job.processed}/{job.total}</span>{/if}
+        {#if job.total > 0}<span class="jobs-bar-count">{job.processed}/{job.total}</span>{:else if job.step}<span
+            class="jobs-bar-count">{job.step}</span
+          >{/if}
       </button>
     {/each}
   </div>

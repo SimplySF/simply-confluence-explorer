@@ -14,16 +14,20 @@
  * limitations under the License.
  */
 
-import type { PageDetail, SpaceTocNode } from '../api/types.js';
+import type { DirectoryDigest, PageDetail } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
-import { ManifestBuilder } from '../ai/manifest.js';
+import { ManifestBuilder, summarise, type ManifestSummary } from '../ai/manifest.js';
+import { askStructured, chosenByNumber, type StructuredPrompt } from '../ai/structured.js';
+import type { Tracer } from '../telemetry/tracer.js';
 import { pause } from '../util/pause.js';
 import { fileKey } from './attachments.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
+import { allDirs, corpusDirectories, packMap, planAreas, planRecord, type MapDir, type PlanArea } from './plan.js';
 import type { SearchIndex } from './searchIndex.js';
 import { headingOf, sectionName, type Section } from './sections.js';
+import { seriesKey } from './spaceMap.js';
 import type { SpaceStore } from './spaceStore.js';
 import type { VectorIndex } from './vectors.js';
 
@@ -78,6 +82,10 @@ export type RetrieverDeps = {
   attachments?: boolean;
   /** The attachments the person left out, by `fileKey`, whose sections are not sent either. */
   leftOut?: ReadonlySet<string>;
+  /** Where a choice the AI could not make is logged and counted (ADR-079). */
+  tracer?: Tracer;
+  /** A directory's current digest, which describes it on the map a plan is made from (ADR-079). */
+  digest?: (spaceKey: string, dirId: string) => DirectoryDigest | undefined;
 };
 
 /** How many candidate sections the search offers the AI to choose from. */
@@ -90,32 +98,50 @@ const CHOSEN = 12;
 const RRF_K = 60;
 /** The share of a question's words the best section must hold for the match not to count as weak. */
 const WEAK_COVER = 0.5;
+/** The most candidates one directory, or one series of similar titles, may take of `CANDIDATES` (ADR-079). */
+const GROUP_CAP = 8;
 
-const CHOOSE_PROMPT = `You are choosing which sections of Confluence pages to read before answering a question.
-The question, and the question before it if any, come first; then a catalogue of candidate sections, one per line, with each section's id, its page's title, the page's place in the space, the section's heading, and a summary.
-Choose the sections that are needed to answer, at most ${CHOSEN}, most useful first. Reply with JSON only, in this shape:
-{"sections":[{"id":"12345#2","why":"what this section adds"}]}`;
+const choosePrompt = (count: number): StructuredPrompt => ({
+  task: 'You are choosing which sections of Confluence pages to read before answering a question.',
+  rules: [
+    `The message lists ${count} candidate sections, numbered 1 to ${count}. Each line gives the page's title, its place in the space, the section's heading and a summary.`,
+    'A line that ends "searched for: ..." was found in an area chosen for this question while looking for those words.',
+    `Choose the sections needed to answer the question, at most ${CHOSEN}, most useful first. Use only numbers from 1 to ${count}.`,
+    'For each section chosen, give its "number" and, in "why", what it adds to the answer in a few words.',
+    'If no section helps, reply {"sections":[]}.',
+  ],
+  example: '{"sections":[{"number":4,"why":"the rollback steps"},{"number":11,"why":"who to call"}]}',
+});
+
+/** The reply's shape, for a provider that can be held to one. */
+const chooseSchema = (count: number): Record<string, unknown> => ({
+  type: 'object',
+  properties: {
+    sections: {
+      type: 'array',
+      maxItems: CHOSEN,
+      items: {
+        type: 'object',
+        properties: { number: { type: 'integer', minimum: 1, maximum: count }, why: { type: 'string' } },
+        required: ['number'],
+      },
+    },
+  },
+  required: ['sections'],
+});
 
 const refKey = (ref: { pageId: string; index: number }): string => `${ref.pageId}#${ref.index}`;
 /** A page's place in the space, as its parents' titles. */
 const pathOf = (page: PageDetail): string => page.ancestors.map((a) => a.title).join(' › ');
 
-/** Reads the AI's choice of sections, keeping only ids it was offered; `null` when the reply is not the JSON asked for. */
-export function parseChoice(text: string, offered: Set<string>): Array<{ id: string; why?: string }> | null {
-  const json = /\{[\s\S]*\}/.exec(text);
-  if (!json) return null;
-  try {
-    const raw = (JSON.parse(json[0]) as { sections?: unknown }).sections;
-    if (!Array.isArray(raw)) return null;
-    return raw
-      .map((p: unknown) => (p ?? {}) as { id?: unknown; why?: unknown })
-      .filter((p): p is { id: string; why?: unknown } => typeof p.id === 'string' && offered.has(p.id))
-      .map((p) => ({ id: p.id, why: typeof p.why === 'string' ? p.why.slice(0, 200) : undefined }))
-      .slice(0, CHOSEN);
-  } catch {
-    // Not JSON after all: the caller reads the top search results instead.
-    return null;
-  }
+/**
+ * The AI's choice of sections from its parsed reply, each number mapped back to the id offered under
+ * it and a number it was not offered dropped; a string saying why when the reply is not the choice asked for.
+ */
+export function parseChoice(json: unknown, offered: readonly string[]): Array<{ id: string; why?: string }> | string {
+  const chosen = chosenByNumber((json as { sections?: unknown } | null)?.sections, offered, CHOSEN);
+  if (typeof chosen === 'string') return chosen;
+  return chosen.map((c) => ({ id: c.item, ...(c.why ? { why: c.why } : {}) }));
 }
 
 /** Merges rankings by reciprocal rank fusion, so a section high in either list rises. */
@@ -129,19 +155,77 @@ export function fuse(rankings: string[][], limit: number): string[] {
     .map(([key]) => key);
 }
 
-/** An outline of the space's top two levels, checked against the current rules, so an answer knows where things are. */
-async function outlineOf(key: string, deps: RetrieverDeps): Promise<string> {
-  let outline = '## Outline of the space\n';
-  const excluded = deps.exclusions.checker(key);
-  const walk = (nodes: SpaceTocNode[], depth: number, ancestors: Array<{ id: string; title: string }>): void => {
-    const allowed = nodes.filter((n) => !excluded({ id: n.id, title: n.title, ancestors }));
-    for (const n of allowed.slice(0, 8)) {
-      outline += `${'  '.repeat(depth)}- **${n.title}**${n.summary ? `: ${n.summary}` : ''}\n`;
-      if (depth < 1) walk(n.children, depth + 1, [...ancestors, { id: n.id, title: n.title }]);
+/** The groups a section's page counts toward under the diversity cap: its directory, and its series if it is in one. */
+function groupsOf(byId: Map<string, PageDetail>, id: string): string[] {
+  const page = byId.get(id.split('#')[0]);
+  if (!page) return [];
+  const series = seriesKey(page.title);
+  return [`dir:${page.ancestors.at(-1)?.id ?? ''}`, ...(series.includes('#') ? [`series:${series}`] : [])];
+}
+
+/**
+ * Takes from the rankings in turn, best first, until `limit`, so each ranking contributes; no
+ * directory or series takes more than its share (`GROUP_CAP` in every `CANDIDATES`), so a large area
+ * of similar pages cannot fill every place. Only when the cap leaves under a quarter of the places
+ * filled, as in a corpus of one directory, do the sections it held back fill the rest.
+ */
+export function diversify(rankings: string[][], limit: number, groups: (id: string) => string[]): string[] {
+  const cap = Math.max(1, Math.round((limit * GROUP_CAP) / CANDIDATES));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const held: string[] = [];
+  const counts = new Map<string, number>();
+  const cursors = rankings.map(() => 0);
+  while (out.length < limit && cursors.some((c, r) => c < rankings[r].length)) {
+    for (let r = 0; r < rankings.length && out.length < limit; r++) {
+      const id = rankings[r][cursors[r]++];
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      const keys = groups(id);
+      if (keys.some((k) => (counts.get(k) ?? 0) >= cap)) held.push(id);
+      else {
+        keys.forEach((k) => counts.set(k, (counts.get(k) ?? 0) + 1));
+        out.push(id);
+      }
     }
-  };
-  walk(await deps.store.buildToc(key), 0, []);
-  return `${outline}\n---\n\n`;
+  }
+  return out.length < limit / 4 ? [...out, ...held].slice(0, limit) : out;
+}
+
+/** The corpus's directories, as many as fit in `limit` from the top down, so an answer knows where things are. */
+function outlineOf(
+  key: string,
+  roots: MapDir[],
+  titles: Map<string, string>,
+  deps: RetrieverDeps,
+  limit: number,
+): string {
+  const shown = packMap(key, roots, limit - 100, titles, deps);
+  return shown.length ? `## Map of the directories\n${shown.map((d) => `- ${d.line}`).join('\n')}\n\n---\n\n` : '';
+}
+
+/**
+ * The plan for a corpus that spans more than one directory, recorded in the manifest, with the
+ * directories it was made from; no areas when the AI is not asked or its first reply could not be used.
+ */
+async function planFor(
+  key: string,
+  pages: PageDetail[],
+  query: ContextQuery,
+  deps: RetrieverDeps,
+  budget: number,
+  manifest: ManifestBuilder,
+): Promise<{ areas: PlanArea[]; roots: MapDir[]; titles: Map<string, string> }> {
+  const roots = await corpusDirectories(key, pages, deps);
+  const titles = new Map(pages.map((p) => [p.id, p.title]));
+  if (!deps.ai || allDirs(roots).length < 2) return { areas: [], roots, titles };
+  deps.onStep?.('Planning which areas to search');
+  const asked = [query.question, query.previous && `(the question before it: ${query.previous})`]
+    .filter(Boolean)
+    .join(' ');
+  const areas = await planAreas(key, asked, roots, titles, deps, budget / 4, manifest);
+  if (areas) manifest.plan(planRecord(areas, roots));
+  return { areas: areas ?? [], roots, titles };
 }
 
 /**
@@ -190,8 +274,9 @@ async function candidatesFor(
   text: string,
   question: string,
   deps: RetrieverDeps,
+  areas: PlanArea[],
 ): Promise<{ candidates: Candidate[]; weak: boolean }> {
-  const { ranked, weak } = await rankSections(key, byId, text, question, deps, CANDIDATES);
+  const { ranked, weak, lookedFor } = await rankSections(key, byId, text, question, deps, CANDIDATES, areas);
   const candidates = ranked.flatMap((id) => {
     const [pageId, index] = id.split('#');
     const section = sectionAt(key, deps, pageId, Number(index));
@@ -201,18 +286,44 @@ async function candidatesFor(
     // A section's own summary when it has one, otherwise its page's; an empty line counts as none.
     const summary = [meta?.sections?.[section.index]?.summary, meta?.summary].find(Boolean);
     const heading = headingOf(page.title, section);
+    const looked = lookedFor.get(id);
     return [
       {
         id,
         summary,
-        line: `${id} | ${page.title} | ${pathOf(page) || 'top level'} | ${heading} | ${summary ?? 'no summary'}`,
+        line: `${page.title} | ${pathOf(page) || 'top level'} | ${heading} | ${summary ?? 'no summary'}${
+          looked ? ` | searched for: ${looked}` : ''
+        }`,
       },
     ];
   });
   return { candidates, weak };
 }
 
-/** The corpus's sections ranked for the question, by keywords and, when the provider embeds, by meaning. */
+/**
+ * The sections of each planned area that best match what the plan looks for there, at most `quota`.
+ * An area no larger than its quota is offered whole, as the plan points at all of it.
+ */
+function areaRanking(
+  key: string,
+  byId: Map<string, PageDetail>,
+  area: PlanArea,
+  question: string,
+  deps: RetrieverDeps,
+  quota: number,
+): string[] {
+  const within = new Set(area.dir.pages.filter((id) => byId.has(id)));
+  const found = deps.index.searchSections(key, `${area.look} ${question}`, quota, within).map((h) => refKey(h.section));
+  if (within.size > quota) return found;
+  const rest = [...within].flatMap((id) => deps.index.sectionsOf(key, id).map(refKey));
+  return [...new Set([...found, ...rest])].slice(0, quota);
+}
+
+/**
+ * The corpus's sections ranked for the question, by keywords and, when the provider embeds, by
+ * meaning. With a plan, each area's own ranking takes its turn beside the whole corpus's, so that
+ * half of the places are shared among the areas and each one contributes.
+ */
 async function rankSections(
   key: string,
   byId: Map<string, PageDetail>,
@@ -220,40 +331,66 @@ async function rankSections(
   question: string,
   deps: RetrieverDeps,
   limit: number,
-): Promise<{ ranked: string[]; weak: boolean }> {
-  const hits = deps.index.searchSections(key, text, limit, new Set(byId.keys()));
+  areas: PlanArea[] = [],
+): Promise<{ ranked: string[]; weak: boolean; lookedFor: Map<string, string> }> {
+  // Ranked deeper than `limit`, so the diversity cap has others to take in place of those it holds back.
+  const deep = limit * 10;
+  const hits = deps.index.searchSections(key, text, deep, new Set(byId.keys()));
   const keyword = hits.map((h) => refKey(h.section));
   let semantic: string[] = [];
   const model = deps.ai?.embeddingModel?.();
   if (model && deps.ai?.embed && deps.vectors) {
     const [vector] = await deps.ai.embed([text], { spaceKey: key, signal: deps.signal });
-    if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, limit).map(refKey);
+    if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, deep).map(refKey);
   }
   // Weak when even the best section holds under half of this question's words, the one before it
   // aside, and nothing matched by meaning: the answer may rest on pages that are not about it.
   const best = deps.index.searchSections(key, question, 1, new Set(byId.keys()))[0];
   const weak = (best?.covers ?? 0) < WEAK_COVER && semantic.length === 0;
-  return { ranked: fuse([keyword, semantic], limit), weak };
+  const quota = Math.max(2, Math.floor(limit / 2 / Math.max(1, areas.length)));
+  const byArea = areas.map((a) => areaRanking(key, byId, a, question, deps, quota));
+  // What each section's area was searched for, so the choice knows why it was offered.
+  const lookedFor = new Map<string, string>();
+  byArea.forEach((ids, n) => ids.forEach((id) => lookedFor.has(id) || lookedFor.set(id, areas[n].look)));
+  const ranked = diversify([...byArea, fuse([keyword, semantic], deep)], limit, (id) => groupsOf(byId, id));
+  return { ranked, weak, lookedFor };
 }
 
-/** The AI's choice among the candidates, from their summaries, or `null` when it was not asked or not understood. */
+/**
+ * The AI's choice among the candidates, offered by number with their summaries, or `null` when it was
+ * not asked, or its reply could not be used after one repair, which the manifest then names.
+ */
 async function choose(
   key: string,
   query: ContextQuery,
   candidates: Candidate[],
   deps: RetrieverDeps,
+  manifest: ManifestBuilder,
 ): Promise<Chosen | null> {
   if (!deps.ai || !candidates.some((c) => c.summary)) return null;
   deps.onStep?.(`Choosing among ${candidates.length} sections`);
   const asked = `Question: ${query.question}${query.previous ? `\nThe question before it: ${query.previous}` : ''}`;
-  const answer = await deps.ai.analyzeDocument(
-    `${asked}\n\nCandidate sections:\n${candidates.map((c) => c.line).join('\n')}`,
-    CHOOSE_PROMPT,
-    `Choosing sections in ${key}`,
-    { spaceKey: key, signal: deps.signal },
-  );
-  return parseChoice(answer.text, new Set(candidates.map((c) => c.id)));
+  const ids = candidates.map((c) => c.id);
+  const result = await askStructured({
+    ai: deps.ai,
+    input: `${asked}\n\nCandidate sections:\n${candidates.map((c, i) => `${i + 1}. ${c.line}`).join('\n')}`,
+    prompt: choosePrompt(candidates.length),
+    schema: chooseSchema(candidates.length),
+    validate: (json) => parseChoice(json, ids),
+    label: `Choosing sections in ${key}`,
+    instead: `the ${Math.min(CHOSEN, candidates.length)} best search results were read`,
+    spaceKey: key,
+    signal: deps.signal,
+    manifest,
+    tracer: deps.tracer,
+  });
+  return result.ok ? result.value : null;
 }
+
+const searchStep = (pages: PageDetail[], areas: PlanArea[]): string =>
+  areas.length
+    ? `Searching ${areas.length} area${areas.length === 1 ? '' : 's'}`
+    : `Searching ${pages.length.toLocaleString('en-US')} pages`;
 
 function sectionAt(key: string, deps: RetrieverDeps, pageId: string, index: number): Section | undefined {
   return deps.index.sectionsOf(key, pageId).find((s) => s.index === index);
@@ -266,8 +403,9 @@ function sectionAt(key: string, deps: RetrieverDeps, pageId: string, index: numb
  * each rank the corpus's sections for the question and the one before it, and the two rankings are
  * fused. When the candidates have summaries, one request shows the AI their titles, places, headings
  * and summaries, never their text, and it chooses which to read; otherwise, or when its reply cannot
- * be read, the top of the fused ranking is read. The chosen sections, after those earlier answers
- * read, are checked by the secrets check and added until the size limit is reached.
+ * be used after one repair, the top of the fused ranking is read and the manifest says so. The chosen
+ * sections, after those earlier answers read, are checked by the secrets check and added until the
+ * size limit is reached.
  *
  * @param spaceKey The space.
  * @param pages The chat's corpus. An excluded page among them is still never sent: a full read checks
@@ -291,16 +429,18 @@ export async function retrieveContext(
 
   await pause();
   const byId = new Map(pages.map((p) => [p.id, p]));
-  deps.onStep?.(`Searching ${pages.length.toLocaleString('en-US')} pages`);
+  const { areas, roots, titles } = await planFor(key, pages, query, deps, budget, manifest);
+  deps.onStep?.(searchStep(pages, areas));
   const { candidates, weak } = await candidatesFor(
     key,
     byId,
     [query.question, query.previous].filter(Boolean).join(' '),
     query.question,
     deps,
+    areas,
   );
   let chosen: Chosen =
-    (await choose(key, query, candidates, deps)) ?? candidates.slice(0, CHOSEN).map((c) => ({ id: c.id }));
+    (await choose(key, query, candidates, deps, manifest)) ?? candidates.slice(0, CHOSEN).map((c) => ({ id: c.id }));
   // A question that matches nothing still gets an answer from a few pages, rather than none.
   if (chosen.length === 0 && !query.keep?.length)
     chosen = pages.slice(0, 3).flatMap((p) => {
@@ -314,7 +454,7 @@ export async function retrieveContext(
   );
   // The outline helps an answer place what it reads, but never at the cost of most of what it reads.
   await pause();
-  const outlined = options.outline ? await outlineOf(key, deps) : '';
+  const outlined = options.outline ? outlineOf(key, roots, titles, deps, budget / 4) : '';
   const outline = outlined.length <= budget / 4 ? outlined : '';
   deps.onStep?.('Reading the chosen sections');
   const read = readSections(
@@ -335,11 +475,15 @@ export async function retrieveContext(
   };
 }
 
-/** The sections a thorough answer reads, as batches that each fit one request. */
-export type SectionBatches = { batches: string[][]; sections: number; weak: boolean };
+/**
+ * The sections a thorough answer reads, as batches that each fit one request, and what its plan
+ * recorded: the areas searched, and a plan whose reply could not be used.
+ */
+export type SectionBatches = { batches: string[][]; sections: number; weak: boolean; planned: ManifestSummary };
 
 /**
- * Ranks up to `THOROUGH_SECTIONS` of the corpus's sections for the question and packs them into
+ * Ranks up to `THOROUGH_SECTIONS` of the corpus's sections for the question, across the areas a plan
+ * chooses as `retrieveContext` does, and packs them into
  * batches of at most `budget` characters. A page's sections are kept together, in the order its best
  * section ranked, so a batch reads whole stretches of a page rather than scattered pieces. Each batch
  * is read later with `readBatch`, which checks every section again before it is sent.
@@ -353,9 +497,11 @@ export async function sectionBatches(
 ): Promise<SectionBatches> {
   const key = spaceKey.toUpperCase();
   const byId = new Map(pages.map((p) => [p.id, p]));
-  deps.onStep?.(`Searching ${pages.length.toLocaleString('en-US')} pages`);
+  const manifest = new ManifestBuilder();
+  const { areas } = await planFor(key, pages, query, deps, budget, manifest);
+  deps.onStep?.(searchStep(pages, areas));
   const text = [query.question, query.previous].filter(Boolean).join(' ');
-  const { ranked, weak } = await rankSections(key, byId, text, query.question, deps, THOROUGH_SECTIONS);
+  const { ranked, weak } = await rankSections(key, byId, text, query.question, deps, THOROUGH_SECTIONS, areas);
   const byPage = new Map<string, Section[]>();
   for (const id of ranked) {
     const [pageId, index] = id.split('#');
@@ -380,7 +526,12 @@ export async function sectionBatches(
     }
   }
   if (current.length) batches.push(current);
-  return { batches, sections: batches.reduce((n, b) => n + b.length, 0), weak };
+  return {
+    batches,
+    sections: batches.reduce((n, b) => n + b.length, 0),
+    weak,
+    planned: summarise(manifest.build()),
+  };
 }
 
 /** One batch of a thorough answer, as context: each section checked by the secrets check, until `budget`. */

@@ -28,7 +28,7 @@ import { extractText, historyToSend, SessionStore } from '../src/ai/sessions.js'
 import { expectations } from '../../../test-env/fixtures/dataset.mjs';
 import { pdfSaying } from './support/pdf.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
-import { startTestApp, type TestApp } from './support/testApp.js';
+import { packedPages, startTestApp, type TestApp } from './support/testApp.js';
 
 let fake: FakeConfluence;
 beforeAll(async () => {
@@ -445,20 +445,32 @@ async function summarise(app: TestApp, spaceKey: string): Promise<void> {
 const choosing = (p: GuardedPayload): boolean => p.system.includes('choosing which sections of Confluence pages');
 const textOf = (p: GuardedPayload): string => [p.system, ...p.messages.map((m) => m.content)].join('\n');
 
+/** The number a choosing request offers a page's first section under. */
+const offeredAs = (p: GuardedPayload, title: string): number => {
+  const line = textOf(p)
+    .split('\n')
+    .find((l) => new RegExp(`^\\d+\\. ${title} \\|`).test(l));
+  return line ? Number(line.split('.')[0]) : 0;
+};
+
 test('a whole-space question lets the AI choose its sections from their summaries, never their text', async () => {
-  let choice = '';
+  let choice: (payload: GuardedPayload) => string = () => '';
   const app = await startTestApp(
     fake,
     (payload) => {
       if (payload.system.includes('return a JSON object')) {
         const about = (title: string): string =>
           title.includes('Policy') ? 'Rules for travel and remote work.' : `About ${title}.`;
-        const pages = [...payload.messages[0].content.matchAll(/^=== PAGE (\S+): (.+) ===$/gm)];
+        const titles = new Map(
+          [...payload.messages[0].content.matchAll(/^=== PAGE (\S+): (.+) ===$/gm)].map((m) => [m[1], m[2]]),
+        );
+        const pages = packedPages(payload.messages[0].content);
         if (pages.length)
           return JSON.stringify({
-            pages: pages.map((m) => ({
-              id: m[1],
-              summary: about(m[2]),
+            pages: pages.map((p) => ({
+              id: p.id,
+              sections: p.sections.map(() => about(titles.get(p.id) ?? '')),
+              summary: about(titles.get(p.id) ?? ''),
               tags: [],
               documentType: 'policy',
               systemsMentioned: [],
@@ -467,7 +479,7 @@ test('a whole-space question lets the AI choose its sections from their summarie
         const title = /# Document Title: (.+)/.exec(payload.messages[0].content)?.[1] ?? '';
         return JSON.stringify({ summary: about(title), tags: [], documentType: 'policy', systemsMentioned: [] });
       }
-      if (choosing(payload)) return choice;
+      if (choosing(payload)) return choice(payload);
       return 'an answer';
     },
     {},
@@ -478,22 +490,23 @@ test('a whole-space question lets the AI choose its sections from their summarie
     await summarise(app, 'PEOPLE');
     const travel = fake.page('PEOPLE', 'Travel Policy').id;
     const remote = fake.page('PEOPLE', 'Remote Work Policy').id;
-    // Interview Guide matches nothing in the question, so it is not offered, and choosing it reads nothing.
-    const guide = fake.page('PEOPLE', 'Interview Guide').id;
-    choice = JSON.stringify({
-      sections: [
-        { id: `${remote}#0`, why: 'remote rules' },
-        { id: `${guide}#0`, why: 'not offered' },
-      ],
-    });
+    // Interview Guide matches nothing in the question, so it is not offered; a number past the list reads nothing.
+    choice = (p) =>
+      JSON.stringify({
+        sections: [
+          { number: offeredAs(p, 'Remote Work Policy'), why: 'remote rules' },
+          { number: 99, why: 'not offered' },
+        ],
+      });
     const c = await spaceChat(app);
     const before = app.sent.length;
     const answered = await ask(app, c.id, 'What are the travel and remote work policies?');
     const asked = app.sent.slice(before).filter(choosing);
     assert.equal(asked.length, 1, 'one request chooses the sections');
     assert.match(textOf(asked[0]), /Rules for travel and remote work\./);
-    assert.match(textOf(asked[0]), new RegExp(`${travel}#0`));
-    assert.doesNotMatch(textOf(asked[0]), new RegExp(`${guide}#0 \\|`));
+    assert.ok(offeredAs(asked[0], 'Travel Policy') > 0, 'each candidate is offered by number');
+    assert.doesNotMatch(textOf(asked[0]), new RegExp(`${travel}#0|${remote}#0`), 'no section id is offered');
+    assert.doesNotMatch(textOf(asked[0]), /Interview Guide/);
     assert.doesNotMatch(textOf(asked[0]), /Flights over 6h|Up to 5 days remote/, 'no page text is sent to choose');
     const turn = answered.turns.at(-1)!;
     assert.deepEqual(
@@ -503,9 +516,18 @@ test('a whole-space question lets the AI choose its sections from their summarie
     );
     assert.ok((turn.considered ?? 0) >= 2);
 
-    choice = 'I would read the travel policy.';
+    choice = () => 'I would read the travel policy.';
+    const asking = app.sent.length;
     const fallback = await ask(app, c.id, 'Which flights can be booked in economy?');
+    const repair = app.sent.slice(asking).filter(choosing);
+    assert.equal(repair.length, 2, 'an unreadable choice is asked for once more');
+    assert.match(repair[1].system, /Your last reply could not be used: the reply held no JSON object\./);
     assert.ok(sources(fallback).includes('Travel Policy'), 'an unreadable choice falls back to the search');
+    assert.match(
+      JSON.stringify(fallback.turns.at(-1)?.sent?.leftOut),
+      /"reason":"fallback".*best search results were read/,
+      'the fallback is named under What was sent',
+    );
 
     await app.call('POST', '/space-cache/PEOPLE/ignore', { patterns: ['Policies/Travel Policy'], purge: false });
     const later = app.sent.length;
@@ -781,7 +803,8 @@ test('a question being answered reports the step it is on, and none once answere
   const app = await startTestApp(
     fake,
     async (payload) => {
-      if (!payload.system.includes('choosing which sections')) await held;
+      // Only the answer is held; the requests that plan and choose what it reads come back at once.
+      if (!/choosing which (sections|areas)/.test(payload.system)) await held;
       return 'an answer';
     },
     {},
