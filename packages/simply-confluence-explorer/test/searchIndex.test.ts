@@ -63,6 +63,13 @@ describe('the search index', () => {
     expect(stem('spiked')).toBe(stem('spike'));
     expect(stem('policies')).toBe(stem('policy'));
     expect(stem('stopped')).toBe(stem('stop'));
+    // A y that became an i before -ed, so "retried" never met "retry".
+    expect(stem('retried')).toBe(stem('retry'));
+    expect(stem('applied')).toBe(stem('apply'));
+    expect(stem('copied')).toBe(stem('copy'));
+    expect(stem('replies')).toBe(stem('reply'));
+    expect(stem('taxi')).toBe('taxi');
+    expect(stem('quickly')).toBe('quick');
   });
 
   it('finds a page by another form of the word it uses', async () => {

@@ -38,12 +38,16 @@ const STOP = new Set(
 export function stem(word: string): string {
   let w = word.length > 4 && word.endsWith('ies') ? `${word.slice(0, -3)}y` : word;
   for (const suffix of ['ing', 'ed', 'es', 's', 'ly']) {
+    // "apply", "reply" and "supply" are verbs, not an adverb's -ly; cutting them leaves "app".
+    if (suffix === 'ly' && w.endsWith('ply')) continue;
     if (w.length - suffix.length >= 3 && w.endsWith(suffix)) {
       w = w.slice(0, -suffix.length);
       break;
     }
   }
   if (w.endsWith('ie')) w = `${w.slice(0, -2)}y`;
+  // A "y" turns to "i" before a suffix, as in "retried" or "applied", so it is turned back.
+  if (w !== word && /[^aeiou]i$/.test(w)) w = `${w.slice(0, -1)}y`;
   if (w.length > 3 && w.endsWith('e')) w = w.slice(0, -1);
   // A doubled last letter, as in "stopped" or "billing", meets the single one, as in "stop" or "bill".
   if (w.length > 3 && w.at(-1) === w.at(-2) && !/[aeiou]/.test(w.at(-1)!)) w = w.slice(0, -1);
