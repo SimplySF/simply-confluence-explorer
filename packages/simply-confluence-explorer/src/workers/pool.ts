@@ -35,7 +35,10 @@ type Slot = { worker: Worker; job?: Job };
 const RESOLVE_TS =
   "export async function resolve(s, c, next) { try { return await next(s, c); } catch (e) { if (s.endsWith('.js') && e.code === 'ERR_MODULE_NOT_FOUND') return next(s.slice(0, -3) + '.ts', c); throw e; } }";
 const FROM_SOURCES = [
-  '--experimental-transform-types',
+  // Node 26.13 removed this flag and strips types by default, which is all the worker's code needs.
+  ...(process.allowedNodeEnvironmentFlags.has('--experimental-transform-types')
+    ? ['--experimental-transform-types']
+    : []),
   '--no-warnings',
   '--import',
   `data:text/javascript,${encodeURIComponent(`import { register } from 'node:module'; register(${JSON.stringify(`data:text/javascript,${encodeURIComponent(RESOLVE_TS)}`)});`)}`,
