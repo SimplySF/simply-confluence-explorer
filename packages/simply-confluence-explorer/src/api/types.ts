@@ -238,6 +238,25 @@ export type DirectoryStats = {
   series?: { pattern: string; pages: number };
 };
 
+/** What a directory holds, by the kind of pages under it (design doc 0017). */
+export type DirectoryKind = 'living' | 'archive-series' | 'templates' | 'mixed';
+
+/**
+ * A directory's digest (ADR-079): what the pages below it are about, written by the AI index from
+ * their titles, summaries and tags and from the digests of the directories below, never page text.
+ * `stamp` names the allowed pages it was made from; a digest whose stamp no longer matches is not used.
+ */
+export type DirectoryDigest = {
+  id: string;
+  title: string;
+  summary: string;
+  kind: DirectoryKind;
+  topics: string[];
+  questions: string[];
+  stamp: string;
+  generatedAt: string;
+};
+
 export type SpaceMapResponse = { directories: DirectoryStats[]; pages: number };
 
 export type PurgeResult = { purgedCount: number; remainingPages: number };
