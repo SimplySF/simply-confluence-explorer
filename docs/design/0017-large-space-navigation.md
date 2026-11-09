@@ -1,6 +1,6 @@
 # 0017 — Large spaces are navigated by a map of their directories, and can be reorganised
 
-**Status:** In progress
+**Status:** Implemented in part; reorganising a space waits on #82
 **Package:** `packages/simply-confluence-explorer`
 **Date:** 2026-11-09
 
