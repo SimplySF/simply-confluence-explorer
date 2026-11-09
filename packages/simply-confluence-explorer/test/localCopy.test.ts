@@ -28,6 +28,7 @@ import type {
   DeleteProgress,
   PageResponse,
   PageTreeNode,
+  SpaceMapResponse,
   SpaceTocNode,
   SyncProgress,
   SyncedSpace,
@@ -286,6 +287,26 @@ describe('the tags of a synced space', () => {
       expect(after.body.tags.find((t) => t.tag === 'policy')?.pages.map((p) => p.title)).toEqual([
         'Remote Work Policy',
       ]);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe('the map of a synced space', () => {
+  it('counts the pages below each directory, and leaves out an excluded directory and its pages', async () => {
+    const app = await startApp();
+    try {
+      await sync(app, 'PEOPLE');
+      const before = await call<SpaceMapResponse>(app, '/space-cache/PEOPLE/map');
+      const policies = before.body.directories.find((d) => d.title === 'Policies');
+      expect(policies?.pages).toBeGreaterThan(0);
+      expect(policies?.path).toEqual(['People and HR Home']);
+      expect((await call(app, '/space-cache/ENG/map')).status).toBe(404);
+      await call(app, '/space-cache/PEOPLE/ignore', { patterns: ['Policies/'], purge: false });
+      const after = await call<SpaceMapResponse>(app, '/space-cache/PEOPLE/map');
+      expect(after.body.directories.map((d) => d.title)).not.toContain('Policies');
+      expect(after.body.pages).toBe(before.body.pages - policies!.pages - 1);
     } finally {
       await app.close();
     }

@@ -9,9 +9,15 @@
 
   // A space's two lines of defence before anything reaches an AI: pages that are never sent
   // (.confluenceignore), and what is blocked or replaced in anything that is (.confluenceguard).
-  type Props = { spaceKey: string; onClose: () => void; onSaved: () => void };
+  type Props = {
+    spaceKey: string;
+    onClose: () => void;
+    onSaved: () => void;
+    /** A rule to propose, added to the list for the person to save, as from the Space map. */
+    add?: string;
+  };
 
-  let { spaceKey, onClose, onSaved }: Props = $props();
+  let { spaceKey, onClose, onSaved, add }: Props = $props();
   // null until loaded: typing before the saved rules arrive would be overwritten by them.
   let ignore = $state<string | null>(null);
   let guard = $state<string | null>(null);
@@ -23,7 +29,7 @@
 
   $effect(() => {
     api.ignore(spaceKey).then(
-      (p) => (ignore = p.join('\n')),
+      (p) => (ignore = [...p, ...(add && !p.includes(add) ? [add] : [])].join('\n')),
       (e: unknown) => (loadError = messageOf(e)),
     );
     api.guard(spaceKey).then(

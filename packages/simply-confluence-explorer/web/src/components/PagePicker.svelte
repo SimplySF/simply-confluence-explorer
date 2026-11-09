@@ -5,7 +5,7 @@
   import { api } from '../support/api.js';
   import { count, marks, titleLeftOut, toggle, type Choice, type Mark } from '../support/choice.js';
   import { catalogProgress, readTags } from '../support/pageResult.js';
-  import { collapsedFor, visibleRows, withChildren } from '../support/tree.js';
+  import { collapsedFor, descendantCounts, visibleRows, withChildren } from '../support/tree.js';
   import Segmented from './ui/Segmented.svelte';
 
   // Choosing a Space chat's pages over the whole window (design doc 0016): the space's tree with a box
@@ -55,7 +55,7 @@
   // While searching, every match shows with the way down to it.
   const rows = $derived(visibleRows(tree, query.trim() ? new Set() : collapsed, query));
   const markOf = (id: string): Mark => all.get(id) ?? { own: 'none', mixed: false, chosen: false };
-  const pagesUnder = (n: PageTreeNode): number => n.children.reduce((s, c) => s + 1 + pagesUnder(c), 0);
+  const below = $derived(descendantCounts(tree));
 
   function tick(node: PageTreeNode, on: boolean): void {
     choice = toggle(choice, node, on, (next) => marks(tree, next, tagged).get(node.id)?.own ?? 'none');
@@ -187,7 +187,7 @@
               />
               {row.node.title}
             </label>
-            {#if row.hasChildren}<span class="muted">· {pagesUnder(row.node)} under it</span>{/if}
+            {#if row.hasChildren}<span class="muted">· {below.get(row.node.id)} under it</span>{/if}
             {#if why(row.node, m)}<span class="muted page-picker-why">{why(row.node, m)}</span>{/if}
           </li>
         {:else}

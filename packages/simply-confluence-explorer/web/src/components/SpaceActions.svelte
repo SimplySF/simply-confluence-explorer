@@ -1,10 +1,21 @@
 <script lang="ts">
-  import { Download, Ellipsis, FolderSync, FolderTree, FolderX, ShieldCheck, Sparkles, Trash2 } from '@lucide/svelte';
+  import {
+    Download,
+    Ellipsis,
+    FolderSync,
+    FolderTree,
+    FolderX,
+    Map as MapIcon,
+    ShieldCheck,
+    Sparkles,
+    Trash2,
+  } from '@lucide/svelte';
   import type { SyncedSpace } from '../../../src/api/types.js';
   import { api } from '../support/api.js';
   import { jobs } from '../support/jobs.svelte.js';
   import { summaryAction } from '../support/summaries.js';
   import { messageOf, toast } from '../support/toast.svelte.js';
+  import SpaceMap from './SpaceMap.svelte';
   import SpaceRulesDialog from './SpaceRulesDialog.svelte';
   import TocViewer from './TocViewer.svelte';
   import ConfirmDialog from './ui/ConfirmDialog.svelte';
@@ -24,7 +35,9 @@
   };
 
   let { spaceKey, manifest, onChanged, onSelectPage }: Props = $props();
-  let dialog = $state<'toc' | 'rules' | 'purge' | 'delete' | null>(null);
+  let dialog = $state<'toc' | 'map' | 'rules' | 'purge' | 'delete' | null>(null);
+  /** A rule the Space map proposes, shown in the rules dialog for the person to save. */
+  let proposed = $state<string | undefined>(undefined);
 
   // Sync and summary runs are held in the jobs store, so they keep reporting after this menu goes away.
   const sync = $derived(jobs.sync(spaceKey));
@@ -119,6 +132,13 @@
           disabled: !synced,
         },
         {
+          label: 'Space map',
+          icon: MapIcon,
+          hint: needSync ?? 'Where the pages are: the largest and oldest directories',
+          onSelect: () => (dialog = 'map'),
+          disabled: !synced,
+        },
+        {
           label: 'Download ZIP',
           icon: Download,
           hint: needSync ?? 'The synced copy as Markdown files',
@@ -187,8 +207,29 @@
         }}
       />
     </Dialog>
+  {:else if dialog === 'map'}
+    <SpaceMap
+      {spaceKey}
+      onExit={() => (dialog = null)}
+      onSelectPage={(id) => {
+        dialog = null;
+        onSelectPage(id);
+      }}
+      onExclude={(rule) => {
+        proposed = rule;
+        dialog = 'rules';
+      }}
+    />
   {:else if dialog === 'rules'}
-    <SpaceRulesDialog {spaceKey} onClose={() => (dialog = null)} onSaved={onChanged} />
+    <SpaceRulesDialog
+      {spaceKey}
+      add={proposed}
+      onClose={() => {
+        dialog = null;
+        proposed = undefined;
+      }}
+      onSaved={onChanged}
+    />
   {:else if dialog === 'purge'}
     <ConfirmDialog
       title="Remove stale cached pages from {spaceKey}?"

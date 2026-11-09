@@ -216,6 +216,30 @@ export type SpaceTocNode = {
   children: SpaceTocNode[];
 };
 
+/** One directory of the Space map (design doc 0017): what sits below it, after exclusions. */
+export type DirectoryStats = {
+  id: string;
+  title: string;
+  /** The titles of the pages above it, from the top of the space. */
+  path: string[];
+  /** Pages below it, at any depth. */
+  pages: number;
+  /** Characters of Confluence storage below it, a measure of how much there is to read. */
+  size: number;
+  /** The newest and oldest last edit below it, as ISO dates; empty when not known. */
+  newest: string;
+  oldest: string;
+  /** The share of the pages below it that have a current AI summary, from 0 to 1. */
+  indexed: number;
+  authors: number;
+  /** Nothing below it has changed for a year. */
+  stale: boolean;
+  /** Most pages below it share one title apart from numbers and dates, such as release notes. */
+  series?: { pattern: string; pages: number };
+};
+
+export type SpaceMapResponse = { directories: DirectoryStats[]; pages: number };
+
 export type PurgeResult = { purgedCount: number; remainingPages: number };
 
 /** The AI providers a person can choose in Settings (ADR-017). */

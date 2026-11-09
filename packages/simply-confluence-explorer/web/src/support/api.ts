@@ -42,6 +42,7 @@ import type {
   RedundancyDecision,
   ResolveResponse,
   SessionScope,
+  SpaceMapResponse,
   SpaceTocNode,
   StagedPage,
   ChatReview,
@@ -203,6 +204,7 @@ export const api = {
     call<{ images: ImageChoice }>(`/space-cache/${key(spaceKey)}/space-settings`, 'POST', { images }),
   /** A space's tags, or how far its page catalog has got while it is first built (ADR-064). */
   tags: (spaceKey: string) => call<TagsResponse>(`/space-cache/${key(spaceKey)}/tags`),
+  spaceMap: (spaceKey: string) => call<SpaceMapResponse>(`/space-cache/${key(spaceKey)}/map`),
   /** Every chat in a space with a review, and how much of it waits at each step. */
   reviews: (spaceKey: string) =>
     call<{ chats: ChatReview[] }>(`/space-cache/${key(spaceKey)}/reviews`).then((r) => r.chats),

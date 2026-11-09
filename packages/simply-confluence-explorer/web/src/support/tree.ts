@@ -88,3 +88,15 @@ export const withChildren = (nodes: PageTreeNode[], into = new Set<string>()): S
   }
   return into;
 };
+
+/** How many pages sit below each page, at any depth, so a row can show the size of what it holds. */
+export function descendantCounts(nodes: PageTreeNode[], into = new Map<string, number>()): Map<string, number> {
+  for (const n of nodes) {
+    descendantCounts(n.children, into);
+    into.set(
+      n.id,
+      n.children.reduce((sum, c) => sum + 1 + (into.get(c.id) ?? 0), 0),
+    );
+  }
+  return into;
+}

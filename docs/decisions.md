@@ -2234,3 +2234,19 @@ each of which may gain a new version in its history. This is accepted because no
 that the person did not stage and preview, every write is checked against the version it was staged
 from, the code is a load-bearing surface reviewed by a person, and deleting or archiving pages
 remains outside the app.
+
+---
+
+## ADR-082 — The code budget rises to 21,200 lines for the Space map
+
+**Status:** accepted, 2026-11-09. Amends ADR-078.
+
+Design doc 0017 shows how many pages sit below each page, and adds a Space map that lists every
+directory with its size, its newest edit and whether it is a series of near-identical pages, so a
+large cache of old pages can be found and excluded. It adds a module that measures the tree, a
+route, and a full-window view. Measured at 20,977 lines of code, the limit rises to 21,200
+(`MAX_CODE_LINES` in `scripts/budgets.mjs`).
+
+**The argument against:** the map could have been a column in the table of contents. This is
+accepted because the table of contents lists pages in tree order, which is the order that hides a
+large old directory three levels down, and the map's job is to sort by size and age instead.
