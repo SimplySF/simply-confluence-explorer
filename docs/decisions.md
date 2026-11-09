@@ -2156,3 +2156,81 @@ lines of code, the limit rises to 20,700 (`MAX_CODE_LINES` in `scripts/budgets.m
 **The argument against:** a budget raised twice in a day is a budget that is not holding. This is
 accepted because each change answers a failure a person met on a real space, and the next rise needs
 its own record.
+
+---
+
+## ADR-079 — A large corpus is searched by a plan over a map of its directories, built from directory digests, instead of one flat ranking
+
+**Status:** accepted, 2026-11-09. Amends ADR-048 and ADR-051, which ranked the whole corpus at once.
+
+On spaces of more than 3,000 pages with deep trees, a question missed whole areas of the space: the
+model saw only the top two levels of the tree, metadata described single pages, and a large area of
+similar pages could fill every candidate place. Design doc 0017 describes the changes; these are
+the decisions behind them.
+
+- **The AI index writes a digest for each directory**, made from its children's titles, summaries
+  and tags and from the digests of the directories below it, never from page text. A digest is
+  stamped with the allowed pages it was made from and is not used once that set changes, so an
+  exclusion added later takes effect at once.
+- **A corpus too large for one request is searched by a plan.** The model is shown the corpus's
+  directories as a numbered map and chooses up to six areas, each with what to look for there. The
+  candidates are then taken from each chosen area in turn, and no single directory or series fills
+  more than a fifth of them. The plan and the areas left out are recorded in the answer's manifest.
+- **Every structured request offers its choices by number, validates the reply, and asks once more
+  with the reason** when the reply is not what was asked for. A fallback after that is named in the
+  manifest instead of happening silently.
+
+**The argument against:** a planned question costs one to three more requests, the digests add
+requests to every index run, and the digests are a third derived store beside the metadata and the
+catalog. This is accepted because planning runs only when a corpus does not fit in one request, the
+digests are packed several to a request (a few dozen requests on a 3,200-page space, against the
+hundreds the pages take), each digest is checked against its stamp when it is read, and an answer
+that never looked at the area holding its answer is the failure the north star names. This is not
+the topic expansion that ADR-056 declined: it routes by the tree's own structure, not by words that
+mean the same.
+
+---
+
+## ADR-080 — The prose budget rises to 2,450 lines for design doc 0017
+
+**Status:** accepted, 2026-11-09. Amends ADR-075.
+
+Design doc 0017 describes the Space map, directory digests, planned retrieval and reorganising a
+space. Measured with it at 2,406 lines of prose, the limit rises to 2,450 (`MAX_DOC_LINES` in
+`scripts/budgets.mjs`). The code budget rises in its own records as each part is built, measured
+then rather than guessed now (ADR-014).
+
+**The argument against:** the prose budget exists to keep the documents short. This is accepted
+because the design doc replaces no other document and describes four parts of one feature.
+
+---
+
+## ADR-081 — A person can reorganise a space by moving pages and making directories, staged and checked by a dry run before anything is pushed
+
+**Status:** accepted, 2026-11-09.
+
+A large space gathers caches of old pages, such as a release note for every build, that crowd
+answers and that nobody can find without opening the tree level by level. A person asked to make a
+directory, drag pages into it, stage the changes, preview them and push them. This serves the second
+and third jobs of the north star: it improves the space, and it lets a person put pages that are no
+longer true in one place and leave them out.
+
+- **Changes are staged on the server** for each space, so a reload keeps them, and each can be undone
+  on its own. A move takes the page's whole subtree, and is refused if it would put a page under
+  itself.
+- **A move names the version and parent the page had when it was staged.** The dry run reads each
+  page from Confluence again and refuses a change whose page has moved on, and the push reads it
+  once more before writing, so nobody's newer change is lost.
+- **A push needs a dry run of the same staged changes**, goes through the one write path
+  (`confluence/pagePush.ts`), stops at the first failure and leaves the rest staged.
+- **A moved page's body is written back exactly as Confluence holds it**, so no part of the page is
+  lost (ADR-041, ADR-058).
+- **A new directory is a new page**, created only after the check of ADR-025 has been answered.
+- **The dry run names pages whose exclusion would change** because of where they would sit, by
+  count and allowed title only.
+
+**The argument against:** this is a new kind of write, and one push can move thousands of pages,
+each of which may gain a new version in its history. This is accepted because nothing is written
+that the person did not stage and preview, every write is checked against the version it was staged
+from, the code is a load-bearing surface reviewed by a person, and deleting or archiving pages
+remains outside the app.

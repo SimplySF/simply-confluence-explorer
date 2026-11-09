@@ -49,6 +49,7 @@ refactors that keep the public surface identical (though a short doc is welcome 
 | [0014](0014-clarity-rework.md)                 | A clearer layout for every main screen                                                  | Implemented          |
 | [0015](0015-responsive-app-and-review.md)      | An app that keeps up, says when to wait, and gives review a place of its own            | Implemented          |
 | [0016](0016-choosing-pages.md)                 | A Space chat's pages are chosen from the space's tree, leaving out what does not belong | Implemented          |
+| [0017](0017-large-space-navigation.md)         | Large spaces are navigated by a map of their directories, and can be reorganised        | In progress          |
 
 Design docs work alongside the [decision log](../decisions.md), and each has a different job. A
 design doc describes one feature: what it does, how it behaves, and why it has that shape. It is
