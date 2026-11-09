@@ -56,9 +56,10 @@ const QUESTIONS: Array<[string, string]> = [
 
 /**
  * The share of questions whose answering page retrieval reads, at or above which this test passes.
- * Keyword search alone scored 13 of 18; comparing words by their stem raised it to 16.
+ * Keyword search alone scored 13 of 18; comparing words by their stem raised it to 16, and matching
+ * the titles of the pages above each page raised it to 17.
  */
-const FLOOR = 16 / 18;
+const FLOOR = 17 / 18;
 
 const WORDS =
   'database gateway billing auth backup restore replica primary service runbook incident severity api endpoint version deploy token vpn client feature decision secrets latency staging account'.split(
@@ -151,10 +152,12 @@ const AREA_QUESTIONS: Array<[question: string, area: string, answer: string]> = 
  * How many area-recall questions read at least one page of the answer's area, and how many read the
  * answering page itself, at or above which this test passes. A directory page counts toward reaching
  * its area, though it rarely holds the answer, which is why both are measured. Keyword search over
- * each page's own words reached 7 areas and 3 answering pages. The planned retrieval of design doc
- * 0017, which searches the areas a plan chooses, is expected to raise both.
+ * each page's own words reached 7 areas and 3 answering pages; matching the titles of the pages
+ * above each page raised both to 8. The planned retrieval of design doc 0017, which searches the
+ * areas a plan chooses, is expected to raise them further: the question left, about service
+ * accounts, is lost among release notes that share its words.
  */
-const AREA_FLOOR = { areas: 7, answers: 3 };
+const AREA_FLOOR = { areas: 8, answers: 8 };
 
 describe('area recall on a deep space', () => {
   it('reaches the area and the page that hold each answer at least as often as it did', async () => {

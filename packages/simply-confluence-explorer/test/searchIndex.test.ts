@@ -76,6 +76,23 @@ describe('the search index', () => {
     expect((await ids(index, 'database failover')).slice(0, 2)).toEqual(['1', '2']);
   });
 
+  it('finds a page by a word only the titles above it hold, below a page with the word in its own title', async () => {
+    const { index, store } = setup();
+    const under = (id: string, title: string, ancestors: PageDetail['ancestors']): PageDetail => ({
+      ...page(id, title, 'Money goes back to the original card within five days.'),
+      parentId: ancestors.at(-1)?.id,
+      ancestors,
+    });
+    store.writePage('PLAT', page('10', 'Payments', 'The ledger team owns this directory.'), '', []);
+    store.writePage('PLAT', under('11', 'Card returns', [{ id: '10', title: 'Payments' }]), '', []);
+    expect(await ids(index, 'payments')).toEqual(['10', '11']);
+    // A page moved under another directory keeps its version, and is found by its new place.
+    store.writePage('PLAT', page('12', 'Ledger', 'Where balances are kept.'), '', []);
+    store.refreshPage('PLAT', under('11', 'Card returns', [{ id: '12', title: 'Ledger' }]));
+    expect(await ids(index, 'ledger')).toContain('11');
+    expect(await ids(index, 'payments')).toEqual(['10']);
+  });
+
   it('finds nothing in a space that is not synced', () => {
     const { index } = setup();
     expect(index.search('OPS', 'database')).toEqual([]);
