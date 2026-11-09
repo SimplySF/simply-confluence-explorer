@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.11.0](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.10.1...%40simplysf%2Fsimply-confluence-explorer%400.11.0) (2026-11-09)
+
+### Features
+
+- large spaces are navigated by a map of their directories, with digests and planned retrieval ([#83](https://github.com/SimplySF/simply-confluence-explorer/issues/83)) ([b725ae0](https://github.com/SimplySF/simply-confluence-explorer/commit/b725ae0685a41875a6bf67cf26df618964b8d156)), closes [#82](https://github.com/SimplySF/simply-confluence-explorer/issues/82)
+
 ## [0.10.1](https://github.com/SimplySF/simply-confluence-explorer/compare/%40simplysf%2Fsimply-confluence-explorer%400.10.0...%40simplysf%2Fsimply-confluence-explorer%400.10.1) (2026-10-27)
 
 ### Bug Fixes
