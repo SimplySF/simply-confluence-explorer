@@ -26,6 +26,7 @@ import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchCo
 import type { ExclusionManager } from './exclusionManager.js';
 import type { SearchIndex } from './searchIndex.js';
 import { headingOf, sectionName, type Section } from './sections.js';
+import { seriesKey } from './spaceMap.js';
 import type { SpaceStore } from './spaceStore.js';
 import type { VectorIndex } from './vectors.js';
 
@@ -94,6 +95,8 @@ const CHOSEN = 12;
 const RRF_K = 60;
 /** The share of a question's words the best section must hold for the match not to count as weak. */
 const WEAK_COVER = 0.5;
+/** The most candidates one directory, or one series of similar titles, may take of `CANDIDATES` (ADR-079). */
+const GROUP_CAP = 8;
 
 const choosePrompt = (count: number): StructuredPrompt => ({
   task: 'You are choosing which sections of Confluence pages to read before answering a question.',
@@ -146,6 +149,43 @@ export function fuse(rankings: string[][], limit: number): string[] {
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([key]) => key);
+}
+
+/** The groups a section's page counts toward under the diversity cap: its directory, and its series if it is in one. */
+function groupsOf(byId: Map<string, PageDetail>, id: string): string[] {
+  const page = byId.get(id.split('#')[0]);
+  if (!page) return [];
+  const series = seriesKey(page.title);
+  return [`dir:${page.ancestors.at(-1)?.id ?? ''}`, ...(series.includes('#') ? [`series:${series}`] : [])];
+}
+
+/**
+ * Takes from the rankings in turn, best first, until `limit`, so each ranking contributes; no
+ * directory or series takes more than its share (`GROUP_CAP` in every `CANDIDATES`), so a large area
+ * of similar pages cannot fill every place. Only when the cap leaves under a quarter of the places
+ * filled, as in a corpus of one directory, do the sections it held back fill the rest.
+ */
+export function diversify(rankings: string[][], limit: number, groups: (id: string) => string[]): string[] {
+  const cap = Math.max(1, Math.round((limit * GROUP_CAP) / CANDIDATES));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const held: string[] = [];
+  const counts = new Map<string, number>();
+  const cursors = rankings.map(() => 0);
+  while (out.length < limit && cursors.some((c, r) => c < rankings[r].length)) {
+    for (let r = 0; r < rankings.length && out.length < limit; r++) {
+      const id = rankings[r][cursors[r]++];
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      const keys = groups(id);
+      if (keys.some((k) => (counts.get(k) ?? 0) >= cap)) held.push(id);
+      else {
+        keys.forEach((k) => counts.set(k, (counts.get(k) ?? 0) + 1));
+        out.push(id);
+      }
+    }
+  }
+  return out.length < limit / 4 ? [...out, ...held].slice(0, limit) : out;
 }
 
 /** An outline of the space's top two levels, checked against the current rules, so an answer knows where things are. */
@@ -240,19 +280,21 @@ async function rankSections(
   deps: RetrieverDeps,
   limit: number,
 ): Promise<{ ranked: string[]; weak: boolean }> {
-  const hits = deps.index.searchSections(key, text, limit, new Set(byId.keys()));
+  // Ranked deeper than `limit`, so the diversity cap has others to take in place of those it holds back.
+  const deep = limit * 10;
+  const hits = deps.index.searchSections(key, text, deep, new Set(byId.keys()));
   const keyword = hits.map((h) => refKey(h.section));
   let semantic: string[] = [];
   const model = deps.ai?.embeddingModel?.();
   if (model && deps.ai?.embed && deps.vectors) {
     const [vector] = await deps.ai.embed([text], { spaceKey: key, signal: deps.signal });
-    if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, limit).map(refKey);
+    if (vector) semantic = deps.vectors.nearest([...byId.values()], vector, model, deep).map(refKey);
   }
   // Weak when even the best section holds under half of this question's words, the one before it
   // aside, and nothing matched by meaning: the answer may rest on pages that are not about it.
   const best = deps.index.searchSections(key, question, 1, new Set(byId.keys()))[0];
   const weak = (best?.covers ?? 0) < WEAK_COVER && semantic.length === 0;
-  return { ranked: fuse([keyword, semantic], limit), weak };
+  return { ranked: diversify([fuse([keyword, semantic], deep)], limit, (id) => groupsOf(byId, id)), weak };
 }
 
 /**

@@ -153,11 +153,11 @@ const AREA_QUESTIONS: Array<[question: string, area: string, answer: string]> = 
  * answering page itself, at or above which this test passes. A directory page counts toward reaching
  * its area, though it rarely holds the answer, which is why both are measured. Keyword search over
  * each page's own words reached 7 areas and 3 answering pages; matching the titles of the pages
- * above each page raised both to 8. The planned retrieval of design doc 0017, which searches the
- * areas a plan chooses, is expected to raise them further: the question left, about service
- * accounts, is lost among release notes that share its words.
+ * above each page raised both to 8, and capping how many candidates one directory or series may take
+ * raised the areas to 9. The answer left, about service accounts, is lost among release notes that
+ * share its words.
  */
-const AREA_FLOOR = { areas: 8, answers: 8 };
+const AREA_FLOOR = { areas: 9, answers: 8 };
 
 describe('area recall on a deep space', () => {
   it('reaches the area and the page that hold each answer at least as often as it did', async () => {
