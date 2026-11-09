@@ -45,7 +45,7 @@ export type Job = {
   processed: number;
   total: number;
   current?: string;
-  /** For a batched run in a chat, the step it is on, such as "batch 3 of 8". */
+  /** The step a run is on, such as "batch 3 of 8" in a chat, or "Directories 4/30" in an AI index. */
   step?: string;
 };
 
@@ -321,6 +321,10 @@ class Jobs {
       processed: q.processed,
       total: q.total,
       current: q.currentPageTitle,
+      // Once the pages are indexed, the run digests the directories (ADR-079).
+      ...(q.directories && q.processed >= q.total
+        ? { step: `Directories ${q.directoriesDone ?? 0}/${q.directories}`, processed: 0, total: 0 }
+        : {}),
     });
     this.put(job(p));
     this.stops.set(

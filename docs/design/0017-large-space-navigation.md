@@ -43,7 +43,7 @@ there is no way to gather those pages under one directory without moving each on
 
 | route                                            | what it does                                                |
 | ------------------------------------------------ | ----------------------------------------------------------- |
-| `GET /api/space-cache/:key/map`                  | Each directory's pages below, size, newest and oldest edit. |
+| `GET /api/space-cache/:key/map`                  | Each directory's pages below, size, edits, and digest kind. |
 | `GET`/`POST /api/space-cache/:key/restructure`   | The space's staged changes, and staging or undoing one.     |
 | `POST /api/space-cache/:key/restructure/dry-run` | Checks every staged change against Confluence as it is now. |
 | `POST /api/space-cache/:key/restructure/push`    | Makes the checked changes, one at a time, and reports each. |
@@ -55,6 +55,13 @@ there is no way to gather those pages under one directory without moving each on
 - **A digest** holds a summary, the kind of directory (living pages, an archive or series,
   templates, or a mix), its topics and the questions it answers. It carries a stamp of the allowed
   pages it was made from; a digest whose stamp no longer matches is treated as missing.
+  The stamp hashes the directory's allowed children, each with the time its summary was made (or
+  its version, before it has one), and the stamps of the directories below, worked out again from
+  the exclusion rules each time a digest is read; `digests.json` drops a stale digest when it is
+  next written. An index run digests the directories after the pages, lowest first, so a request
+  carries the digests below it; a dozen directories go to a request, each with its children's
+  titles, summaries and tags, a series of similar titles as one line, and at most 60 lines. The
+  header shows **Directories x/y**, and the Space map shows each current digest's kind.
 - **A plan** is shown under **What was sent**: the areas searched, why each was chosen, and the
   areas left out.
 - **A structured request** gives the model one task, short numbered rules and an example of the

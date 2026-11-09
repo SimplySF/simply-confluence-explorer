@@ -234,6 +234,8 @@ export type DirectoryStats = {
   authors: number;
   /** Nothing below it has changed for a year. */
   stale: boolean;
+  /** What its current digest says it holds; absent when it has none (ADR-079). */
+  kind?: DirectoryKind;
   /** Most pages below it share one title apart from numbers and dates, such as release notes. */
   series?: { pattern: string; pages: number };
 };
@@ -340,6 +342,9 @@ export type MetadataProgress = {
   /** How many requests the run needs, with several small pages to a request, and how many are done. */
   requests?: number;
   requestsDone?: number;
+  /** How many directories the run digests once the pages are indexed, and how many are done (ADR-079). */
+  directories?: number;
+  directoriesDone?: number;
   /** The pages left out, each with why; the latest 200. */
   failures?: Array<{ pageId: string; title: string; error: string }>;
   currentPageTitle?: string;

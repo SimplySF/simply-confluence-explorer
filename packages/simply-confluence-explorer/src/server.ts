@@ -30,6 +30,7 @@ import { BranchRunner } from './branches/branchRuns.js';
 import { ConfluenceClient } from './confluence/client.js';
 import { ExclusionManager } from './spaces/exclusionManager.js';
 import { CorpusReviews } from './branches/corpusReview.js';
+import { DigestStore } from './spaces/digests.js';
 import { MetadataPipeline } from './spaces/metadata.js';
 import { CONTEXT_CHAR_LIMIT } from './spaces/branchContext.js';
 import { corpusSize } from './spaces/contextRetriever.js';
@@ -149,8 +150,10 @@ export function createServer(options: ServerOptions = {}): http.Server {
   const sessions = new SessionStore(dataDir);
   const contextChars = options.contextChars ?? CONTEXT_CHAR_LIMIT;
   const sync = new SpaceSync(store, exclusions, client, telemetry.sink('sync'), telemetry);
+  const digests = new DigestStore(store, exclusions);
   const metadata = new MetadataPipeline(store, exclusions, () => ai, telemetry.sink('index'), vectors, telemetry, {
     retryDelayMs: options.indexRetryMs,
+    digests,
     imageChoice: (key): ImageChoice => loadSpaceSettings(dataDir, key).images,
   });
   const reviews = new CorpusReviews({
@@ -206,6 +209,7 @@ export function createServer(options: ServerOptions = {}): http.Server {
     ai,
     sessions,
     metadata,
+    digests,
     branches: new BranchRunner({ ai, client, store, exclusions, dataDir, log: telemetry.sink('review') }),
     index,
     vectors,

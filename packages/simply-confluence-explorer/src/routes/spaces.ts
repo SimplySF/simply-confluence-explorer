@@ -42,7 +42,7 @@ const flag = (body: unknown, key: string): boolean => fieldsOf(body)[key] === tr
  * @param services What the routes share.
  */
 export function addSpaceRoutes(router: Router, services: Services): Router {
-  const { store, sync, exclusions, metadata } = services;
+  const { store, sync, exclusions, metadata, digests } = services;
   const notFound = (jobId: string): never => {
     throw new HttpError(404, `no sync job ${jobId}`);
   };
@@ -87,7 +87,12 @@ export function addSpaceRoutes(router: Router, services: Services): Router {
         const entries = await store.catalog.ready(key);
         const tree = store.tree(key);
         const count = (nodes: typeof tree): number => nodes.reduce((n, c) => n + 1 + count(c.children), 0);
-        return { directories: directoryStats(tree, entries), pages: count(tree) };
+        const current = digests.currentDigests(key);
+        const directories = directoryStats(tree, entries).map((d) => {
+          const kind = current.get(d.id)?.kind;
+          return kind ? { ...d, kind } : d;
+        });
+        return { directories, pages: count(tree) };
       })
       .add('GET', '/api/space-cache/:spaceKey/pages/:pageId/descendants', async ({ params }) => {
         // The tree is built in chunks on a first request, rather than all at once while others wait.

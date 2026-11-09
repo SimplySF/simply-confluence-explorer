@@ -26,12 +26,16 @@ import { mapChunked, pause } from '../util/pause.js';
 import type { LiveJob } from '../telemetry/telemetry.js';
 import { noTracer, type Tracer } from '../telemetry/tracer.js';
 import { imagesFor } from './attachments.js';
+import { DIRECTORIES_PER_REQUEST, generateDigestPack, packDigests, type DigestStore } from './digests.js';
 import type { ExclusionManager } from './exclusionManager.js';
 import { sectionName, splitSections } from './sections.js';
 import type { SpaceStore } from './spaceStore.js';
 import { generateMetadataPack, packLimit, packPages, withRetry } from './indexPacks.js';
 import { tagIndex } from './tags.js';
 import type { VectorIndex } from './vectors.js';
+
+/** How much of a space, a section or a list is indexed, and about how many requests the rest would take. */
+export type Coverage = { pages: number; missing: number; requests: number; directoriesMissing?: number };
 
 /** The kind of metadata this code writes. Metadata of an older kind counts as missing and is regenerated. */
 export const METADATA_VERSION = 2;
@@ -202,7 +206,12 @@ export class MetadataPipeline {
     log: (message: string) => void,
     private readonly vectors?: VectorIndex,
     private readonly tracer: Tracer = noTracer,
-    private readonly options: { retryDelayMs?: number; imageChoice?: (spaceKey: string) => ImageChoice } = {},
+    private readonly options: {
+      retryDelayMs?: number;
+      imageChoice?: (spaceKey: string) => ImageChoice;
+      /** Where directory digests are kept; without it a run indexes pages only. */
+      digests?: DigestStore;
+    } = {},
   ) {
     this.jobs = new JobRunner<MetadataProgress>(
       'meta',
@@ -266,26 +275,40 @@ export class MetadataPipeline {
    * How many synced pages of a space, a section or a list there are, how many are not indexed yet,
    * and about how many requests indexing them would take, leaving out excluded pages.
    */
-  public async coverage(
-    spaceKey: string,
-    rootPageId?: string,
-    pageIds?: string[],
-  ): Promise<{ pages: number; missing: number; requests: number }> {
+  public async coverage(spaceKey: string, rootPageId?: string, pageIds?: string[]): Promise<Coverage> {
     const key = spaceKey.toUpperCase();
-    return this.coverageOf(key, await this.allowedPages(key, rootPageId, pageIds));
+    return this.coverageOf(
+      key,
+      await this.allowedPages(key, rootPageId, pageIds),
+      pageIds ? undefined : { rootPageId },
+    );
   }
 
-  /** The same count for pages already read and allowed, so a caller that has them does not read them again. */
+  /**
+   * The same count for pages already read and allowed, so a caller that has them does not read them
+   * again. With `directories`, the space's or the section's directories without a current digest are
+   * counted too, and their requests added; a run for chosen pages digests no directories.
+   */
   public async coverageOf(
     spaceKey: string,
     allowed: PageDetail[],
-  ): Promise<{ pages: number; missing: number; requests: number }> {
-    const missing = await this.missingOf(spaceKey.toUpperCase(), allowed);
-    return {
+    directories?: { rootPageId?: string },
+  ): Promise<Coverage> {
+    const key = spaceKey.toUpperCase();
+    const missing = await this.missingOf(key, allowed);
+    const counts: Coverage = {
       pages: allowed.length,
       missing: missing.length,
       requests: packPages(missing, packLimit(this.ai())).length,
     };
+    const digests = this.options.digests;
+    if (!digests || !directories) return counts;
+    await this.store.treeReady(key);
+    const levels = digests.pending(key, directories.rootPageId);
+    if (levels.length === 0) return counts;
+    counts.directoriesMissing = levels.flat().length;
+    counts.requests += levels.reduce((n, level) => n + Math.ceil(level.length / DIRECTORIES_PER_REQUEST), 0);
+    return counts;
   }
 
   /** The synced pages of a space, a section or a list, leaving out excluded pages. */
@@ -429,6 +452,12 @@ export class MetadataPipeline {
     job.total = targets.length;
     job.requests = packs.length;
     job.requestsDone = 0;
+    // The directories are counted from the start, so the job shows all its work; the count is made
+    // again once the pages are indexed, as each page indexed makes its directories' digests stale.
+    if (this.options.digests && !pageIds) {
+      await this.store.treeReady(spaceKey);
+      job.directories = this.options.digests.pending(spaceKey, rootPageId).flat().length;
+    }
     // The topics already in use, counted as the run tags pages, so later pages reuse earlier pages' topics.
     const uses = new Map((await tagIndex(this.store, spaceKey)).map((t) => [t.tag, t.pages.length]));
     const stopped = (): boolean => this.jobs.isCancelled(job.jobId);
@@ -471,6 +500,7 @@ export class MetadataPipeline {
     };
     const parallel = Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length));
     await Promise.all(Array.from({ length: parallel }, worker));
+    if (this.options.digests && !pageIds && !stopped()) await this.digestPhase(job, spaceKey, ai, rootPageId, stopped);
     job.currentPageTitle = undefined;
     await this.store.writeToc(spaceKey);
     if (job.errorCount > 0)
@@ -480,8 +510,74 @@ export class MetadataPipeline {
       );
   }
 
+  /**
+   * Digests the directories that lack a current digest, lowest first, so each directory's request
+   * carries the digests of the directories below it (ADR-079). Each level is worked out again when
+   * it is reached, from the tree and the rules as they are then.
+   */
+  private async digestPhase(
+    job: MetadataProgress,
+    spaceKey: string,
+    ai: AiEngine,
+    rootPageId: string | undefined,
+    stopped: () => boolean,
+  ): Promise<void> {
+    const digests = this.options.digests!;
+    await this.store.treeReady(spaceKey);
+    const levels = digests.pending(spaceKey, rootPageId);
+    job.directories = levels.flat().length;
+    job.directoriesDone = 0;
+    const retry = <T>(fn: () => Promise<T>): Promise<T> => withRetry(fn, this.options.retryDelayMs ?? 2000, stopped);
+    for (const level of levels) {
+      if (stopped()) return;
+      const tasks = level.flatMap((id) => digests.task(spaceKey, id) ?? []);
+      job.directoriesDone += level.length - tasks.length;
+      const packs = packDigests(tasks, packLimit(ai));
+      job.requests = (job.requests ?? 0) + packs.length;
+      let next = 0;
+      const worker = async (): Promise<void> => {
+        while (next < packs.length && !stopped()) {
+          const pack = packs[next++];
+          job.currentPageTitle = pack.map((t) => t.title).join(', ');
+          // eslint-disable-next-line no-await-in-loop -- each worker takes the next pack when its last is done
+          const made = await this.tracer.span(
+            'index',
+            'pack',
+            { directories: pack.length, first: pack[0].title, spaceKey },
+            async (span) => {
+              const results = await retry(() => generateDigestPack(pack, ai, spaceKey, this.tracer)).catch(
+                (error: unknown) => new Map(pack.map((t) => [t.id, new Error(errorMessage(error))])),
+              );
+              const kept = pack.flatMap((t) => {
+                const r = results.get(t.id)!;
+                if (!(r instanceof Error)) return [r];
+                // Named as the directory's digest, so it is not read as its page's own summary failing.
+                this.recordFailure(job, { id: t.id, title: `${t.title}, its directory digest` }, r.message, spaceKey);
+                return [];
+              });
+              span.set({ failed: pack.length - kept.length });
+              return kept;
+            },
+          );
+          if (made.length) digests.write(spaceKey, made);
+          job.directoriesDone = (job.directoriesDone ?? 0) + pack.length;
+          job.requestsDone = (job.requestsDone ?? 0) + 1;
+          // eslint-disable-next-line no-await-in-loop -- lets other requests through between packs
+          await pause();
+        }
+      };
+      // eslint-disable-next-line no-await-in-loop -- a level waits for the one below it
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(ai.parallel?.() ?? 1, packs.length)) }, worker));
+    }
+  }
+
   /** Records a page left out with its reason; running the job again retries every page still missing. */
-  private recordFailure(job: MetadataProgress, page: PageDetail, error: string, spaceKey: string): void {
+  private recordFailure(
+    job: MetadataProgress,
+    page: Pick<PageDetail, 'id' | 'title'>,
+    error: string,
+    spaceKey: string,
+  ): void {
     job.errorCount++;
     job.failures = [...(job.failures ?? []), { pageId: page.id, title: page.title, error }].slice(-200);
     this.tracer.count('index.failures');

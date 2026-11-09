@@ -80,7 +80,7 @@
   const synced = $derived(!!manifest);
   const needSync = $derived(synced ? undefined : 'Sync the space first');
   // What a run would cost, read again whenever the synced copy or its index changes.
-  let estimate = $state<{ missing: number; requests?: number } | undefined>(undefined);
+  let estimate = $state<{ missing: number; requests?: number; directoriesMissing?: number } | undefined>(undefined);
   $effect(() => {
     void manifest?.metadataCount;
     void manifest?.lastSynced;

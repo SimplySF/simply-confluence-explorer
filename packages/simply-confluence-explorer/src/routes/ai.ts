@@ -329,7 +329,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
           : await metadata.allowedPages(key, rootPageId);
         // The chat's pages' attachments are listed at once, from their names, before the index is ready.
         const attachments = attachmentsPreview(key, allowed, optionalString(body, 'sessionId'));
-        const counts = await metadata.coverageOf(key, allowed);
+        const counts = await metadata.coverageOf(key, allowed, chosen ? undefined : { rootPageId });
         // A space still being indexed answers at once with how far it has got; the chat shows the
         // progress and asks again until it is done.
         if (!index.isReady(key)) {

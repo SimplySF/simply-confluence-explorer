@@ -26,6 +26,7 @@ import { HttpError, Router } from '../http/router.js';
 import type { ExclusionManager } from '../spaces/exclusionManager.js';
 import type { SpaceStore } from '../spaces/spaceStore.js';
 import type { CorpusReviews } from '../branches/corpusReview.js';
+import type { DigestStore } from '../spaces/digests.js';
 import type { MetadataPipeline } from '../spaces/metadata.js';
 import type { SearchIndex } from '../spaces/searchIndex.js';
 import type { VectorIndex } from '../spaces/vectors.js';
@@ -55,6 +56,8 @@ export type Services = {
   ai: ConfiguredAi;
   sessions: SessionStore;
   metadata: MetadataPipeline;
+  /** Directory digests; `currentDigest` gives one only while it matches the allowed pages below it (ADR-079). */
+  digests: DigestStore;
   branches: BranchRunner;
   index: SearchIndex;
   /** Section embeddings, when the AI provider makes them (ADR-051). */

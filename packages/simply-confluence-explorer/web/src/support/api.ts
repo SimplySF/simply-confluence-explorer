@@ -114,8 +114,10 @@ export type Chosen = {
 export type Coverage = {
   pages: number;
   missing: number;
-  /** About how many requests indexing the missing pages would take. */
+  /** About how many requests indexing the missing pages and directories would take. */
   requests?: number;
+  /** Directories without a current digest, which a run digests after the pages (ADR-079). */
+  directoriesMissing?: number;
   fits?: boolean;
   indexing?: { done: number; total: number };
   /** How many images the pages hold, and the space's choice about sending them (ADR-066). */

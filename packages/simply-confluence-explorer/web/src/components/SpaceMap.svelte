@@ -121,6 +121,9 @@
               <td class="num">{chars(d.size)}</td>
               <td>{day(d.newest)}</td>
               <td class="space-map-notes">
+                {#if d.kind}<span class="pill" title="What the AI index's digest of this directory says it holds"
+                    >{d.kind.replace('-', ' / ')}</span
+                  >{/if}
                 {#if d.series}<span
                     class="pill"
                     title="Pages titled like “{d.series.pattern}”, # standing for a number or date"
