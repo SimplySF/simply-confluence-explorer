@@ -2250,3 +2250,23 @@ route, and a full-window view. Measured at 20,977 lines of code, the limit rises
 **The argument against:** the map could have been a column in the table of contents. This is
 accepted because the table of contents lists pages in tree order, which is the order that hides a
 large old directory three levels down, and the map's job is to sort by size and age instead.
+
+---
+
+## ADR-083 — The code budget rises to 22,200 lines and the bundle to 450 KiB for directory digests and planned retrieval, set before they are measured
+
+**Status:** accepted, 2026-11-09. Amends ADR-082 and ADR-075.
+
+Design doc 0017's last two parts, directory digests and planned retrieval, are being built at the same
+time, and the code stood at 21,186 lines of the 21,200 that ADR-082 allows. The maintainer asked for
+the budget to be raised now, so each part does not wait on a record of its own. The code limit rises
+to 22,200 lines and the bundle limit to 450 KiB (460,800 bytes), in `scripts/budgets.mjs`.
+
+This departs from ADR-014, which sets a budget at a size the code has reached. The departure is
+bounded: when both parts are merged, their measured size is written into the pull request, and any
+headroom beyond the usual few hundred lines is given back by a later record rather than left for
+other work to fill.
+
+**The argument against:** a limit raised before the code exists is a target, which is what ADR-014
+set out to avoid. This is accepted because the work it covers is named, its design is written down,
+and the measured size is reported against the limit when the work lands.
