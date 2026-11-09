@@ -267,7 +267,7 @@ export function addAiRoutes(router: Router, services: Services): Router {
           key,
           await store.visiblePages(key),
           { question: prompt },
-          { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal },
+          { store, exclusions, dataDir, index, vectors: services.vectors, ai, signal, tracer: services.telemetry },
           { budget: services.contextChars, outline: true },
         );
         const visible = await store.visiblePages(key);

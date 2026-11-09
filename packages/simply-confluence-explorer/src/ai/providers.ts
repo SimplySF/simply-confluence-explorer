@@ -30,6 +30,9 @@ const NO_EFFORT = /^claude-(3|haiku-4|sonnet-4-5|opus-4-[015]|opus-4-1)/;
 
 type Messages = GuardedPayload['messages'];
 
+/** A reply asked for as JSON, held to `schema` where the provider can be (ADR-079). */
+export type JsonReply = { schema?: Record<string, unknown> };
+
 /**
  * Whether a provider's response says the answer is unfinished: cut at the output limit, or blocked.
  * Kept apart from the calls so each provider's signals can be tested without a network.
@@ -166,12 +169,25 @@ function geminiClient(cfg: ResolvedApi): GoogleGenAI {
   return new GoogleGenAI({ apiKey: cfg.apiKey, httpOptions: cfg.baseUrl ? { baseUrl: cfg.baseUrl } : undefined });
 }
 
+/** The Gemini request's settings, built separately so its shape can be tested without a network. */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the SDK's own config type is inferred here
+export function geminiConfig(system: string, signal?: AbortSignal, json?: JsonReply) {
+  return {
+    systemInstruction: system,
+    abortSignal: signal,
+    ...(json
+      ? { responseMimeType: 'application/json', ...(json.schema ? { responseJsonSchema: json.schema } : {}) }
+      : {}),
+  };
+}
+
 async function gemini(
   cfg: ResolvedApi,
   system: string,
   messages: Messages,
   images: Images,
   signal?: AbortSignal,
+  json?: JsonReply,
 ): Promise<Reply> {
   const pictures = images.flatMap((im, i) => [
     { text: imageLabel(i, im) },
@@ -187,14 +203,15 @@ async function gemini(
   const response = await geminiClient(cfg).models.generateContent({
     model: cfg.model,
     contents,
-    config: { systemInstruction: system, abortSignal: signal },
+    config: geminiConfig(system, signal, json),
   });
   return withCutOff((response.text ?? '').trim(), cutOffOf('gemini', response));
 }
 
 /**
  * Sends a payload the outbound guard has passed; nothing else can be sent. Aborting `signal` ends the
- * request, though a provider may already have received it.
+ * request, though a provider may already have received it. `json` holds Gemini to a JSON reply; Claude
+ * and OpenAI are asked for one by the prompt alone, and every structured reply is validated anyway.
  */
 export async function complete(
   provider: ApiProvider,
@@ -202,13 +219,14 @@ export async function complete(
   payload: GuardedPayload,
   signal?: AbortSignal,
   onText?: (text: string) => void,
+  json?: JsonReply,
 ): Promise<Reply> {
   if (!cfg.apiKey) throw new Error(`no API key is set for ${provider}`);
   if (!cfg.model) throw new Error(`no model is chosen for ${provider}`);
   const images = payload.images ?? [];
   if (provider === 'anthropic') return anthropic(cfg, payload.system, payload.messages, images, signal, onText);
-  const run = { openai, gemini }[provider];
-  return run(cfg, payload.system, payload.messages, images, signal);
+  if (provider === 'gemini') return gemini(cfg, payload.system, payload.messages, images, signal, json);
+  return openai(cfg, payload.system, payload.messages, images, signal);
 }
 
 /**

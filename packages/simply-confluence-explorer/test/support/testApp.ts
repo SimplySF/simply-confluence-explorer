@@ -46,13 +46,26 @@ export type TestApp = {
 };
 
 /**
+ * The pages of a pack request, each with a line for every section it lists, as a model that follows
+ * the prompt replies; a pack entry without them is not kept (ADR-079).
+ */
+export function packedPages(text: string): Array<{ id: string; sections: string[] }> {
+  return [...text.matchAll(/^=== PAGE (\S+): .*===\nSections:\n((?:\d+\. .*\n?)*)/gm)].map((m) => ({
+    id: m[1],
+    sections: m[2]
+      .split('\n')
+      .filter(Boolean)
+      .map((heading) => `What ${heading.replace(/^\d+\. /, '')} says.`),
+  }));
+}
+
+/**
  * A metadata reply in the shape the request asked for: one entry for a single page, or an entry for
- * every page of a pack, keyed by the ids the request lists.
+ * every page of a pack, keyed by the ids the request lists, with a line for each of its sections.
  */
 export function metadataReply(payload: GuardedPayload, entry: Record<string, unknown>): string {
-  const text = payload.messages.map((m) => m.content).join('\n');
-  const ids = [...text.matchAll(/^=== PAGE (\S+): /gm)].map((m) => m[1]);
-  return JSON.stringify(ids.length ? { pages: ids.map((id) => ({ id, ...entry })) } : entry);
+  const pages = packedPages(payload.messages.map((m) => m.content).join('\n'));
+  return JSON.stringify(pages.length ? { pages: pages.map((p) => ({ ...p, ...entry })) } : entry);
 }
 
 /** Replies with the request's placeholders echoed back, so a test can see them restored. */

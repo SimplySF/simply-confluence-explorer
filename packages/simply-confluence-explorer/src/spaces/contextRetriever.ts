@@ -18,6 +18,8 @@ import type { PageDetail, SpaceTocNode } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
 import { ManifestBuilder } from '../ai/manifest.js';
+import { askStructured, chosenByNumber, type StructuredPrompt } from '../ai/structured.js';
+import type { Tracer } from '../telemetry/tracer.js';
 import { pause } from '../util/pause.js';
 import { fileKey } from './attachments.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
@@ -78,6 +80,8 @@ export type RetrieverDeps = {
   attachments?: boolean;
   /** The attachments the person left out, by `fileKey`, whose sections are not sent either. */
   leftOut?: ReadonlySet<string>;
+  /** Where a choice the AI could not make is logged and counted (ADR-079). */
+  tracer?: Tracer;
 };
 
 /** How many candidate sections the search offers the AI to choose from. */
@@ -91,31 +95,46 @@ const RRF_K = 60;
 /** The share of a question's words the best section must hold for the match not to count as weak. */
 const WEAK_COVER = 0.5;
 
-const CHOOSE_PROMPT = `You are choosing which sections of Confluence pages to read before answering a question.
-The question, and the question before it if any, come first; then a catalogue of candidate sections, one per line, with each section's id, its page's title, the page's place in the space, the section's heading, and a summary.
-Choose the sections that are needed to answer, at most ${CHOSEN}, most useful first. Reply with JSON only, in this shape:
-{"sections":[{"id":"12345#2","why":"what this section adds"}]}`;
+const choosePrompt = (count: number): StructuredPrompt => ({
+  task: 'You are choosing which sections of Confluence pages to read before answering a question.',
+  rules: [
+    `The message lists ${count} candidate sections, numbered 1 to ${count}. Each line gives the page's title, its place in the space, the section's heading and a summary.`,
+    `Choose the sections needed to answer the question, at most ${CHOSEN}, most useful first. Use only numbers from 1 to ${count}.`,
+    'For each section chosen, give its "number" and, in "why", what it adds to the answer in a few words.',
+    'If no section helps, reply {"sections":[]}.',
+  ],
+  example: '{"sections":[{"number":4,"why":"the rollback steps"},{"number":11,"why":"who to call"}]}',
+});
+
+/** The reply's shape, for a provider that can be held to one. */
+const chooseSchema = (count: number): Record<string, unknown> => ({
+  type: 'object',
+  properties: {
+    sections: {
+      type: 'array',
+      maxItems: CHOSEN,
+      items: {
+        type: 'object',
+        properties: { number: { type: 'integer', minimum: 1, maximum: count }, why: { type: 'string' } },
+        required: ['number'],
+      },
+    },
+  },
+  required: ['sections'],
+});
 
 const refKey = (ref: { pageId: string; index: number }): string => `${ref.pageId}#${ref.index}`;
 /** A page's place in the space, as its parents' titles. */
 const pathOf = (page: PageDetail): string => page.ancestors.map((a) => a.title).join(' › ');
 
-/** Reads the AI's choice of sections, keeping only ids it was offered; `null` when the reply is not the JSON asked for. */
-export function parseChoice(text: string, offered: Set<string>): Array<{ id: string; why?: string }> | null {
-  const json = /\{[\s\S]*\}/.exec(text);
-  if (!json) return null;
-  try {
-    const raw = (JSON.parse(json[0]) as { sections?: unknown }).sections;
-    if (!Array.isArray(raw)) return null;
-    return raw
-      .map((p: unknown) => (p ?? {}) as { id?: unknown; why?: unknown })
-      .filter((p): p is { id: string; why?: unknown } => typeof p.id === 'string' && offered.has(p.id))
-      .map((p) => ({ id: p.id, why: typeof p.why === 'string' ? p.why.slice(0, 200) : undefined }))
-      .slice(0, CHOSEN);
-  } catch {
-    // Not JSON after all: the caller reads the top search results instead.
-    return null;
-  }
+/**
+ * The AI's choice of sections from its parsed reply, each number mapped back to the id offered under
+ * it and a number it was not offered dropped; a string saying why when the reply is not the choice asked for.
+ */
+export function parseChoice(json: unknown, offered: readonly string[]): Array<{ id: string; why?: string }> | string {
+  const chosen = chosenByNumber((json as { sections?: unknown } | null)?.sections, offered, CHOSEN);
+  if (typeof chosen === 'string') return chosen;
+  return chosen.map((c) => ({ id: c.item, ...(c.why ? { why: c.why } : {}) }));
 }
 
 /** Merges rankings by reciprocal rank fusion, so a section high in either list rises. */
@@ -205,7 +224,7 @@ async function candidatesFor(
       {
         id,
         summary,
-        line: `${id} | ${page.title} | ${pathOf(page) || 'top level'} | ${heading} | ${summary ?? 'no summary'}`,
+        line: `${page.title} | ${pathOf(page) || 'top level'} | ${heading} | ${summary ?? 'no summary'}`,
       },
     ];
   });
@@ -236,23 +255,35 @@ async function rankSections(
   return { ranked: fuse([keyword, semantic], limit), weak };
 }
 
-/** The AI's choice among the candidates, from their summaries, or `null` when it was not asked or not understood. */
+/**
+ * The AI's choice among the candidates, offered by number with their summaries, or `null` when it was
+ * not asked, or its reply could not be used after one repair, which the manifest then names.
+ */
 async function choose(
   key: string,
   query: ContextQuery,
   candidates: Candidate[],
   deps: RetrieverDeps,
+  manifest: ManifestBuilder,
 ): Promise<Chosen | null> {
   if (!deps.ai || !candidates.some((c) => c.summary)) return null;
   deps.onStep?.(`Choosing among ${candidates.length} sections`);
   const asked = `Question: ${query.question}${query.previous ? `\nThe question before it: ${query.previous}` : ''}`;
-  const answer = await deps.ai.analyzeDocument(
-    `${asked}\n\nCandidate sections:\n${candidates.map((c) => c.line).join('\n')}`,
-    CHOOSE_PROMPT,
-    `Choosing sections in ${key}`,
-    { spaceKey: key, signal: deps.signal },
-  );
-  return parseChoice(answer.text, new Set(candidates.map((c) => c.id)));
+  const ids = candidates.map((c) => c.id);
+  const result = await askStructured({
+    ai: deps.ai,
+    input: `${asked}\n\nCandidate sections:\n${candidates.map((c, i) => `${i + 1}. ${c.line}`).join('\n')}`,
+    prompt: choosePrompt(candidates.length),
+    schema: chooseSchema(candidates.length),
+    validate: (json) => parseChoice(json, ids),
+    label: `Choosing sections in ${key}`,
+    instead: `the ${Math.min(CHOSEN, candidates.length)} best search results were read`,
+    spaceKey: key,
+    signal: deps.signal,
+    manifest,
+    tracer: deps.tracer,
+  });
+  return result.ok ? result.value : null;
 }
 
 function sectionAt(key: string, deps: RetrieverDeps, pageId: string, index: number): Section | undefined {
@@ -266,8 +297,9 @@ function sectionAt(key: string, deps: RetrieverDeps, pageId: string, index: numb
  * each rank the corpus's sections for the question and the one before it, and the two rankings are
  * fused. When the candidates have summaries, one request shows the AI their titles, places, headings
  * and summaries, never their text, and it chooses which to read; otherwise, or when its reply cannot
- * be read, the top of the fused ranking is read. The chosen sections, after those earlier answers
- * read, are checked by the secrets check and added until the size limit is reached.
+ * be used after one repair, the top of the fused ranking is read and the manifest says so. The chosen
+ * sections, after those earlier answers read, are checked by the secrets check and added until the
+ * size limit is reached.
  *
  * @param spaceKey The space.
  * @param pages The chat's corpus. An excluded page among them is still never sent: a full read checks
@@ -300,7 +332,7 @@ export async function retrieveContext(
     deps,
   );
   let chosen: Chosen =
-    (await choose(key, query, candidates, deps)) ?? candidates.slice(0, CHOSEN).map((c) => ({ id: c.id }));
+    (await choose(key, query, candidates, deps, manifest)) ?? candidates.slice(0, CHOSEN).map((c) => ({ id: c.id }));
   // A question that matches nothing still gets an answer from a few pages, rather than none.
   if (chosen.length === 0 && !query.keep?.length)
     chosen = pages.slice(0, 3).flatMap((p) => {

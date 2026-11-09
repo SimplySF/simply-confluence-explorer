@@ -95,6 +95,16 @@ describe('metadata of the second kind', () => {
     expect([result.version, result.tags, result.questions]).toEqual([2, ['ci'], ['How?']]);
   });
 
+  it('asks once more for a page given no summary, then fails with why rather than saving a default', async () => {
+    const { ai, prompts } = fakeAi(() => '{"summary":"","tags":["ci"]}');
+    const runbook = page('1', 'Runbook', '<h1>Deploy</h1><p>Ship.</p>');
+    await expect(generateMetadata(runbook, ai)).rejects.toThrow(
+      "the AI's reply was not what was asked for, twice (it gave the page no summary)",
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('Your last reply could not be used: it gave the page no summary.');
+  });
+
   it('redoes metadata of the first kind, and leaves current metadata alone', async () => {
     const { store, exclusions } = setup();
     for (const id of ['1', '2']) store.writePage('PLAT', page(id, `Page ${id}`, '<p>Text.</p>'), '', []);

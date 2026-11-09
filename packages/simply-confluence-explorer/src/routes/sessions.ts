@@ -412,6 +412,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             onStep: (text) => step(session.id, text),
             attachments: session.attachments !== 'pages',
             leftOut: leftOutOf(session),
+            tracer: services.telemetry,
           },
           { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );

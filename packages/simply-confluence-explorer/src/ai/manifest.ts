@@ -24,11 +24,15 @@ import { droppedNote } from './reply.js';
 
 /**
  * `notes` are what one batch of a thorough answer found, sent to the request that combines them. An
- * `attachment` is read inside its page's text, so it is counted rather than marked (ADR-069).
+ * `attachment` is read inside its page's text, so it is counted rather than marked (ADR-069). A
+ * `choice` is a structured request whose reply chose what the answer reads (ADR-079).
  */
-export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image' | 'attachment';
-/** `not-read` is an attachment that was not read, or not read whole, with its own `why`. */
-export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit' | 'not-read';
+export type ContextKind = 'page' | 'section' | 'file' | 'turn' | 'notes' | 'image' | 'attachment' | 'choice';
+/**
+ * `not-read` is an attachment that was not read, or not read whole, with its own `why`. `fallback` is a
+ * choice whose reply could not be used, so the answer read something else, said in its `why`.
+ */
+export type LeftOutReason = 'excluded' | 'secret' | 'over-limit' | 'history-limit' | 'not-read' | 'fallback';
 
 export type ManifestItem = {
   kind: ContextKind;
@@ -99,6 +103,11 @@ export class ManifestBuilder {
       reason,
       ...(why ? { why } : {}),
     });
+  }
+
+  /** Records that a structured reply could not be used, and what was done instead (ADR-079). */
+  public fallback(label: string, why: string): void {
+    this.leaveOut('choice', label, 0, 'fallback', why);
   }
 
   /**

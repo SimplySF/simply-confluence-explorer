@@ -57,6 +57,12 @@ there is no way to gather those pages under one directory without moving each on
   pages it was made from; a digest whose stamp no longer matches is treated as missing.
 - **A plan** is shown under **What was sent**: the areas searched, why each was chosen, and the
   areas left out.
+- **A structured request** gives the model one task, short numbered rules and an example of the
+  reply, and offers its choices by number. A reply that fails its check is asked for once more with
+  the reason; a second failure is named under **What was sent** and counted in the telemetry. In an
+  index pack, a page with no summary, or with lines for fewer than four in five of its sections, is
+  asked for alone. The Gemini API is asked for JSON held to a schema. The Gemini CLI is not, so the
+  index sends it packs of 25,000 characters instead of 60,000.
 - **A move** carries the page's version and parent at the time it was staged, and takes the page's
   whole subtree with it. A dry run reads each page from Confluence again and refuses a change whose
   page has moved on. A push needs a dry run of the same staged changes, stops at the first failure,

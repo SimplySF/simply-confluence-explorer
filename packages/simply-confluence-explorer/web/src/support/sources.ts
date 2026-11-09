@@ -43,6 +43,7 @@ const REASON: Record<ManifestSummary['leftOut'][number]['reason'], string> = {
   'history-limit': 'the conversation was longer than a request carries',
   cut: 'sent in part, cut to the size a file may have',
   'not-read': 'not read',
+  fallback: "the AI's reply could not be used",
 };
 
 /**

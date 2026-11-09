@@ -28,7 +28,7 @@ import {
   type ImageInput,
 } from './guard.js';
 import { checkImages, checkPayload, ContextCheckError, summarise, type ContextManifest } from './manifest.js';
-import { complete, embed, EMBEDDING_MODELS, listModels } from './providers.js';
+import { complete, embed, EMBEDDING_MODELS, listModels, type JsonReply } from './providers.js';
 import { droppedNote, type Reply } from './reply.js';
 import type { AiSettingsStore, ApiProvider } from './settings.js';
 
@@ -74,6 +74,8 @@ export type AiContext = {
   onText?: (text: string) => void;
   /** Images the space chose to send with the document, which the guard records as unchecked (ADR-066). */
   images?: ImageInput[];
+  /** The reply is read as JSON (ADR-079): the prompt asks for nothing else, and a provider that can be told so is. */
+  json?: JsonReply;
 };
 
 /** A request the person stopped. Nothing may act on its answer, even one that arrives afterwards. */
@@ -95,6 +97,8 @@ export type AiEngine = {
   embeddingModel?: () => string | null;
   /** How many requests long-running work, such as the AI index, may send at once. */
   parallel?: () => number;
+  /** Whether the engine reads a long request poorly, so the AI index sends it smaller packs of pages. */
+  smallPacks?: () => boolean;
   /** One vector per text, or null for a text the guard left out because it holds a secret. */
   embed?: (texts: string[], ctx: AiContext) => Promise<Array<number[] | null>>;
   /** One turn of a conversation, with its context and earlier turns. */
@@ -117,6 +121,7 @@ export type Transport = (
   payload: GuardedPayload,
   signal?: AbortSignal,
   onText?: (text: string) => void,
+  json?: JsonReply,
 ) => Promise<string | Reply>;
 /** Embeds each message of a guarded payload. The real one calls a provider. */
 export type EmbedTransport = (payload: GuardedPayload, signal?: AbortSignal) => Promise<number[][]>;
@@ -132,6 +137,10 @@ export const CHAT_SYSTEM =
 const ANALYZE_SYSTEM =
   'You are an expert technical assistant analyzing the Confluence documentation in the message below. ' +
   'Provide a well-structured, clear, professional response in Markdown. User request: {{PROMPT}}';
+
+const STRUCTURED_SYSTEM =
+  'You are a careful assistant reading the Confluence documentation in the message below. ' +
+  'Your reply is read by a program, so it is one JSON object and nothing else. Request: {{PROMPT}}';
 
 const LABEL: Record<ApiProvider, string> = { anthropic: 'Claude', openai: 'ChatGPT', gemini: 'Gemini API' };
 
@@ -195,7 +204,7 @@ export class ConfiguredAi implements AiEngine {
   ): Promise<AiAnswer> {
     const guard = ctx.guard ?? new OutboundGuard(loadGuardRules(this.options.dataDir, ctx.spaceKey));
     const { payload, report } = guard.inspect({
-      system: ANALYZE_SYSTEM,
+      system: ctx.json ? STRUCTURED_SYSTEM : ANALYZE_SYSTEM,
       prompt,
       document: `# Document Title: ${pageTitle ?? 'Confluence Document'}\n\n${markdown}\n`,
       images: ctx.images,
@@ -234,6 +243,11 @@ export class ConfiguredAi implements AiEngine {
 
   public parallel(): number {
     return this.settings.resolve().parallel;
+  }
+
+  /** The Gemini CLI's reply is not held to JSON, so a smaller pack loses less when a reply drops a page. */
+  public smallPacks(): boolean {
+    return this.settings.resolve().provider === 'gemini-cli';
   }
 
   public embeddingModel(): string | null {
@@ -302,9 +316,14 @@ export class ConfiguredAi implements AiEngine {
     return embed(provider, this.settings.resolve().api[provider], payload, signal);
   }
 
-  private async send(payload: GuardedPayload, signal?: AbortSignal, onText?: (text: string) => void): Promise<Reply> {
+  private async send(
+    payload: GuardedPayload,
+    signal?: AbortSignal,
+    onText?: (text: string) => void,
+    json?: JsonReply,
+  ): Promise<Reply> {
     if (this.options.transport) {
-      const reply = await this.options.transport(payload, signal, onText);
+      const reply = await this.options.transport(payload, signal, onText, json);
       return typeof reply === 'string' ? { text: reply } : reply;
     }
     const s = this.settings.resolve();
@@ -314,16 +333,17 @@ export class ConfiguredAi implements AiEngine {
         throw new Error(
           'The Gemini CLI was not found. Install it, set its path in Settings, or choose an API provider.',
         );
+      // The CLI is not asked for JSON output; a structured reply is validated and repaired instead.
       return runGeminiCli(cli, payload, this.options.env, signal, onText);
     }
-    return complete(s.provider, s.api[s.provider], payload, signal, onText);
+    return complete(s.provider, s.api[s.provider], payload, signal, onText, json);
   }
 
   private async deliver(
     payload: GuardedPayload,
     report: GuardReport,
     guard: OutboundGuard,
-    { spaceKey, signal, onText }: AiContext,
+    { spaceKey, signal, onText, json }: AiContext,
     manifest: Attrs = {},
   ): Promise<AiAnswer> {
     if (signal?.aborted) throw new AiStopped();
@@ -346,7 +366,7 @@ export class ConfiguredAi implements AiEngine {
       reply = await this.traced(
         'complete',
         { ...entry, ...manifest },
-        () => this.send(payload, signal, progress),
+        () => this.send(payload, signal, progress, json),
         signal,
       );
     } catch (error) {
