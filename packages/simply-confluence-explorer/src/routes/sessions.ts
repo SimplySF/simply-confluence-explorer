@@ -413,6 +413,7 @@ export function addSessionRoutes(router: Router, services: Services): Router {
             attachments: session.attachments !== 'pages',
             leftOut: leftOutOf(session),
             tracer: services.telemetry,
+            digest: (key, dirId) => services.digests.currentDigest(key, dirId),
           },
           { budget: services.contextChars, outline: scope.kind === 'space', manifest },
         );

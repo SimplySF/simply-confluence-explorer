@@ -46,11 +46,24 @@ const REASON: Record<ManifestSummary['leftOut'][number]['reason'], string> = {
   fallback: "the AI's reply could not be used",
 };
 
+/** The areas a planned search looked in and why, then how many it did not search (ADR-079). */
+function planLines(plan: ManifestSummary['plan']): string[] {
+  if (!plan) return [];
+  const { count, titles } = plan.notSearched;
+  return [
+    ...(plan.searched.length ? [] : ['No area was chosen, so the whole corpus was searched at once']),
+    ...plan.searched.map((a) => `Searched ${a.title} for "${a.look}"${a.why ? `: ${a.why}` : ''}`),
+    ...(count
+      ? [`Not searched: ${plural(count, 'other area')}${titles.length ? `, such as ${titles.join(', ')}` : ''}`]
+      : []),
+  ];
+}
+
 /**
- * What an answer's request carried to the model, as the line under What was sent, and each thing left
- * out with why. An excluded page is counted, never named (ADR-054).
+ * What an answer's request carried to the model, as the line under What was sent, each thing left
+ * out with why, and the plan its search followed. An excluded page is counted, never named (ADR-054).
  */
-export function sentLines(sent: ManifestSummary): { summary: string; leftOut: string[] } {
+export function sentLines(sent: ManifestSummary): { summary: string; leftOut: string[]; plan: string[] } {
   const parts = [
     sent.pages && plural(sent.pages, 'page'),
     sent.sections && plural(sent.sections, 'section'),
@@ -67,5 +80,6 @@ export function sentLines(sent: ManifestSummary): { summary: string; leftOut: st
   return {
     summary: `Sent ${parts.length ? parts.join(', ') : 'no pages'} · ${sent.chars.toLocaleString('en-US')} characters`,
     leftOut,
+    plan: planLines(sent.plan),
   };
 }

@@ -803,7 +803,8 @@ test('a question being answered reports the step it is on, and none once answere
   const app = await startTestApp(
     fake,
     async (payload) => {
-      if (!payload.system.includes('choosing which sections')) await held;
+      // Only the answer is held; the requests that plan and choose what it reads come back at once.
+      if (!/choosing which (sections|areas)/.test(payload.system)) await held;
       return 'an answer';
     },
     {},

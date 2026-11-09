@@ -63,7 +63,13 @@ there is no way to gather those pages under one directory without moving each on
   titles, summaries and tags, a series of similar titles as one line, and at most 60 lines. The
   header shows **Directories x/y**, and the Space map shows each current digest's kind.
 - **A plan** is shown under **What was sent**: the areas searched, why each was chosen, and the
-  areas left out.
+  areas left out. The map lists only directories of the chat's corpus that the rules allow, each
+  with its digest, or, without one, its summary and the names of the directories below it. A map
+  larger than a quarter of the context is shown from the top, then below the areas chosen, at most
+  three times. Half of the 40 candidates are shared among the chosen areas; the choice is told
+  which candidates a plan's area found. A plan that cannot be read leaves one search of the corpus.
+- **The diversity cap** applies to every search: no directory, and no series of similar titles,
+  takes more than 8 of the 40 candidates unless the cap would leave fewer than 10.
 - **A structured request** gives the model one task, short numbered rules and an example of the
   reply, and offers its choices by number. A reply that fails its check is asked for once more with
   the reason; a second failure is named under **What was sent** and counted in the telemetry. In an

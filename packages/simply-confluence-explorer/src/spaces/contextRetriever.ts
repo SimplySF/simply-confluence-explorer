@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type { PageDetail, SpaceTocNode } from '../api/types.js';
+import type { DirectoryDigest, PageDetail } from '../api/types.js';
 import type { AiEngine } from '../ai/engine.js';
 import { loadGuardRules, OutboundGuard } from '../ai/guard.js';
 import { ManifestBuilder } from '../ai/manifest.js';
@@ -24,6 +24,7 @@ import { pause } from '../util/pause.js';
 import { fileKey } from './attachments.js';
 import { CONTEXT_CHAR_LIMIT, contextCollector, pagesAsContext } from './branchContext.js';
 import type { ExclusionManager } from './exclusionManager.js';
+import { allDirs, corpusDirectories, packMap, planAreas, planRecord, type MapDir, type PlanArea } from './plan.js';
 import type { SearchIndex } from './searchIndex.js';
 import { headingOf, sectionName, type Section } from './sections.js';
 import { seriesKey } from './spaceMap.js';
@@ -83,6 +84,8 @@ export type RetrieverDeps = {
   leftOut?: ReadonlySet<string>;
   /** Where a choice the AI could not make is logged and counted (ADR-079). */
   tracer?: Tracer;
+  /** A directory's current digest, which describes it on the map a plan is made from (ADR-079). */
+  digest?: (spaceKey: string, dirId: string) => DirectoryDigest | undefined;
 };
 
 /** How many candidate sections the search offers the AI to choose from. */
@@ -102,6 +105,7 @@ const choosePrompt = (count: number): StructuredPrompt => ({
   task: 'You are choosing which sections of Confluence pages to read before answering a question.',
   rules: [
     `The message lists ${count} candidate sections, numbered 1 to ${count}. Each line gives the page's title, its place in the space, the section's heading and a summary.`,
+    'A line that ends "searched for: ..." was found in an area chosen for this question while looking for those words.',
     `Choose the sections needed to answer the question, at most ${CHOSEN}, most useful first. Use only numbers from 1 to ${count}.`,
     'For each section chosen, give its "number" and, in "why", what it adds to the answer in a few words.',
     'If no section helps, reply {"sections":[]}.',
@@ -188,19 +192,40 @@ export function diversify(rankings: string[][], limit: number, groups: (id: stri
   return out.length < limit / 4 ? [...out, ...held].slice(0, limit) : out;
 }
 
-/** An outline of the space's top two levels, checked against the current rules, so an answer knows where things are. */
-async function outlineOf(key: string, deps: RetrieverDeps): Promise<string> {
-  let outline = '## Outline of the space\n';
-  const excluded = deps.exclusions.checker(key);
-  const walk = (nodes: SpaceTocNode[], depth: number, ancestors: Array<{ id: string; title: string }>): void => {
-    const allowed = nodes.filter((n) => !excluded({ id: n.id, title: n.title, ancestors }));
-    for (const n of allowed.slice(0, 8)) {
-      outline += `${'  '.repeat(depth)}- **${n.title}**${n.summary ? `: ${n.summary}` : ''}\n`;
-      if (depth < 1) walk(n.children, depth + 1, [...ancestors, { id: n.id, title: n.title }]);
-    }
-  };
-  walk(await deps.store.buildToc(key), 0, []);
-  return `${outline}\n---\n\n`;
+/** The corpus's directories, as many as fit in `limit` from the top down, so an answer knows where things are. */
+function outlineOf(
+  key: string,
+  roots: MapDir[],
+  titles: Map<string, string>,
+  deps: RetrieverDeps,
+  limit: number,
+): string {
+  const shown = packMap(key, roots, limit - 100, titles, deps);
+  return shown.length ? `## Map of the directories\n${shown.map((d) => `- ${d.line}`).join('\n')}\n\n---\n\n` : '';
+}
+
+/**
+ * The plan for a corpus that spans more than one directory, recorded in the manifest, with the
+ * directories it was made from; no areas when the AI is not asked or its first reply could not be used.
+ */
+async function planFor(
+  key: string,
+  pages: PageDetail[],
+  query: ContextQuery,
+  deps: RetrieverDeps,
+  budget: number,
+  manifest: ManifestBuilder,
+): Promise<{ areas: PlanArea[]; roots: MapDir[]; titles: Map<string, string> }> {
+  const roots = await corpusDirectories(key, pages, deps);
+  const titles = new Map(pages.map((p) => [p.id, p.title]));
+  if (!deps.ai || allDirs(roots).length < 2) return { areas: [], roots, titles };
+  deps.onStep?.('Planning which areas to search');
+  const asked = [query.question, query.previous && `(the question before it: ${query.previous})`]
+    .filter(Boolean)
+    .join(' ');
+  const areas = await planAreas(key, asked, roots, titles, deps, budget / 4, manifest);
+  if (areas) manifest.plan(planRecord(areas, roots));
+  return { areas: areas ?? [], roots, titles };
 }
 
 /**
@@ -249,8 +274,9 @@ async function candidatesFor(
   text: string,
   question: string,
   deps: RetrieverDeps,
+  areas: PlanArea[],
 ): Promise<{ candidates: Candidate[]; weak: boolean }> {
-  const { ranked, weak } = await rankSections(key, byId, text, question, deps, CANDIDATES);
+  const { ranked, weak, lookedFor } = await rankSections(key, byId, text, question, deps, CANDIDATES, areas);
   const candidates = ranked.flatMap((id) => {
     const [pageId, index] = id.split('#');
     const section = sectionAt(key, deps, pageId, Number(index));
@@ -260,18 +286,44 @@ async function candidatesFor(
     // A section's own summary when it has one, otherwise its page's; an empty line counts as none.
     const summary = [meta?.sections?.[section.index]?.summary, meta?.summary].find(Boolean);
     const heading = headingOf(page.title, section);
+    const looked = lookedFor.get(id);
     return [
       {
         id,
         summary,
-        line: `${page.title} | ${pathOf(page) || 'top level'} | ${heading} | ${summary ?? 'no summary'}`,
+        line: `${page.title} | ${pathOf(page) || 'top level'} | ${heading} | ${summary ?? 'no summary'}${
+          looked ? ` | searched for: ${looked}` : ''
+        }`,
       },
     ];
   });
   return { candidates, weak };
 }
 
-/** The corpus's sections ranked for the question, by keywords and, when the provider embeds, by meaning. */
+/**
+ * The sections of each planned area that best match what the plan looks for there, at most `quota`.
+ * An area no larger than its quota is offered whole, as the plan points at all of it.
+ */
+function areaRanking(
+  key: string,
+  byId: Map<string, PageDetail>,
+  area: PlanArea,
+  question: string,
+  deps: RetrieverDeps,
+  quota: number,
+): string[] {
+  const within = new Set(area.dir.pages.filter((id) => byId.has(id)));
+  const found = deps.index.searchSections(key, `${area.look} ${question}`, quota, within).map((h) => refKey(h.section));
+  if (within.size > quota) return found;
+  const rest = [...within].flatMap((id) => deps.index.sectionsOf(key, id).map(refKey));
+  return [...new Set([...found, ...rest])].slice(0, quota);
+}
+
+/**
+ * The corpus's sections ranked for the question, by keywords and, when the provider embeds, by
+ * meaning. With a plan, each area's own ranking takes its turn beside the whole corpus's, so that
+ * half of the places are shared among the areas and each one contributes.
+ */
 async function rankSections(
   key: string,
   byId: Map<string, PageDetail>,
@@ -279,7 +331,8 @@ async function rankSections(
   question: string,
   deps: RetrieverDeps,
   limit: number,
-): Promise<{ ranked: string[]; weak: boolean }> {
+  areas: PlanArea[] = [],
+): Promise<{ ranked: string[]; weak: boolean; lookedFor: Map<string, string> }> {
   // Ranked deeper than `limit`, so the diversity cap has others to take in place of those it holds back.
   const deep = limit * 10;
   const hits = deps.index.searchSections(key, text, deep, new Set(byId.keys()));
@@ -294,7 +347,13 @@ async function rankSections(
   // aside, and nothing matched by meaning: the answer may rest on pages that are not about it.
   const best = deps.index.searchSections(key, question, 1, new Set(byId.keys()))[0];
   const weak = (best?.covers ?? 0) < WEAK_COVER && semantic.length === 0;
-  return { ranked: diversify([fuse([keyword, semantic], deep)], limit, (id) => groupsOf(byId, id)), weak };
+  const quota = Math.max(2, Math.floor(limit / 2 / Math.max(1, areas.length)));
+  const byArea = areas.map((a) => areaRanking(key, byId, a, question, deps, quota));
+  // What each section's area was searched for, so the choice knows why it was offered.
+  const lookedFor = new Map<string, string>();
+  byArea.forEach((ids, n) => ids.forEach((id) => lookedFor.has(id) || lookedFor.set(id, areas[n].look)));
+  const ranked = diversify([...byArea, fuse([keyword, semantic], deep)], limit, (id) => groupsOf(byId, id));
+  return { ranked, weak, lookedFor };
 }
 
 /**
@@ -327,6 +386,11 @@ async function choose(
   });
   return result.ok ? result.value : null;
 }
+
+const searchStep = (pages: PageDetail[], areas: PlanArea[]): string =>
+  areas.length
+    ? `Searching ${areas.length} area${areas.length === 1 ? '' : 's'}`
+    : `Searching ${pages.length.toLocaleString('en-US')} pages`;
 
 function sectionAt(key: string, deps: RetrieverDeps, pageId: string, index: number): Section | undefined {
   return deps.index.sectionsOf(key, pageId).find((s) => s.index === index);
@@ -365,13 +429,15 @@ export async function retrieveContext(
 
   await pause();
   const byId = new Map(pages.map((p) => [p.id, p]));
-  deps.onStep?.(`Searching ${pages.length.toLocaleString('en-US')} pages`);
+  const { areas, roots, titles } = await planFor(key, pages, query, deps, budget, manifest);
+  deps.onStep?.(searchStep(pages, areas));
   const { candidates, weak } = await candidatesFor(
     key,
     byId,
     [query.question, query.previous].filter(Boolean).join(' '),
     query.question,
     deps,
+    areas,
   );
   let chosen: Chosen =
     (await choose(key, query, candidates, deps, manifest)) ?? candidates.slice(0, CHOSEN).map((c) => ({ id: c.id }));
@@ -388,7 +454,7 @@ export async function retrieveContext(
   );
   // The outline helps an answer place what it reads, but never at the cost of most of what it reads.
   await pause();
-  const outlined = options.outline ? await outlineOf(key, deps) : '';
+  const outlined = options.outline ? outlineOf(key, roots, titles, deps, budget / 4) : '';
   const outline = outlined.length <= budget / 4 ? outlined : '';
   deps.onStep?.('Reading the chosen sections');
   const read = readSections(

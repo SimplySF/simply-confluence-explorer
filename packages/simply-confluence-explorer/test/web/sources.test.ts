@@ -70,7 +70,27 @@ describe('what an answer sent', () => {
     expect(lines).toEqual({
       summary: 'Sent 12 sections, 1 file, 3 earlier messages · 41,200 characters',
       leftOut: ['Deploy Notes: holds a secret', "2 pages: excluded by the space's rules"],
+      plan: [],
     });
+  });
+
+  it('names the areas a planned search looked in and why, and counts those it did not', () => {
+    const lines = sentLines({
+      pages: 0,
+      sections: 4,
+      files: 0,
+      turns: 0,
+      chars: 900,
+      leftOut: [],
+      plan: {
+        searched: [{ title: 'Platform › Identity', look: 'machine users', why: 'owns sign-in' }],
+        notSearched: { count: 2, titles: ['Release notes', 'Templates'] },
+      },
+    });
+    expect(lines.plan).toEqual([
+      'Searched Platform › Identity for "machine users": owns sign-in',
+      'Not searched: 2 other areas, such as Release notes, Templates',
+    ]);
   });
 
   it('counts the images sent with the text, which the leak guard could not check', () => {

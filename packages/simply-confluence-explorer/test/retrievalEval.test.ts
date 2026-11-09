@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ManifestBuilder, summarise as summaryOf } from '../src/ai/manifest.js';
 import type { PageDetail } from '../src/api/types.js';
 import { retrieveContext } from '../src/spaces/contextRetriever.js';
 import { ExclusionManager } from '../src/spaces/exclusionManager.js';
@@ -30,6 +31,7 @@ import { SearchIndex } from '../src/spaces/searchIndex.js';
 import { SpaceStore } from '../src/spaces/spaceStore.js';
 import { startFakeConfluence, type FakeConfluence } from './support/fakeConfluence.js';
 import { writeDeepSpace } from './support/largeSpace.js';
+import { standInModel } from './support/standInModel.js';
 import { startTestApp, type TestApp } from './support/testApp.js';
 
 /** Questions as a person would ask them, each with the page that answers it. */
@@ -159,46 +161,99 @@ const AREA_QUESTIONS: Array<[question: string, area: string, answer: string]> = 
  */
 const AREA_FLOOR = { areas: 9, answers: 8 };
 
+/**
+ * The same, when every page has a summary and a stand-in model (`test/support/standInModel.ts`) plans
+ * the areas to search and chooses the sections to read. Choosing from one flat ranking reached 7 areas
+ * and 7 answering pages, as release notes filled the candidates; with the diversity cap and the plan
+ * of design doc 0017 it reaches all 9 of each, and 9 of each when the plan cannot be read.
+ */
+const PLANNED_FLOOR = { areas: 9, answers: 9 };
+
+/**
+ * Writes for each page of the deep space the summary the AI index would give it, its first sentence,
+ * so the stand-in model has what a real one would read on the map and among the candidates.
+ */
+function summarise(store: SpaceStore, key: string, pages: PageDetail[]): void {
+  for (const page of pages)
+    store.writeMetadata(key, {
+      pageId: page.id,
+      title: page.title,
+      summary: /<p>(.*?)<\/p>/.exec(page.storageXml)?.[1] ?? page.title,
+      tags: [],
+      documentType: 'reference',
+      systemsMentioned: [],
+      generatedAt: '2026-01-02',
+      version: 2,
+    });
+}
+
+type Recall = { areas: number; answers: number; requests: number; report: string };
+
+/** Asks each area-recall question of the deep space, with the stand-in model when one is given. */
+async function areaRecall(model?: ReturnType<typeof standInModel>): Promise<Recall> {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-deep-'));
+  try {
+    const exclusions = new ExclusionManager(dataDir, () => undefined);
+    const store = new SpaceStore(dataDir, exclusions, () => undefined);
+    const ids = writeDeepSpace(store, 'DEEP');
+    if (model) summarise(store, 'DEEP', await store.visiblePages('DEEP'));
+    const index = new SearchIndex(store);
+    await index.ready('DEEP');
+    const pages = await store.visiblePages('DEEP');
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    const lines: string[] = [];
+    const reached = { areas: 0, answers: 0 };
+    for (const [question, area, answer] of AREA_QUESTIONS) {
+      const areaId = ids.get(area)!;
+      const inArea = (id: string): boolean => id === areaId || !!byId.get(id)?.ancestors.some((a) => a.id === areaId);
+      const manifest = new ManifestBuilder();
+      // eslint-disable-next-line no-await-in-loop -- each question in turn
+      const r = await retrieveContext(
+        'DEEP',
+        pages,
+        { question },
+        { store, exclusions, index, dataDir, ...(model ? { ai: model.ai } : {}) },
+        { budget: 20_000, manifest },
+      );
+      const plan = summaryOf(manifest.build()).plan?.searched.map((a) => a.title.split(' › ').at(-1));
+      expect(r.corpus.mode).toBe('retrieved');
+      const found = r.selectedPages.filter((p) => inArea(p.id)).length;
+      const answered = r.selectedPages.some((p) => p.id === ids.get(answer));
+      if (found) reached.areas++;
+      if (answered) reached.answers++;
+      lines.push(
+        `${found} of ${r.selectedPages.length} pages in ${area}, answer ${answered ? 'read' : 'missed'} · ${question}${
+          plan ? ` · planned: ${plan.join(', ') || 'none'}` : ''
+        }`,
+      );
+    }
+    const planning = model?.asked.filter((l) => l.startsWith('Planning')).length ?? 0;
+    return {
+      ...reached,
+      requests: planning,
+      report: `areas ${reached.areas} of 9, answers ${reached.answers} of 9, ${planning} planning requests:\n${lines.join('\n')}`,
+    };
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+}
+
 describe('area recall on a deep space', () => {
   it('reaches the area and the page that hold each answer at least as often as it did', async () => {
-    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cexp-deep-'));
-    try {
-      const exclusions = new ExclusionManager(dataDir, () => undefined);
-      const store = new SpaceStore(dataDir, exclusions, () => undefined);
-      const ids = writeDeepSpace(store, 'DEEP');
-      const index = new SearchIndex(store);
-      await index.ready('DEEP');
-      const pages = await store.visiblePages('DEEP');
-      const byId = new Map(pages.map((p) => [p.id, p]));
-      const lines: string[] = [];
-      const reached = { areas: 0, answers: 0 };
-      for (const [question, area, answer] of AREA_QUESTIONS) {
-        const areaId = ids.get(area)!;
-        const inArea = (id: string): boolean => id === areaId || !!byId.get(id)?.ancestors.some((a) => a.id === areaId);
-        // eslint-disable-next-line no-await-in-loop -- each question in turn
-        const r = await retrieveContext(
-          'DEEP',
-          pages,
-          { question },
-          { store, exclusions, index, dataDir },
-          { budget: 20_000 },
-        );
-        expect(r.corpus.mode).toBe('retrieved');
-        const found = r.selectedPages.filter((p) => inArea(p.id)).length;
-        const answered = r.selectedPages.some((p) => p.id === ids.get(answer));
-        if (found) reached.areas++;
-        if (answered) reached.answers++;
-        lines.push(
-          `${found} of ${r.selectedPages.length} pages in ${area}, answer ${answered ? 'read' : 'missed'} · ${question}`,
-        );
-      }
-      const report = `areas ${reached.areas} of 9, answers ${reached.answers} of 9:\n${lines.join('\n')}`;
-      // Printed, so a change to retrieval can report the numbers before and after it.
-      process.stdout.write(`area recall: ${report}\n`);
-      expect(reached.areas, report).toBeGreaterThanOrEqual(AREA_FLOOR.areas);
-      expect(reached.answers, report).toBeGreaterThanOrEqual(AREA_FLOOR.answers);
-    } finally {
-      fs.rmSync(dataDir, { recursive: true, force: true });
-    }
+    const recall = await areaRecall();
+    // Printed, so a change to retrieval can report the numbers before and after it.
+    process.stdout.write(`area recall: ${recall.report}\n`);
+    expect(recall.areas, recall.report).toBeGreaterThanOrEqual(AREA_FLOOR.areas);
+    expect(recall.answers, recall.report).toBeGreaterThanOrEqual(AREA_FLOOR.answers);
   }, 120_000);
+
+  it('reaches them at least as often with a plan, chosen by a stand-in model, as without one', async () => {
+    const unplanned = await areaRecall(standInModel({ plan: false }));
+    const planned = await areaRecall(standInModel());
+    process.stdout.write(`area recall, stand-in model, plan unusable: ${unplanned.report}\n`);
+    process.stdout.write(`area recall, stand-in model, planned: ${planned.report}\n`);
+    expect(planned.areas, planned.report).toBeGreaterThanOrEqual(PLANNED_FLOOR.areas);
+    expect(planned.answers, planned.report).toBeGreaterThanOrEqual(PLANNED_FLOOR.answers);
+    expect(planned.answers).toBeGreaterThanOrEqual(unplanned.answers);
+  }, 240_000);
 });

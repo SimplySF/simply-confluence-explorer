@@ -48,7 +48,17 @@ export type ManifestItem = {
   why?: string;
 };
 
-export type ContextManifest = { items: ManifestItem[] };
+/**
+ * The areas a planned search looked in, each with what it looked for and why, and how many of the
+ * corpus's directories it did not search, with the titles of the largest (ADR-079). Only allowed
+ * directories of the corpus are named.
+ */
+export type PlanRecord = {
+  searched: Array<{ title: string; look: string; why?: string }>;
+  notSearched: { count: number; titles: string[] };
+};
+
+export type ContextManifest = { items: ManifestItem[]; plan?: PlanRecord };
 
 /** What an answer shows under What was sent: counts and sizes, and each item left out with why. */
 export type ManifestSummary = {
@@ -62,6 +72,7 @@ export type ManifestSummary = {
   attachments?: number;
   chars: number;
   leftOut: Array<{ kind: ContextKind; label: string; reason: LeftOutReason | 'cut'; why?: string }>;
+  plan?: PlanRecord;
 };
 
 /** A thing that should never happen: context the request was built to carry is missing from it. */
@@ -76,6 +87,7 @@ export class ContextCheckError extends Error {
 export class ManifestBuilder {
   private readonly items: ManifestItem[] = [];
   private next = 0;
+  private planned?: PlanRecord;
 
   /** Records a piece of context as sent, and returns its text with the marker the check looks for. */
   public include(kind: ContextKind, label: string, text: string, cut = false): string {
@@ -129,8 +141,13 @@ export class ManifestBuilder {
     for (const u of report.unread) this.leaveOut('attachment', `${u.page} / ${u.name}`, 0, 'not-read', u.why);
   }
 
+  /** Records the plan a search followed; it carries no context, so the payload check ignores it. */
+  public plan(record: PlanRecord): void {
+    this.planned = record;
+  }
+
   public build(): ContextManifest {
-    return { items: [...this.items] };
+    return { items: [...this.items], ...(this.planned ? { plan: this.planned } : {}) };
   }
 }
 
@@ -189,6 +206,7 @@ export function summarise(manifest: ContextManifest): ManifestSummary {
         .map((i) => ({ kind: i.kind, label: i.label, reason: i.reason!, ...(i.why ? { why: i.why } : {}) })),
       ...sent.filter((i) => i.cut).map((i) => ({ kind: i.kind, label: i.label, reason: 'cut' as const })),
     ],
+    ...(manifest.plan ? { plan: manifest.plan } : {}),
   };
 }
 
@@ -235,5 +253,6 @@ export function mergeSummaries(summaries: ManifestSummary[]): ManifestSummary {
       : {}),
     chars: sum('chars'),
     leftOut: summaries.flatMap((s) => s.leftOut),
+    ...(summaries.find((s) => s.plan) ? { plan: summaries.find((s) => s.plan)!.plan } : {}),
   };
 }
