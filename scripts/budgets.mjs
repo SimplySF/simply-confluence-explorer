@@ -97,9 +97,10 @@ const testLines = tests.reduce((n, file) => n + read(file).replace(LICENSE_HEADE
 const docs = walk(root, (name) => name.endsWith('.md'))
   .map(rel)
   // test-env/.state holds what the end-to-end suite synced from Confluence, which is test data and
-  // not the project's prose. The site's copies of the guides are generated from the package's docs/
-  // on every build, so the guides are counted once, where they are written.
-  .filter((file) => !/^(docs\/(history|review)\/|\.git\/|test-env\/\.state\/)/.test(file))
+  // not the project's prose, and .claude/ holds agents' worktrees, each a second copy of the
+  // repository. The site's copies of the guides are generated from the package's docs/ on every
+  // build, so the guides are counted once, where they are written.
+  .filter((file) => !/^(docs\/(history|review)\/|\.git\/|\.claude\/|test-env\/\.state\/)/.test(file))
   .filter((file) => !/^site\/(dist\/|src\/content\/docs\/(getting-started\.md|guides\/))/.test(file))
   .filter((file) => file !== 'CODE_OF_CONDUCT.md' && file !== 'docs/decisions.md')
   .filter((file) => !file.includes('/node_modules/') && !file.includes('CHANGELOG.md'));
